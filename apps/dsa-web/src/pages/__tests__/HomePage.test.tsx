@@ -55,6 +55,8 @@ vi.mock('../../api/systemConfig', () => ({
     getConfig: vi.fn(),
     getSetupStatus: vi.fn(),
     getWatchlist: vi.fn().mockResolvedValue([]),
+    addToWatchlist: vi.fn().mockResolvedValue([]),
+    removeFromWatchlist: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -209,6 +211,7 @@ describe('HomePage', () => {
     vi.clearAllMocks();
     navigateMock.mockReset();
     window.localStorage.clear();
+    window.sessionStorage.clear();
     window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, 'zh');
     useStockPoolStore.getState().resetDashboardState();
     vi.mocked(analysisApi.getTasks).mockResolvedValue({
@@ -477,6 +480,133 @@ describe('HomePage', () => {
     expect(await screen.findByLabelText('今日已分析')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '仅未分析' })).toBeDisabled();
     expect(analysisApi.analyzeAsync).not.toHaveBeenCalled();
+  });
+
+  it('opens the latest report when clicking a watchlist row and marks it selected', async () => {
+    vi.mocked(systemConfigApi.getWatchlist).mockResolvedValue(['600519']);
+    vi.mocked(historyApi.getStockBarList).mockResolvedValue({
+      total: 1,
+      items: [{
+        id: 21,
+        stockCode: '600519',
+        stockName: '贵州茅台',
+        reportType: 'detailed',
+        sentimentScore: 88,
+        operationAdvice: '买入',
+        analysisCount: 1,
+        lastAnalysisTime: '2026-03-19T09:00:00+08:00',
+      }],
+    });
+    vi.mocked(historyApi.getList).mockResolvedValue({
+      total: 0,
+      page: 1,
+      limit: 20,
+      items: [],
+    });
+    vi.mocked(historyApi.getDetail).mockResolvedValue({
+      ...historyReport,
+      meta: {
+        ...historyReport.meta,
+        id: 21,
+      },
+      summary: {
+        ...historyReport.summary,
+        analysisSummary: '自选股详情已打开',
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '自选' }));
+
+    const rowButton = await screen.findByRole('button', { name: '打开 600519 最新分析详情' });
+    fireEvent.click(rowButton);
+
+    await waitFor(() => {
+      expect(historyApi.getDetail).toHaveBeenCalledWith(21);
+    });
+    expect(await screen.findByText('自选股详情已打开')).toBeInTheDocument();
+    expect(rowButton).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('does not open details when removing a watchlist row', async () => {
+    vi.mocked(systemConfigApi.getWatchlist).mockResolvedValue(['600519']);
+    vi.mocked(historyApi.getStockBarList).mockResolvedValue({
+      total: 1,
+      items: [{
+        id: 21,
+        stockCode: '600519',
+        stockName: '贵州茅台',
+        reportType: 'detailed',
+        sentimentScore: 88,
+        operationAdvice: '买入',
+        analysisCount: 1,
+        lastAnalysisTime: '2026-03-19T09:00:00+08:00',
+      }],
+    });
+    vi.mocked(historyApi.getList).mockResolvedValue({
+      total: 0,
+      page: 1,
+      limit: 20,
+      items: [],
+    });
+    vi.mocked(systemConfigApi.removeFromWatchlist).mockResolvedValue([]);
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '自选' }));
+    fireEvent.click(await screen.findByRole('button', { name: '从自选股移除 600519' }));
+
+    await waitFor(() => {
+      expect(systemConfigApi.removeFromWatchlist).toHaveBeenCalledWith('600519');
+    });
+    expect(historyApi.getDetail).not.toHaveBeenCalled();
+  });
+
+  it('shows explicit feedback when a watchlist row has no report details yet', async () => {
+    vi.mocked(systemConfigApi.getWatchlist).mockResolvedValue(['AAPL']);
+    vi.mocked(historyApi.getStockBarList).mockResolvedValue({
+      total: 0,
+      items: [],
+    });
+    vi.mocked(historyApi.getList).mockImplementation((params: { stockCode?: string; limit?: number } = {}) => {
+      if (params.stockCode === 'AAPL' && params.limit === 1) {
+        return Promise.resolve({
+          total: 0,
+          page: 1,
+          limit: 1,
+          items: [],
+        });
+      }
+
+      return Promise.resolve({
+        total: 0,
+        page: 1,
+        limit: params.limit ?? 20,
+        items: [],
+      });
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '自选' }));
+    const rowButton = await screen.findByRole('button', { name: '暂无 AAPL 的分析详情，可先分析' });
+    fireEvent.click(rowButton);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('暂无分析详情，可先分析。');
+    expect(historyApi.getDetail).not.toHaveBeenCalled();
   });
 
   it('blocks pending watchlist submission when the stock-bar refresh after completion fails', async () => {
@@ -871,6 +1001,76 @@ describe('HomePage', () => {
     expect(
       highScoreButton.compareDocumentPosition(lowerScoreButton) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('keeps the task panel collapsed after task stream updates', async () => {
+    window.sessionStorage.setItem('dsa.home.taskPanelCollapsed', 'false');
+    vi.mocked(historyApi.getList).mockResolvedValue({
+      total: 0,
+      page: 1,
+      limit: 20,
+      items: [],
+    });
+    vi.mocked(analysisApi.getTasks).mockResolvedValue({
+      total: 2,
+      pending: 1,
+      processing: 1,
+      tasks: [
+        {
+          taskId: 'task-1',
+          traceId: 'trace-1',
+          stockCode: '600519',
+          stockName: '贵州茅台',
+          status: 'processing',
+          progress: 35,
+          message: '分析中',
+          reportType: 'detailed',
+          createdAt: '2026-06-08T08:00:00Z',
+        },
+        {
+          taskId: 'task-2',
+          stockCode: 'AAPL',
+          stockName: 'Apple',
+          status: 'pending',
+          progress: 0,
+          message: '等待中',
+          reportType: 'detailed',
+          createdAt: '2026-06-08T08:01:00Z',
+        },
+      ],
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    const collapseButton = await screen.findByRole('button', { name: '折叠任务面板' });
+    fireEvent.click(collapseButton);
+
+    expect(await screen.findByTestId('task-panel-collapsed-summary')).toHaveTextContent('1 进行中');
+    expect(screen.queryByTestId('task-panel-item')).not.toBeInTheDocument();
+
+    const taskStreamOptions = vi.mocked(useTaskStream).mock.calls.at(-1)?.[0];
+    act(() => {
+      taskStreamOptions?.onTaskProgress?.({
+        taskId: 'task-1',
+        traceId: 'trace-1',
+        stockCode: '600519',
+        stockName: '贵州茅台',
+        status: 'processing',
+        progress: 72,
+        message: '分析进度更新',
+        reportType: 'detailed',
+        createdAt: '2026-06-08T08:00:00Z',
+      });
+    });
+
+    expect(await screen.findByRole('button', { name: '展开任务面板' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('task-panel-collapsed-summary')).toHaveTextContent('1 进行中');
+    expect(screen.getByTestId('task-panel-collapsed-summary')).toHaveTextContent('1 等待中');
+    expect(screen.queryByTestId('task-panel-item')).not.toBeInTheDocument();
   });
 
   it('keeps Shanghai-day records that fall on the previous server date', async () => {

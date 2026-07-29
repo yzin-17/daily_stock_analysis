@@ -60,6 +60,7 @@ type StockAnalysisNavigationState = {
 const DUPLICATE_BANNER_AUTO_DISMISS_MS = 5000;
 const BATCH_ANALYSIS_CHUNK_SIZE = 50;
 const TODAY_ANALYSIS_PAGE_SIZE = 100;
+const TASK_PANEL_COLLAPSED_STORAGE_KEY = 'dsa.home.taskPanelCollapsed';
 const SERVER_LOCAL_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
 
 type BatchAnalyzeStatus = {
@@ -111,6 +112,16 @@ function chunkStockCodes(codes: string[]): string[][] {
     chunks.push(codes.slice(index, index + BATCH_ANALYSIS_CHUNK_SIZE));
   }
   return chunks;
+}
+
+function readTaskPanelCollapsedPreference(): boolean | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const rawValue = window.sessionStorage.getItem(TASK_PANEL_COLLAPSED_STORAGE_KEY);
+  if (rawValue === 'true') return true;
+  if (rawValue === 'false') return false;
+  return null;
 }
 
 function countBatchAccepted(result: AnalyzeAsyncResponse): { accepted: number; duplicates: number } {
@@ -194,6 +205,9 @@ const HomePage: React.FC = () => {
   const [runFlowDrawer, setRunFlowDrawer] = useState<RunFlowDrawerState>({ open: false });
   const [duplicateBannerVisible, setDuplicateBannerVisible] = useState(false);
   const [sidebarWorkspaceTab, setSidebarWorkspaceTab] = useState<HomeWorkspaceTab>('history');
+  const [isTaskPanelCollapsed, setIsTaskPanelCollapsed] = useState<boolean>(() => (
+    readTaskPanelCollapsedPreference() ?? false
+  ));
   const [isBatchAnalyzingWatchlist, setIsBatchAnalyzingWatchlist] = useState(false);
   const [batchAnalyzeStatus, setBatchAnalyzeStatus] = useState<BatchAnalyzeStatus>(null);
   const [watchlistHistoryItemsByCode, setWatchlistHistoryItemsByCode] = useState<Map<string, StockBarItem>>(new Map());
@@ -210,6 +224,7 @@ const HomePage: React.FC = () => {
   const duplicateBannerTimer = useRef<number | null>(null);
   const marketReviewPollTimer = useRef<number | null>(null);
   const stockBarLoadStartedRef = useRef(false);
+  const taskPanelPreferenceSettledRef = useRef(readTaskPanelCollapsedPreference() !== null);
   const dashboardScrollRef = useRef<HTMLElement | null>(null);
   const strategyMenuRef = useRef<HTMLDivElement | null>(null);
   const strategyButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -316,6 +331,22 @@ const HomePage: React.FC = () => {
 
     return clearDuplicateBannerTimer;
   }, [clearDuplicateBannerTimer, duplicateError]);
+
+  useEffect(() => {
+    if (taskPanelPreferenceSettledRef.current || activeTasks.length === 0) {
+      return;
+    }
+    const nextCollapsed = activeTasks.length > 1;
+    setIsTaskPanelCollapsed(nextCollapsed);
+    window.sessionStorage.setItem(TASK_PANEL_COLLAPSED_STORAGE_KEY, String(nextCollapsed));
+    taskPanelPreferenceSettledRef.current = true;
+  }, [activeTasks.length]);
+
+  const handleTaskPanelCollapsedChange = useCallback((collapsed: boolean) => {
+    setIsTaskPanelCollapsed(collapsed);
+    taskPanelPreferenceSettledRef.current = true;
+    window.sessionStorage.setItem(TASK_PANEL_COLLAPSED_STORAGE_KEY, String(collapsed));
+  }, []);
 
   useEffect(() => {
     document.title = t('home.pageTitle');
@@ -1217,8 +1248,13 @@ const HomePage: React.FC = () => {
 
   const sidebarContent = useMemo(
     () => (
-      <div className="flex min-h-0 h-full flex-col gap-3 overflow-hidden">
-        <TaskPanel tasks={activeTasks} onOpenRunFlow={openTaskRunFlow} />
+      <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
+        <TaskPanel
+          tasks={activeTasks}
+          onOpenRunFlow={openTaskRunFlow}
+          collapsed={isTaskPanelCollapsed}
+          onCollapsedChange={handleTaskPanelCollapsedChange}
+        />
         <HomeStockWorkspace
           activeTab={sidebarWorkspaceTab}
           onTabChange={setSidebarWorkspaceTab}
@@ -1253,10 +1289,12 @@ const HomePage: React.FC = () => {
       handleAnalyzeWatchlist,
       handleDeleteStock,
       handleHistoryItemClick,
+      handleTaskPanelCollapsedChange,
       isBatchAnalyzingWatchlist,
       isDeletingStock,
       isLoadingStockBar,
       isLoadingTodayAnalysisItems,
+      isTaskPanelCollapsed,
       todayAnalysisLoadFailed,
       mergedStockBarItems,
       openTaskRunFlow,
