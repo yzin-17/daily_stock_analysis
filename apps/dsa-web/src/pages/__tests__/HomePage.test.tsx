@@ -1073,6 +1073,72 @@ describe('HomePage', () => {
     expect(screen.queryByTestId('task-panel-item')).not.toBeInTheDocument();
   });
 
+  it('keeps the task panel usable when sessionStorage access is blocked', async () => {
+    const sessionGetItemSpy = vi.spyOn(window.sessionStorage, 'getItem').mockImplementation((key: string) => {
+      if (key === 'dsa.home.taskPanelCollapsed') {
+        throw new DOMException('Access denied', 'SecurityError');
+      }
+      return null;
+    });
+    const sessionSetItemSpy = vi.spyOn(window.sessionStorage, 'setItem').mockImplementation((key: string, value: string) => {
+      void value;
+      if (key === 'dsa.home.taskPanelCollapsed') {
+        throw new DOMException('Access denied', 'SecurityError');
+      }
+    });
+    try {
+      vi.mocked(historyApi.getList).mockResolvedValue({
+        total: 0,
+        page: 1,
+        limit: 20,
+        items: [],
+      });
+      vi.mocked(analysisApi.getTasks).mockResolvedValue({
+        total: 2,
+        pending: 1,
+        processing: 1,
+        tasks: [
+          {
+            taskId: 'task-1',
+            traceId: 'trace-1',
+            stockCode: '600519',
+            stockName: '贵州茅台',
+            status: 'processing',
+            progress: 35,
+            message: '分析中',
+            reportType: 'detailed',
+            createdAt: '2026-06-08T08:00:00Z',
+          },
+          {
+            taskId: 'task-2',
+            stockCode: 'AAPL',
+            stockName: 'Apple',
+            status: 'pending',
+            progress: 0,
+            message: '等待中',
+            reportType: 'detailed',
+            createdAt: '2026-06-08T08:01:00Z',
+          },
+        ],
+      });
+
+      render(
+        <MemoryRouter>
+          <HomePage />
+        </MemoryRouter>,
+      );
+
+      expect(await screen.findByTestId('task-panel-collapsed-summary')).toHaveTextContent('1 进行中');
+
+      fireEvent.click(screen.getByRole('button', { name: '展开任务面板' }));
+
+      expect(await screen.findByRole('button', { name: '折叠任务面板' })).toHaveAttribute('aria-expanded', 'true');
+    } finally {
+      sessionGetItemSpy.mockRestore();
+      sessionSetItemSpy.mockRestore();
+    }
+  });
+
   it('keeps Shanghai-day records that fall on the previous server date', async () => {
     const todayInShanghai = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
     const rangeStart = new Date(`${todayInShanghai}T12:00:00Z`);

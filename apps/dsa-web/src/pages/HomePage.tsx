@@ -118,10 +118,25 @@ function readTaskPanelCollapsedPreference(): boolean | null {
   if (typeof window === 'undefined') {
     return null;
   }
-  const rawValue = window.sessionStorage.getItem(TASK_PANEL_COLLAPSED_STORAGE_KEY);
-  if (rawValue === 'true') return true;
-  if (rawValue === 'false') return false;
-  return null;
+  try {
+    const rawValue = window.sessionStorage.getItem(TASK_PANEL_COLLAPSED_STORAGE_KEY);
+    if (rawValue === 'true') return true;
+    if (rawValue === 'false') return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeTaskPanelCollapsedPreference(collapsed: boolean): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(TASK_PANEL_COLLAPSED_STORAGE_KEY, String(collapsed));
+  } catch {
+    // Session storage is best-effort; keep the in-memory toggle state working.
+  }
 }
 
 function countBatchAccepted(result: AnalyzeAsyncResponse): { accepted: number; duplicates: number } {
@@ -338,14 +353,14 @@ const HomePage: React.FC = () => {
     }
     const nextCollapsed = activeTasks.length > 1;
     setIsTaskPanelCollapsed(nextCollapsed);
-    window.sessionStorage.setItem(TASK_PANEL_COLLAPSED_STORAGE_KEY, String(nextCollapsed));
+    writeTaskPanelCollapsedPreference(nextCollapsed);
     taskPanelPreferenceSettledRef.current = true;
   }, [activeTasks.length]);
 
   const handleTaskPanelCollapsedChange = useCallback((collapsed: boolean) => {
     setIsTaskPanelCollapsed(collapsed);
     taskPanelPreferenceSettledRef.current = true;
-    window.sessionStorage.setItem(TASK_PANEL_COLLAPSED_STORAGE_KEY, String(collapsed));
+    writeTaskPanelCollapsedPreference(collapsed);
   }, []);
 
   useEffect(() => {

@@ -20,6 +20,7 @@ import type { StockBarItem, TaskInfo } from '../../types/analysis';
 import { getSentimentColor } from '../../types/analysis';
 import { buildDecisionActionLabelMap, getDecisionActionLabel } from '../../utils/decisionAction';
 import { formatDateTime } from '../../utils/format';
+import { areStockCodesEquivalent } from '../../utils/stockCode';
 import { truncateStockName } from '../../utils/stockName';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey, UiTextParams } from '../../i18n/uiText';
@@ -108,10 +109,6 @@ const ScoreBadge: React.FC<{ item?: StockBarItem }> = ({ item }) => {
     </Badge>
   );
 };
-
-function toComparableCode(value?: string): string {
-  return (value ?? '').trim().toUpperCase();
-}
 
 const WatchlistRowItem: React.FC<{
   row: HomeWatchlistRow;
@@ -502,8 +499,8 @@ export const HomeStockWorkspace: React.FC<HomeStockWorkspaceProps> = ({
                     || (
                       Boolean(selectedStockCode)
                       && (
-                        toComparableCode(selectedStockCode) === toComparableCode(row.code)
-                        || toComparableCode(selectedStockCode) === toComparableCode(row.latestItem?.stockCode)
+                        areStockCodesEquivalent(selectedStockCode ?? '', row.code)
+                        || areStockCodesEquivalent(selectedStockCode ?? '', row.latestItem?.stockCode ?? '')
                       )
                     )
                   }

@@ -8,9 +8,11 @@ import type { HomeWatchlistRow } from '../HomeStockWorkspace';
 function renderWorkspace({
   watchlistRows,
   selectedRecordId,
+  selectedStockCode,
 }: {
   watchlistRows: HomeWatchlistRow[];
   selectedRecordId?: number;
+  selectedStockCode?: string;
 }) {
   const onHistoryItemClick = vi.fn();
   const onRemoveFromWatchlist = vi.fn().mockResolvedValue(undefined);
@@ -37,6 +39,7 @@ function renderWorkspace({
         watchlistAnalyzedTodayCount={watchlistRows.filter((row) => row.analyzedToday).length}
         historyItems={[]}
         isLoadingHistory={false}
+        selectedStockCode={selectedStockCode}
         selectedRecordId={selectedRecordId}
         onHistoryItemClick={onHistoryItemClick}
       />
@@ -111,5 +114,26 @@ describe('HomeStockWorkspace', () => {
 
     expect(onRemoveFromWatchlist).toHaveBeenCalledWith('600519');
     expect(onHistoryItemClick).not.toHaveBeenCalled();
+  });
+
+  it('keeps the watchlist row selected for equivalent stock-code formats', () => {
+    renderWorkspace({
+      watchlistRows: [{
+        code: 'HK700',
+        analyzedToday: true,
+        latestItem: {
+          id: 88,
+          stockCode: '00700',
+          stockName: '腾讯控股',
+          sentimentScore: 91,
+          operationAdvice: '买入',
+          analysisCount: 1,
+          lastAnalysisTime: '2026-03-19T09:00:00+08:00',
+        },
+      }],
+      selectedStockCode: '00700.HK',
+    });
+
+    expect(screen.getByRole('button', { name: '打开 HK700 最新分析详情' })).toHaveAttribute('aria-pressed', 'true');
   });
 });
