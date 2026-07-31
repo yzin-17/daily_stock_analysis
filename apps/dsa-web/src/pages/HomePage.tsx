@@ -1031,24 +1031,25 @@ const HomePage: React.FC = () => {
         ? stockBarItemByCode.get(key) ?? watchlistHistoryItemsByCode.get(key)
         : undefined;
       const isMissingFromStockBar = Boolean(key && !stockBarItemByCode.has(key));
-      const isTodayStatusUnknown = Boolean(
-        stockBarRefreshFailed
-        || (
-          isMissingFromStockBar
-          && canLookupWatchlistHistory
-          && watchlistHistoryLookupState.signature === watchlistMissingHistorySignature
-          && watchlistHistoryLookupState.failedKeys.has(key)
-        ),
-      );
-      const isTodayStatusLoading = Boolean(
+      const hasPendingHistoryLookup = Boolean(
         isMissingFromStockBar
-        && !isTodayStatusUnknown
         && (
           !canLookupWatchlistHistory
           ||
           watchlistHistoryLookupState.signature !== watchlistMissingHistorySignature
           || !watchlistHistoryLookupState.settledKeys.has(key)
         ),
+      );
+      const hasFailedHistoryLookup = Boolean(
+        isMissingFromStockBar
+        && canLookupWatchlistHistory
+        && watchlistHistoryLookupState.signature === watchlistMissingHistorySignature
+        && watchlistHistoryLookupState.failedKeys.has(key)
+      );
+      const isTodayStatusLoading = hasPendingHistoryLookup;
+      const isTodayStatusUnknown = Boolean(
+        hasFailedHistoryLookup
+        || (stockBarRefreshFailed && !hasPendingHistoryLookup && (!isMissingFromStockBar || !latestItem))
       );
       return {
         code,
