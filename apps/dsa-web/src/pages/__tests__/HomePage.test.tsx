@@ -822,6 +822,101 @@ describe('HomePage', () => {
     expect(await screen.findByLabelText('今日已分析')).toBeInTheDocument();
   });
 
+  it('does not show no-detail feedback while watchlist fallback history lookup is still pending', async () => {
+    const todayInShanghai = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
+    let resolveAaplHistory!: (response: Awaited<ReturnType<typeof historyApi.getList>>) => void;
+    const aaplHistoryPromise = new Promise<Awaited<ReturnType<typeof historyApi.getList>>>((resolve) => {
+      resolveAaplHistory = resolve;
+    });
+
+    vi.mocked(systemConfigApi.getWatchlist).mockResolvedValue(['AAPL']);
+    vi.mocked(historyApi.getStockBarList).mockResolvedValue({
+      total: 1,
+      items: [{
+        id: 11,
+        stockCode: '600519',
+        stockName: '贵州茅台',
+        reportType: 'detailed',
+        sentimentScore: 72,
+        operationAdvice: '观察',
+        analysisCount: 2,
+        lastAnalysisTime: `${todayInShanghai}T22:00:00`,
+      }],
+    });
+    vi.mocked(historyApi.getList).mockImplementation((params: { stockCode?: string; limit?: number } = {}) => {
+      if (params.stockCode === 'AAPL') {
+        return aaplHistoryPromise;
+      }
+
+      return Promise.resolve({
+        total: 0,
+        page: 1,
+        limit: params.limit ?? 20,
+        items: [],
+      });
+    });
+    vi.mocked(historyApi.getDetail).mockResolvedValue({
+      meta: {
+        id: 12,
+        queryId: 'q-aapl',
+        stockCode: 'AAPL',
+        stockName: 'Apple',
+        reportType: 'detailed',
+        reportLanguage: 'zh',
+        createdAt: `${todayInShanghai}T09:20:00`,
+      },
+      summary: {
+        analysisSummary: 'Apple 分析摘要',
+        operationAdvice: '继续观察',
+        trendPrediction: '短线震荡',
+        sentimentScore: 68,
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '自选' }));
+    await waitFor(() => {
+      expect(historyApi.getList).toHaveBeenCalledWith({ stockCode: 'AAPL', limit: 1 });
+    });
+
+    const loadingRow = await screen.findByRole('button', { name: '正在查找 AAPL 的最新分析详情' });
+    fireEvent.click(loadingRow);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('正在查找最新分析详情，请稍候。');
+    expect(screen.queryByText('暂无分析详情，可先分析。')).not.toBeInTheDocument();
+    expect(historyApi.getDetail).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveAaplHistory({
+        total: 1,
+        page: 1,
+        limit: 1,
+        items: [{
+          id: 12,
+          queryId: 'q-aapl',
+          stockCode: 'AAPL',
+          stockName: 'Apple',
+          reportType: 'detailed',
+          sentimentScore: 68,
+          operationAdvice: '中性',
+          createdAt: `${todayInShanghai}T09:20:00`,
+        }],
+      });
+      await aaplHistoryPromise;
+    });
+
+    const readyRow = await screen.findByRole('button', { name: '打开 AAPL 最新分析详情' });
+    fireEvent.click(readyRow);
+    await waitFor(() => {
+      expect(historyApi.getDetail).toHaveBeenCalledWith(12);
+    });
+  });
+
   it('waits for stock-bar load before launching watchlist fallback lookups', async () => {
     let resolveStockBar!: (response: Awaited<ReturnType<typeof historyApi.getStockBarList>>) => void;
     const stockBarPromise = new Promise<Awaited<ReturnType<typeof historyApi.getStockBarList>>>((resolve) => {

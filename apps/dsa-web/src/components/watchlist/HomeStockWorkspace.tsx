@@ -122,6 +122,7 @@ const WatchlistRowItem: React.FC<{
   const item = row.latestItem;
   const stockName = item?.stockName || row.code;
   const canOpenDetail = typeof item?.id === 'number';
+  const isLatestDetailLoading = !canOpenDetail && Boolean(row.isTodayStatusLoading);
 
   const handleOpenDetail = () => {
     onOpenDetail(row);
@@ -134,7 +135,9 @@ const WatchlistRowItem: React.FC<{
       aria-pressed={selected}
       aria-label={canOpenDetail
         ? t('watchlist.openLatestDetailAria', { code: row.code })
-        : t('watchlist.noLatestDetailAria', { code: row.code })}
+        : isLatestDetailLoading
+          ? t('watchlist.latestDetailLoadingAria', { code: row.code })
+          : t('watchlist.noLatestDetailAria', { code: row.code })}
       className={`home-subpanel grid min-w-0 cursor-pointer gap-2 px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan/30 ${
         selected
           ? 'border-primary/35 bg-primary/10'
@@ -195,8 +198,8 @@ const WatchlistRowItem: React.FC<{
         </div>
       </div>
       <div className="flex min-w-0 items-center justify-between gap-2 text-[11px]">
-        <span className={`truncate ${canOpenDetail ? 'text-primary' : 'text-warning'}`}>
-          {canOpenDetail ? t('common.details') : t('watchlist.noLatestDetailCta')}
+        <span className={`truncate ${canOpenDetail ? 'text-primary' : isLatestDetailLoading ? 'text-muted-text' : 'text-warning'}`}>
+          {canOpenDetail ? t('common.details') : isLatestDetailLoading ? t('watchlist.latestDetailLoadingCta') : t('watchlist.noLatestDetailCta')}
         </span>
       </div>
       {row.activeTask ? (
@@ -295,6 +298,10 @@ export const HomeStockWorkspace: React.FC<HomeStockWorkspaceProps> = ({
     if (typeof recordId === 'number') {
       setWorkspaceNotice(null);
       onHistoryItemClick(recordId);
+      return;
+    }
+    if (row.isTodayStatusLoading) {
+      setWorkspaceNotice(t('watchlist.latestDetailLoading'));
       return;
     }
     setWorkspaceNotice(t('watchlist.noLatestDetail'));

@@ -93,6 +93,23 @@ describe('HomeStockWorkspace', () => {
     expect(onHistoryItemClick).not.toHaveBeenCalled();
   });
 
+  it('shows loading feedback instead of no-detail copy while latest detail lookup is still pending', async () => {
+    const { onHistoryItemClick } = renderWorkspace({
+      watchlistRows: [{
+        code: 'AAPL',
+        analyzedToday: false,
+        isTodayStatusLoading: true,
+      }],
+    });
+
+    const row = screen.getByRole('button', { name: '正在查找 AAPL 的最新分析详情' });
+    fireEvent.click(row);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('正在查找最新分析详情，请稍候。');
+    expect(onHistoryItemClick).not.toHaveBeenCalled();
+    expect(screen.getByText('正在查找详情...')).toBeInTheDocument();
+  });
+
   it('does not bubble delete clicks into detail opening', async () => {
     const { onHistoryItemClick, onRemoveFromWatchlist } = renderWorkspace({
       watchlistRows: [{
