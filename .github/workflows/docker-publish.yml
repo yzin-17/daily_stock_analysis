@@ -42,14 +42,14 @@ jobs:
           set -euo pipefail
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             RELEASE_TAG="${{ inputs.release_tag }}"
-            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-thesisledger\.[0-9]+)?$ ]]
             git fetch --tags --force
             git rev-parse "$RELEASE_TAG" >/dev/null
             git checkout "$RELEASE_TAG"
             echo "Using manual release tag: $RELEASE_TAG"
           else
             RELEASE_TAG="${GITHUB_REF_NAME}"
-            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-thesisledger\.[0-9]+)?$ ]]
             echo "Using event ref: $RELEASE_TAG"
           fi
           echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
@@ -89,7 +89,7 @@ jobs:
         run: |
           test -f README.md
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            [[ "${{ inputs.release_tag }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            [[ "${{ inputs.release_tag }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-thesisledger\.[0-9]+)?$ ]]
             VERSION="${{ inputs.release_tag }}"
           elif [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
             VERSION="${GITHUB_REF_NAME}"
@@ -154,6 +154,9 @@ jobs:
           docker build \
             --build-arg DSA_WEB_VERSION="${{ steps.release_ref.outputs.version }}" \
             --build-arg DSA_WEB_REVISION="${{ steps.release_ref.outputs.revision }}" \
+            --build-arg DSA_VERSION="${{ steps.release_ref.outputs.version }}" \
+            --build-arg DSA_FORK_COMMIT="${{ steps.release_ref.outputs.revision }}" \
+            --build-arg DSA_UPSTREAM_COMMIT="${{ vars.DSA_UPSTREAM_COMMIT || 'unknown' }}" \
             -t stock-analysis:release \
             -f docker/Dockerfile .
           docker run --rm stock-analysis:release python -c "
@@ -180,6 +183,9 @@ jobs:
           build-args: |
             DSA_WEB_VERSION=${{ steps.release_ref.outputs.version }}
             DSA_WEB_REVISION=${{ steps.release_ref.outputs.revision }}
+            DSA_VERSION=${{ steps.release_ref.outputs.version }}
+            DSA_FORK_COMMIT=${{ steps.release_ref.outputs.revision }}
+            DSA_UPSTREAM_COMMIT=${{ vars.DSA_UPSTREAM_COMMIT || 'unknown' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

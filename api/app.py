@@ -164,6 +164,7 @@ def _warn_if_open_cors_without_auth() -> None:
     )
 
 from api.v1 import api_v1_router
+from api.thesis_ledger import router as thesis_ledger_router
 from api.middlewares.auth import add_auth_middleware
 from api.middlewares.error_handler import add_error_handlers
 from api.v1.schemas.common import HealthResponse
@@ -376,6 +377,7 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
     # ============================================================
     
     app.include_router(api_v1_router, prefix="/api/v1")
+    app.include_router(thesis_ledger_router, prefix="/api/v1")
     add_error_handlers(app)
     
     # ============================================================

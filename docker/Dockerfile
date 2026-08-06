@@ -20,6 +20,15 @@ RUN DSA_WEB_VERSION="${DSA_WEB_VERSION}" DSA_WEB_REVISION="${DSA_WEB_REVISION}" 
 # Pin to bookworm: wkhtmltopdf was removed from Debian testing (2025)
 FROM python:3.11-slim-bookworm
 
+ARG DSA_VERSION=unconfigured
+ARG DSA_UPSTREAM_COMMIT=unknown
+ARG DSA_FORK_COMMIT=unknown
+LABEL org.opencontainers.image.title="daily-stock-analysis" \
+      org.opencontainers.image.version="${DSA_VERSION}" \
+      org.opencontainers.image.revision="${DSA_FORK_COMMIT}" \
+      org.opencontainers.image.base.name="${DSA_UPSTREAM_COMMIT}" \
+      org.openai.thesis-ledger.contract="1"
+
 # 设置工作目录
 WORKDIR /app
 
