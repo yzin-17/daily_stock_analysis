@@ -6,6 +6,7 @@ DSA Fork 通过独立的兼容层向同级 ThesisLedger 主仓提供行情和量
 
 ```text
 GET /api/v1/thesis-ledger/capabilities
+GET /api/v1/thesis-ledger/market/fund-nav?symbol=000001.OF
 GET /api/v1/thesis-ledger/market/quote?symbol=600519.SH
 GET /api/v1/thesis-ledger/market/bars?symbol=600519.SH&timeframe=1d
 GET /api/v1/thesis-ledger/market/indicators/{MA|MACD|RSI}?symbol=600519.SH&timeframe=1d
@@ -20,6 +21,7 @@ Authorization: Bearer ${THESIS_LEDGER_DSA_TOKEN}
 
 ## 能力边界
 
+- Fund NAV V1 接受 .OF 场外基金代码，返回单位净值、净值日期、provider 和 delayed/stale/unavailable freshness；该净值只作为估值输入，不作为截图审核结果。
 - Bars V1 只支持 `1d`；`1m` 返回 `unsupported_capability`。
 - 指标支持 MA、MACD、RSI；ATR 返回 `unsupported_capability`。
 - Chip 至少返回摘要字段；没有可靠完整分布时省略 `buckets` 和 `mainPeak`，不使用估算值填充。

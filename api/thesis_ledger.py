@@ -238,6 +238,74 @@ def _fixture_chip(symbol: str) -> dict[str, Any]:
     }
 
 
+
+def _canonical_fund_symbol(symbol: str) -> str:
+    value = symbol.strip().upper()
+    if value.endswith(".OF"):
+        value = value[:-3]
+    if not value.isdigit() or len(value) != 6:
+        _error("invalid_symbol", f"非法场外基金代码: {symbol}", 422)
+    return f"{value}.OF"
+
+
+def _fixture_fund_nav(symbol: str) -> dict[str, Any]:
+    canonical = _canonical_fund_symbol(symbol)
+    navs = {
+        "000001.OF": 1.2345,
+        "110022.OF": 3.4567,
+    }
+    try:
+        unit_nav = navs[canonical]
+    except KeyError:
+        _error("fixture_not_found", f"没有 {symbol} 的确定性基金净值 fixture", 404)
+    nav_date = datetime(2025, 1, 9, 7, 0, tzinfo=timezone.utc).isoformat()
+    return {
+        "version": 1,
+        "symbol": canonical,
+        "unitNav": unit_nav,
+        "navDate": nav_date,
+        "provider": PROVIDER_ID,
+        "fetchedAt": _fixture_timestamp(),
+        "freshness": "delayed",
+    }
+
+
+def _real_fund_nav(symbol: str) -> dict[str, Any]:
+    canonical = _canonical_fund_symbol(symbol)
+    code = canonical[:-3]
+    frame = None
+    provider = "akshare"
+    try:
+        import akshare as ak
+
+        frame = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
+    except Exception as exc:  # noqa: BLE001 - optional provider boundary.
+        _error("upstream_unavailable", f"基金单位净值获取失败: {exc}", 503)
+    if frame is None or getattr(frame, "empty", True):
+        _error("upstream_unavailable", f"没有 {canonical} 的单位净值数据", 503)
+
+    date_columns = ("净值日期", "日期", "date", "nav_date")
+    nav_columns = ("单位净值", "单位净值(元)", "unit_nav", "nav")
+    date_column = next((column for column in date_columns if column in frame.columns), None)
+    nav_column = next((column for column in nav_columns if column in frame.columns), None)
+    if date_column is None or nav_column is None:
+        _error("upstream_invalid_response", "基金净值响应缺少日期或单位净值字段", 502)
+    latest = frame.sort_values(date_column).iloc[-1]
+    nav_date = _iso_timestamp(latest[date_column])
+    unit_nav = _number(latest[nav_column], "unitNav", allow_zero=False)
+    parsed_date = datetime.fromisoformat(nav_date.replace("Z", "+00:00"))
+    age_days = max(0, (datetime.now(timezone.utc).date() - parsed_date.date()).days)
+    freshness = "stale" if age_days > 7 else "delayed"
+    return {
+        "version": 1,
+        "symbol": canonical,
+        "unitNav": unit_nav,
+        "navDate": nav_date,
+        "provider": provider,
+        "fetchedAt": _now_iso(),
+        "freshness": freshness,
+    }
+
 def _daily_data(symbol: str, days: int = 90) -> tuple[Any, str]:
     try:
         return _manager().get_daily_data(symbol, days=days)
@@ -409,12 +477,19 @@ def capabilities() -> dict[str, Any]:
         "fixtureMode": _fixture_mode(),
         "capabilities": {
             "quote": True,
+            "fund-nav": {"assetSuffix": ".OF", "freshness": ["delayed", "stale", "unavailable"]},
             "bars": {"timeframes": ["1d"]},
             "indicators": {"names": ["MA", "MACD", "RSI"], "timeframes": ["1d"]},
             "chip": {"summary": True, "distribution": False},
         },
         "unsupported": ["bars:1m", "indicator:ATR", "chip:distribution"],
     }
+
+
+
+@router.get("/market/fund-nav", dependencies=[Depends(require_contract_token)])
+def fund_nav(symbol: str = Query(..., min_length=1)) -> dict[str, Any]:
+    return _fixture_fund_nav(symbol) if _fixture_mode() else _real_fund_nav(symbol)
 
 
 @router.get("/market/quote", dependencies=[Depends(require_contract_token)])

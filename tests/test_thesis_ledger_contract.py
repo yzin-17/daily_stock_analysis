@@ -50,3 +50,17 @@ def test_contract_returns_structured_unsupported_error(monkeypatch):
     )
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "unsupported_capability"
+
+
+def test_contract_fixture_exposes_fund_nav(monkeypatch):
+    client = _client(monkeypatch)
+    response = client.get(
+        "/api/v1/thesis-ledger/market/fund-nav?symbol=000001.OF",
+        headers={"authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["version"] == 1
+    assert payload["symbol"] == "000001.OF"
+    assert payload["unitNav"] == 1.2345
+    assert payload["freshness"] == "delayed"
