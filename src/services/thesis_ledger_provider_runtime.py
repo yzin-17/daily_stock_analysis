@@ -328,8 +328,8 @@ class ThesisLedgerProviderRuntime:
         normalized = symbol.strip().upper()
 
         def operation(_provider_id: str, adapter: Any) -> Any:
-            frame, source = adapter.get_daily_data(normalized, days=days)
-            return self._validate_bars(frame), source
+            frame, _source = adapter.get_daily_data(normalized, days=days)
+            return self._validate_bars(frame)
 
         return self._execute("DAILY_BAR", instrument_type_for_symbol(normalized), operation)
 

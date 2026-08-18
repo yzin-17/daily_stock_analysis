@@ -296,20 +296,6 @@ def _fixture_fund_nav(symbol: str) -> dict[str, Any]:
         "000001.OF": 1.2345,
         "110022.OF": 3.4567,
     }
-
-
-def _fixture_fund_nav_history(symbol: str, limit: int = 90) -> list[dict[str, Any]]:
-    latest = _fixture_fund_nav(symbol)
-    latest_date = datetime.fromisoformat(str(latest["navDate"]).replace("Z", "+00:00"))
-    count = min(limit, 90)
-    return [
-        {
-            **latest,
-            "unitNav": round(float(latest["unitNav"]) * (0.98 + index * 0.00025), 4),
-            "navDate": (latest_date - timedelta(days=count - index - 1)).isoformat(),
-        }
-        for index in range(count)
-    ]
     try:
         unit_nav = navs[canonical]
     except KeyError:
@@ -324,6 +310,20 @@ def _fixture_fund_nav_history(symbol: str, limit: int = 90) -> list[dict[str, An
         "fetchedAt": _fixture_timestamp(),
         "freshness": "delayed",
     }
+
+
+def _fixture_fund_nav_history(symbol: str, limit: int = 90) -> list[dict[str, Any]]:
+    latest = _fixture_fund_nav(symbol)
+    latest_date = datetime.fromisoformat(str(latest["navDate"]).replace("Z", "+00:00"))
+    count = min(limit, 3650)
+    return [
+        {
+            **latest,
+            "unitNav": round(float(latest["unitNav"]) * (0.98 + index * 0.00025), 4),
+            "navDate": (latest_date - timedelta(days=count - index - 1)).isoformat(),
+        }
+        for index in range(count)
+    ]
 
 
 def _real_fund_nav(symbol: str) -> dict[str, Any]:
