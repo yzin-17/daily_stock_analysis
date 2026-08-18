@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- [新功能] ThesisLedger Contract V1 新增 /market/fund-nav，以显式 freshness 返回场外基金单位净值，并提供 fixture 与回归测试。
+- [新功能] ThesisLedger Contract V1 新增 `/market/fund-nav` 与 `/market/fund-nav/history`，以显式 freshness 返回场外基金最新及历史单位净值，并提供 fixture 与跨仓契约检查。
+- [新功能] ThesisLedger Control Contract V1 新增独立 Control Token、Provider registry/config/test、按 capability × instrumentType 的 Policy Apply、Catalog snapshot/delta/ACK 与 DSA SQLite 持久化；Provider runtime 增加严格响应校验、按作用域 retry/circuit/fallback，正式 Catalog 使用 AKShare/efinance 目录而非生产 fixture。
 
 - [新功能] Agent Chat 按会话持久化 Skill 选择，支持刷新和会话切换恢复，并区分省略 `skills`、显式空列表与非空选择；无持久化状态的历史会话继续使用运行时默认且不会被静默转为显式选择，复用分析 `context` 中残留的 legacy `skills` / `strategies` 也不会覆盖顶层三态或会话状态，非空但全部无效的 Skill 请求不会被当成显式空列表并清空既有选择
 - [改进] 后端 CI 在不跳过离线测试的前提下按完整测试文件分成三个独立 runner 并行执行，由单一 `backend-gate` 汇总门禁结果；实测文件耗时和首分片静态检查成本共同参与负载平衡，新测试文件自动纳入，现有 pip 安装和测试参数保持不变，避免 xdist 进程内并发的全局状态竞态。
