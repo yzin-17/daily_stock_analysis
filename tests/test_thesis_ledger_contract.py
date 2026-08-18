@@ -38,6 +38,7 @@ def test_contract_fixture_exposes_capabilities_and_daily_quote(monkeypatch):
     assert capabilities_response.status_code == 200
     assert capabilities_response.json()["contractVersion"] == 1
     assert capabilities_response.json()["capabilities"]["bars"]["timeframes"] == ["1d"]
+    assert capabilities_response.json()["capabilities"]["chip"]["capability"] == "CHIP_SUMMARY"
     assert quote_response.status_code == 200
     assert quote_response.json()["symbol"] == "600519.SH"
     assert quote_response.json()["version"] == 1

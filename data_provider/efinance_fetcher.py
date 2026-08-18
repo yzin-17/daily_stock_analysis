@@ -51,7 +51,7 @@ except (ValueError, TypeError):
     )
     _EF_CALL_TIMEOUT = 30
 
-from src.patches.eastmoney_patch import eastmoney_patch
+from src.patches.eastmoney_patch import configure_eastmoney_cookie, eastmoney_patch
 from src.config import get_config
 from .base import (
     BaseFetcher,
@@ -294,6 +294,10 @@ class EfinanceFetcher(BaseFetcher):
         self.sleep_min = sleep_min
         self.sleep_max = sleep_max
         self._last_request_time: Optional[float] = None
+        # efinance keeps Eastmoney headers in a shared module-level mapping.
+        # Apply the optional write-only Cookie before any provider call, even
+        # when the NID/User-Agent patch is disabled.
+        configure_eastmoney_cookie()
         # 东财补丁开启才执行打补丁操作
         if get_config().enable_eastmoney_patch:
             eastmoney_patch()
@@ -569,6 +573,50 @@ class EfinanceFetcher(BaseFetcher):
 
             logger.error(failure_message)
             raise DataFetchError(f"efinance 获取 ETF 数据失败: {failure_message}") from e
+
+    @staticmethod
+    def _normalize_fund_nav_history_frame(frame: Any) -> Any:
+        """将 efinance 返回的基金净值历史统一为日期升序。"""
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            return frame
+
+        date_column = next(
+            (
+                column
+                for column in ("净值日期", "日期", "date", "nav_date")
+                if column in frame.columns
+            ),
+            None,
+        )
+        if date_column is None:
+            return frame
+
+        parsed_dates = pd.to_datetime(frame[date_column], errors="coerce")
+        if parsed_dates.isna().any():
+            return frame
+
+        return (
+            frame.assign(_thesis_ledger_sort_date=parsed_dates)
+            .sort_values("_thesis_ledger_sort_date", kind="stable")
+            .drop(columns=["_thesis_ledger_sort_date"])
+            .reset_index(drop=True)
+        )
+
+    def get_fund_nav_history(self, fund_code: str) -> Any:
+        """获取并归一化场外基金单位净值历史，供 ThesisLedger runtime 统一调用。"""
+        import efinance as ef
+
+        fund = getattr(ef, "fund", None)
+        method = getattr(fund, "get_quote_history", None)
+        if method is None:
+            raise DataFetchError("efinance 不支持基金净值")
+        try:
+            frame = _ef_call_with_timeout(method, fund_code, timeout=_EF_CALL_TIMEOUT)
+        except FuturesTimeoutError as exc:
+            raise DataFetchError("efinance 获取基金净值历史超时") from exc
+        except Exception as exc:
+            raise DataFetchError(f"efinance 获取基金净值历史失败: {exc}") from exc
+        return self._normalize_fund_nav_history_frame(frame)
     
     def _normalize_data(self, df: pd.DataFrame, stock_code: str) -> pd.DataFrame:
         """

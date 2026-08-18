@@ -430,6 +430,7 @@ daily_stock_analysis/
 | `ENABLE_REALTIME_TECHNICAL_INDICATORS` | 盘中实时技术面：启用时用实时价计算 MA5/MA10/MA20 与多头排列（Issue #234）；关闭则用昨日收盘 | `true` | 可选 |
 | `ENABLE_CHIP_DISTRIBUTION` | 启用筹码分布分析（该接口不稳定，云端部署建议关闭）。GitHub Actions 用户需在 Repository Variables 中设置 `ENABLE_CHIP_DISTRIBUTION=true` 方可启用；workflow 默认关闭。 | `true` | 可选 |
 | `ENABLE_EASTMONEY_PATCH` | 东财接口补丁：东财接口频繁失败（如 RemoteDisconnected、连接被关闭）时建议设为 `true`，注入 NID 令牌与随机 User-Agent 以降低被限流概率 | `false` | 可选 |
+| `EFINANCE_EASTMONEY_COOKIE` | 可选的东方财富登录 Cookie（通常包含 `ct=...`），用于 efinance `DAILY_BAR` 被要求登录或限流时；仅 write-only 注入，请勿提交或打印 | - | 可选 |
 | `REALTIME_SOURCE_PRIORITY` | 实时行情源优先级，逗号分隔，例如 `tencent,akshare_sina,efinance,akshare_em`；需要显式加入 `tickflow` 才会使用 TickFlow 实时行情。 | 见 `.env.example` | 可选 |
 | `ENABLE_FUNDAMENTAL_PIPELINE` | 基本面聚合总开关；关闭时仅返回 `not_supported` 块，不改变原分析链路 | `true` | 可选 |
 | `FUNDAMENTAL_STAGE_TIMEOUT_SECONDS` | 基本面阶段总时延预算（秒） | `8.0` | 可选 |
@@ -1316,7 +1317,8 @@ PUSHOVER_API_TOKEN=your_api_token
 
 1. 在 `.env` 中设置 `ENABLE_EASTMONEY_PATCH=true`
 2. 将 `MAX_WORKERS=1` 降低并发
-3. 若已配置 Tushare，可优先使用 Tushare 数据源
+3. 如果东方财富接口要求登录态，可通过 `EFINANCE_EASTMONEY_COOKIE` 注入本机保存的 `ct=...` Cookie；Cookie 会过期，不要提交到仓库或写入日志
+4. 若已配置 Tushare，可优先使用 Tushare 数据源
 
 ---
 

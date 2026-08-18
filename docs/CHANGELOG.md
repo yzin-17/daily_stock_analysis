@@ -9,12 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] Catalog 同步触发改为可观察的异步 Job：DSA 先返回 Job 状态并由 worker 执行目录抓取，ThesisLedger 与 Desktop 不再把未完成任务误报为成功。
+- [改进] Catalog Provider 调用改用可终止的进程级隔离，超时后回收 hanging worker，并限制重试、退避和并发槽，保留稳定的 Job 错误分类。
+- [修复] 将 DSA Compose/`.env.example` 的 `THESIS_LEDGER_FIXTURE_MODE` 默认值改为 `false`，fixture 仅由 CI/确定性集成测试显式开启。
+- [改进] Provider 凭证轮换支持 current/previous Secret Key 过渡：全部密文验证通过后原子重加密，缺少旧 key 时保留原密文并延后轮换。
+- [修复] efinance `FUND_NAV_HISTORY` 在 Provider 边界统一为日期升序，并使用有界调用，避免倒序数据被错误返回或上游请求长期占用运行线程。
+- [改进] efinance 支持通过 write-only `EFINANCE_EASTMONEY_COOKIE` 注入东方财富登录 Cookie，并与 NID patch 合并，便于处理 `DAILY_BAR` 上游登录态/限流要求。
 - [新功能] ThesisLedger Contract V1 新增 `/market/fund-nav` 与 `/market/fund-nav/history`，以显式 freshness 返回场外基金最新及历史单位净值，并提供 fixture 与跨仓契约检查。
 - [新功能] ThesisLedger Control Contract V1 新增独立 Control Token、Provider registry/config/test、按 capability × instrumentType 的 Policy Apply、Catalog snapshot/delta/ACK 与 DSA SQLite 持久化；Provider runtime 增加严格响应校验、按作用域 retry/circuit/fallback，正式 Catalog 使用 AKShare/efinance 目录而非生产 fixture。
 - [修复] 修正 ThesisLedger Contract 的 Fund NAV fixture history 函数边界与 Bars runtime frame 传递，保持历史 limit 上限和实际 route Provider provenance 一致。
 - [修复] 保持 ThesisLedger Contract 错误的结构化 detail，避免全局异常处理器将稳定错误码转换为字符串。
 - [修复] 在 ThesisLedger Provider 边界将 `600519.SH` 等 Contract 标的归一化为 AKShare/efinance 可接受的裸代码，接入 AKShare 单标的 Sina 与 efinance snapshot 实时通道，并兼容适配器直接返回的日线 `DataFrame`。
 - [修复] real Bars Contract 在日期过滤和排序后按请求的 `limit` 截断，保持 fixture 与真实 Provider 返回数量语义一致。
+- [改进] Indicator 改由 ThesisLedger data gateway 的 `DAILY_BAR` 输入派生，并将 `CHIP_SUMMARY` 纳入显式 Effective Policy 路由，保留真实 Provider 与 fallback provenance。
 
 - [新功能] Agent Chat 按会话持久化 Skill 选择，支持刷新和会话切换恢复，并区分省略 `skills`、显式空列表与非空选择；无持久化状态的历史会话继续使用运行时默认且不会被静默转为显式选择，复用分析 `context` 中残留的 legacy `skills` / `strategies` 也不会覆盖顶层三态或会话状态，非空但全部无效的 Skill 请求不会被当成显式空列表并清空既有选择
 - [改进] 后端 CI 在不跳过离线测试的前提下按完整测试文件分成三个独立 runner 并行执行，由单一 `backend-gate` 汇总门禁结果；实测文件耗时和首分片静态检查成本共同参与负载平衡，新测试文件自动纳入，现有 pip 安装和测试参数保持不变，避免 xdist 进程内并发的全局状态竞态。

@@ -13,9 +13,10 @@ import math
 import os
 import threading
 import time
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from src.services.thesis_ledger_control import ThesisLedgerControlStore
 
@@ -23,10 +24,133 @@ logger = logging.getLogger(__name__)
 
 
 class ProviderCallError(Exception):
-    def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
+    """Stable, provider-safe error raised inside the ThesisLedger namespace."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        retryable: bool = False,
+        request_id: str | None = None,
+        diagnostic_id: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.retryable = retryable
+        self.request_id = request_id
+        self.diagnostic_id = diagnostic_id or request_id
+
+    def detail(self, *, contract_version: int = 1) -> dict[str, Any]:
+        """Return a stable error projection without exposing upstream details."""
+        request_id = self.request_id or str(uuid.uuid4())
+        return {
+            "contractVersion": contract_version,
+            "code": self.code,
+            "message": str(self),
+            "requestId": request_id,
+            "diagnosticId": self.diagnostic_id or request_id,
+        }
+
+
+@dataclass(frozen=True)
+class ThesisLedgerDataRequest:
+    """Standard input shared by every ThesisLedger consumer capability.
+
+    The request intentionally carries optional range parameters even when a
+    current runtime operation does not need all of them.  This gives later
+    capability migrations one stable boundary without changing Data Contract
+    endpoint behavior in the compatibility expansion.
+    """
+
+    capability: str
+    symbol: str
+    timeframe: str | None = None
+    start: str | None = None
+    end: str | None = None
+    limit: int | None = None
+    instrument_type: str | None = None
+    parameters: Mapping[str, Any] = field(default_factory=dict)
+    request_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    def __post_init__(self) -> None:
+        capability = str(self.capability or "").strip().upper()
+        symbol = str(self.symbol or "").strip().upper()
+        if not capability:
+            raise ProviderCallError("invalid_request", "缺少 Capability")
+        if not symbol:
+            raise ProviderCallError("invalid_request", "缺少标的 symbol")
+        if self.limit is not None and (
+            not isinstance(self.limit, int) or isinstance(self.limit, bool) or self.limit <= 0
+        ):
+            raise ProviderCallError("invalid_request", "limit 必须是正整数")
+        if not isinstance(self.parameters, Mapping):
+            raise ProviderCallError("invalid_request", "parameters 必须是对象")
+        object.__setattr__(self, "capability", capability)
+        object.__setattr__(self, "symbol", symbol)
+        object.__setattr__(self, "timeframe", self.timeframe.strip().lower() if self.timeframe else None)
+        object.__setattr__(self, "instrument_type", self.instrument_type.upper() if self.instrument_type else None)
+        object.__setattr__(self, "parameters", dict(self.parameters))
+        object.__setattr__(
+            self,
+            "request_id",
+            str(self.request_id or uuid.uuid4()).strip() or str(uuid.uuid4()),
+        )
+
+
+@dataclass(frozen=True)
+class ProviderExecution:
+    """Normalized runtime result plus policy and provenance metadata."""
+
+    value: Any
+    capability: str
+    instrument_type: str
+    provider: str
+    fallback_used: bool
+    effective_policy: Mapping[str, Any] | None
+    route: tuple[str, ...]
+    attempted_providers: tuple[str, ...]
+
+    @property
+    def effective_revision(self) -> int | None:
+        """Return the DSA Effective Policy revision used for this request."""
+        if not self.effective_policy:
+            return None
+        revision = self.effective_policy.get("revision")
+        return int(revision) if isinstance(revision, int) else None
+
+    @property
+    def source_desired_revision(self) -> int | None:
+        """Return the Desired Policy revision projected into Effective Policy."""
+        if not self.effective_policy:
+            return None
+        revision = self.effective_policy.get("sourceDesiredRevision")
+        return int(revision) if isinstance(revision, int) else None
+
+
+class ThesisLedgerGatewayError(ProviderCallError):
+    """Stable error carrying the request identity at the gateway boundary."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        request: ThesisLedgerDataRequest,
+        *,
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(
+            code,
+            message,
+            retryable=retryable,
+            request_id=request.request_id,
+            diagnostic_id=request.request_id,
+        )
+        self.request = request
+
+    def detail(self, *, contract_version: int = 1) -> dict[str, Any]:
+        """Return a request-correlated stable Contract error projection."""
+        return super().detail(contract_version=contract_version)
 
 
 def validate_fund_nav_history_rows(rows: list[tuple[Any, Any]]) -> None:
@@ -58,7 +182,10 @@ def validate_fund_nav_history_rows(rows: list[tuple[Any, Any]]) -> None:
 
 
 class NoEligibleProviderError(ProviderCallError):
+    """Effective Policy 当前没有可执行的 Provider 路由。"""
+
     def __init__(self, capability: str, instrument_type: str) -> None:
+        """Build a stable error for an empty eligible-provider route."""
         super().__init__(
             "NO_ELIGIBLE_PROVIDER",
             f"没有可执行的 {capability}/{instrument_type} Provider",
@@ -66,6 +193,7 @@ class NoEligibleProviderError(ProviderCallError):
 
 
 def instrument_type_for_symbol(symbol: str) -> str:
+    """Infer the Contract instrument type from a canonical or bare symbol."""
     normalized = symbol.strip().upper()
     if normalized.endswith(".OF"):
         return "MUTUAL_FUND"
@@ -102,11 +230,15 @@ class _CircuitState:
 
 
 class _ScopedCircuit:
+    """Maintain circuit state independently for each consumer route key."""
+
     def __init__(self) -> None:
+        """Initialize the in-memory circuit state table."""
         self._states: dict[str, _CircuitState] = {}
         self._lock = threading.RLock()
 
     def allow(self, key: str, now: float) -> bool:
+        """Return whether the route may execute at the supplied monotonic time."""
         with self._lock:
             state = self._states.setdefault(key, _CircuitState())
             if state.open_until <= now:
@@ -118,10 +250,12 @@ class _ScopedCircuit:
             return False
 
     def success(self, key: str) -> None:
+        """Reset a route after a successful Provider call."""
         with self._lock:
             self._states[key] = _CircuitState()
 
     def hydrate_open(self, key: str, now: float, remaining_seconds: float) -> None:
+        """Restore an externally persisted open circuit with remaining TTL."""
         with self._lock:
             state = self._states.setdefault(key, _CircuitState())
             state.failures = max(state.failures, 3)
@@ -129,6 +263,7 @@ class _ScopedCircuit:
             state.half_open = False
 
     def failure(self, key: str, now: float) -> tuple[str, int]:
+        """Record a failure and return the new circuit state and count."""
         with self._lock:
             state = self._states.setdefault(key, _CircuitState())
             state.failures += 1
@@ -139,6 +274,7 @@ class _ScopedCircuit:
             return "closed", state.failures
 
     def state(self, key: str, now: float) -> str:
+        """Return the route's closed, open, or half-open state."""
         with self._lock:
             state = self._states.get(key)
             if state is None or state.open_until <= now:
@@ -298,20 +434,72 @@ class ThesisLedgerProviderRuntime:
         )
         return frame
 
-    def _execute(
+    @classmethod
+    def _validate_chip_summary(cls, value: Any) -> Any:
+        """Validate one complete chip summary before exposing it to the facade."""
+        if value is None:
+            raise ProviderCallError("not_covered", "Provider 未返回筹码摘要")
+        cls._finite_number(getattr(value, "avg_cost", None), "averageCost", positive=True)
+        profit_ratio = cls._finite_number(getattr(value, "profit_ratio", None), "profitRatio")
+        concentration_90 = cls._finite_number(
+            getattr(value, "concentration_90", None),
+            "concentration",
+        )
+        concentration_70 = cls._finite_number(
+            getattr(value, "concentration_70", None),
+            "concentration70",
+        )
+        if profit_ratio > 100 or concentration_90 > 100 or concentration_70 > 100:
+            raise ProviderCallError("invalid_response", "Provider 筹码比例字段非法")
+        for field_name in (
+            "cost_70_low",
+            "cost_70_high",
+            "cost_90_low",
+            "cost_90_high",
+        ):
+            cls._finite_number(
+                getattr(value, field_name, None),
+                field_name,
+                positive=True,
+            )
+        return value
+
+    @staticmethod
+    def _providers_from_effective(
+        effective_policy: Mapping[str, Any] | None,
+        capability: str,
+        instrument_type: str,
+    ) -> list[str]:
+        """Read one route from the same Effective Policy snapshot as metadata."""
+        if not effective_policy or not effective_policy.get("enabled"):
+            return []
+        status = (
+            effective_policy.get("routeStatus", {})
+            .get(capability.upper(), {})
+            .get(instrument_type.upper(), {})
+        )
+        return [
+            str(entry["providerId"])
+            for entry in status.get("providers", [])
+            if entry.get("eligible")
+        ]
+
+    def _execute_with_metadata(
         self,
         capability: str,
         instrument_type: str,
         operation: Callable[[str, Any], Any],
-    ) -> tuple[Any, str, bool]:
-        providers = self.store.route(
+    ) -> ProviderExecution:
+        effective_policy = self.store.effective_policy()
+        providers = self._providers_from_effective(
+            effective_policy,
             capability,
             instrument_type,
-            include_circuit_open=True,
         )
         if not providers:
             raise NoEligibleProviderError(capability, instrument_type)
         fallback_used = False
+        attempted_providers: list[str] = []
         last_error: ProviderCallError | None = None
         for index, provider_id in enumerate(providers):
             if index > 0:
@@ -336,6 +524,8 @@ class ThesisLedgerProviderRuntime:
             for attempt in range(attempts):
                 started = self.clock()
                 try:
+                    if provider_id not in attempted_providers:
+                        attempted_providers.append(provider_id)
                     result = operation(provider_id, self._adapter(provider_id))
                     if result is None:
                         raise ProviderCallError("not_covered", "Provider 未覆盖该标的")
@@ -350,7 +540,16 @@ class ThesisLedgerProviderRuntime:
                         consecutive_failures=0,
                         latency_ms=elapsed_ms,
                     )
-                    return result, provider_id, fallback_used
+                    return ProviderExecution(
+                        value=result,
+                        capability=capability,
+                        instrument_type=instrument_type,
+                        provider=provider_id,
+                        fallback_used=fallback_used,
+                        effective_policy=effective_policy,
+                        route=tuple(providers),
+                        attempted_providers=tuple(attempted_providers),
+                    )
                 except ProviderCallError as exc:
                     last_error = exc
                 except (TimeoutError, ConnectionError, OSError) as exc:
@@ -392,68 +591,177 @@ class ThesisLedgerProviderRuntime:
                 )
         if last_error is None:
             raise ProviderCallError("upstream_unavailable", "Provider 暂时不可用")
+        if last_error.code == "circuit_open" and not attempted_providers:
+            raise NoEligibleProviderError(capability, instrument_type)
         if last_error.code in {"not_covered", "unsupported", "circuit_open"}:
             raise ProviderCallError("upstream_unavailable", "没有 Provider 返回可用数据")
         raise last_error
 
+    def _execute(
+        self,
+        capability: str,
+        instrument_type: str,
+        operation: Callable[[str, Any], Any],
+    ) -> tuple[Any, str, bool]:
+        """Keep the tuple return shape used by the existing Data Contract facade."""
+        execution = self._execute_with_metadata(capability, instrument_type, operation)
+        return execution.value, execution.provider, execution.fallback_used
+
     def quote(self, symbol: str) -> tuple[Any, str, bool]:
-        normalized = symbol.strip().upper()
-        provider_symbol = provider_symbol_for_contract(normalized)
-
-        def operation(provider_id: str, adapter: Any) -> Any:
-            value = self._realtime_quote(adapter, provider_id, provider_symbol)
-            if value is None:
-                raise ProviderCallError("not_covered", "Provider 未覆盖该标的")
-            return self._validate_quote(value)
-
-        return self._execute("REALTIME_QUOTE", instrument_type_for_symbol(normalized), operation)
+        """Keep the legacy tuple API while delegating execution to the gateway boundary."""
+        execution = self.execute_request(ThesisLedgerDataRequest("REALTIME_QUOTE", symbol))
+        return execution.value, execution.provider, execution.fallback_used
 
     def bars(self, symbol: str, days: int = 90) -> tuple[Any, str, bool]:
-        normalized = symbol.strip().upper()
-        provider_symbol = provider_symbol_for_contract(normalized)
-
-        def operation(_provider_id: str, adapter: Any) -> Any:
-            frame = self._daily_frame(adapter.get_daily_data(provider_symbol, days=days))
-            return self._validate_bars(frame)
-
-        return self._execute("DAILY_BAR", instrument_type_for_symbol(normalized), operation)
+        """Keep the legacy tuple API while delegating execution to the gateway boundary."""
+        execution = self.execute_request(
+            ThesisLedgerDataRequest("DAILY_BAR", symbol, limit=days)
+        )
+        return execution.value, execution.provider, execution.fallback_used
 
     def fund_nav(self, symbol: str) -> tuple[Any, str, bool]:
-        normalized = symbol.strip().upper()
-        return self._execute(
-            "FUND_NAV",
-            "MUTUAL_FUND",
-            lambda provider_id, adapter: self._validate_fund_nav(
-                self._fund_nav_from_provider(provider_id, normalized, adapter)
-            ),
-        )
+        """Keep the legacy tuple API while delegating execution to the gateway boundary."""
+        execution = self.execute_request(ThesisLedgerDataRequest("FUND_NAV", symbol))
+        return execution.value, execution.provider, execution.fallback_used
 
     def fund_nav_history(self, symbol: str) -> tuple[Any, str, bool]:
-        normalized = symbol.strip().upper()
-        return self._execute(
-            "FUND_NAV_HISTORY",
-            "MUTUAL_FUND",
-            lambda provider_id, adapter: self._validate_fund_nav_history(
-                self._fund_nav_from_provider(provider_id, normalized, adapter)
-            ),
+        """Keep the legacy tuple API while delegating execution to the gateway boundary."""
+        execution = self.execute_request(ThesisLedgerDataRequest("FUND_NAV_HISTORY", symbol))
+        return execution.value, execution.provider, execution.fallback_used
+
+    def chip_summary(self, symbol: str) -> tuple[Any, str, bool]:
+        """Keep a tuple convenience API for the explicit CHIP_SUMMARY route."""
+        execution = self.execute_request(ThesisLedgerDataRequest("CHIP_SUMMARY", symbol))
+        return execution.value, execution.provider, execution.fallback_used
+
+    def execute_request(self, request: ThesisLedgerDataRequest) -> ProviderExecution:
+        """Execute a standard request for one provider-routed capability.
+
+        This is the compatibility expansion entry point. Existing tuple
+        methods remain unchanged for current facade callers; derived consumers
+        can consume the metadata-rich ``ProviderExecution`` directly.
+        """
+        if not isinstance(request, ThesisLedgerDataRequest):
+            raise TypeError("request 必须是 ThesisLedgerDataRequest")
+
+        capability = request.capability
+        instrument_type = request.instrument_type or instrument_type_for_symbol(request.symbol)
+        if capability == "REALTIME_QUOTE":
+            provider_symbol = provider_symbol_for_contract(request.symbol)
+
+            def operation(provider_id: str, adapter: Any) -> Any:
+                value = self._realtime_quote(adapter, provider_id, provider_symbol)
+                if value is None:
+                    raise ProviderCallError("not_covered", "Provider 未覆盖该标的")
+                return self._validate_quote(value)
+
+            return self._execute_request_with_boundary(
+                request,
+                capability,
+                instrument_type,
+                operation,
+            )
+
+        if capability == "DAILY_BAR":
+            if request.timeframe not in (None, "1d"):
+                raise ThesisLedgerGatewayError(
+                    "unsupported_capability",
+                    "Contract V1 只支持 1d bars",
+                    request,
+                )
+            provider_symbol = provider_symbol_for_contract(request.symbol)
+            days = request.limit or 90
+
+            def operation(_provider_id: str, adapter: Any) -> Any:
+                frame = self._daily_frame(adapter.get_daily_data(provider_symbol, days=days))
+                return self._validate_bars(frame)
+
+            return self._execute_request_with_boundary(
+                request,
+                capability,
+                instrument_type,
+                operation,
+            )
+
+        if capability == "FUND_NAV":
+            return self._execute_request_with_boundary(
+                request,
+                capability,
+                "MUTUAL_FUND",
+                lambda provider_id, adapter: self._validate_fund_nav(
+                    self._fund_nav_from_provider(provider_id, request.symbol, adapter)
+                ),
+            )
+
+        if capability == "FUND_NAV_HISTORY":
+            return self._execute_request_with_boundary(
+                request,
+                capability,
+                "MUTUAL_FUND",
+                lambda provider_id, adapter: self._validate_fund_nav_history(
+                    self._fund_nav_from_provider(provider_id, request.symbol, adapter)
+                ),
+            )
+
+        if capability == "CHIP_SUMMARY":
+            if instrument_type != "STOCK":
+                raise ThesisLedgerGatewayError(
+                    "unsupported_capability",
+                    "Contract V1 只支持 STOCK 的 CHIP_SUMMARY",
+                    request,
+                )
+            provider_symbol = provider_symbol_for_contract(request.symbol)
+
+            def operation(_provider_id: str, adapter: Any) -> Any:
+                method = getattr(adapter, "get_chip_distribution", None)
+                if method is None:
+                    raise ProviderCallError("unsupported", "Provider 不支持筹码摘要")
+                return self._validate_chip_summary(method(provider_symbol))
+
+            return self._execute_request_with_boundary(
+                request,
+                capability,
+                instrument_type,
+                operation,
+            )
+
+        raise ThesisLedgerGatewayError(
+            "unsupported_capability",
+            f"Capability {capability} 尚未接入 ThesisLedger Provider runtime",
+            request,
         )
 
+    def _execute_request_with_boundary(
+        self,
+        request: ThesisLedgerDataRequest,
+        capability: str,
+        instrument_type: str,
+        operation: Callable[[str, Any], Any],
+    ) -> ProviderExecution:
+        """Attach request identity while preserving stable runtime error codes."""
+        try:
+            return self._execute_with_metadata(capability, instrument_type, operation)
+        except ThesisLedgerGatewayError:
+            raise
+        except ProviderCallError as exc:
+            raise ThesisLedgerGatewayError(
+                exc.code,
+                str(exc),
+                request,
+                retryable=exc.retryable,
+            ) from exc
+
     @staticmethod
-    def _fund_nav_from_provider(provider_id: str, symbol: str, _adapter: Any) -> Any:
-        code = symbol.removesuffix(".OF")
-        if provider_id == "akshare":
-            import akshare as ak
+    def _fund_nav_from_provider(provider_id: str, symbol: str, adapter: Any) -> Any:
+        """通过 Provider adapter 的兼容方法获取基金净值历史。
 
-            return ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
-        if provider_id == "efinance":
-            import efinance as ef
-
-            fund = getattr(ef, "fund", None)
-            method = getattr(fund, "get_quote_history", None)
-            if method is None:
-                raise ProviderCallError("unsupported", "efinance 不支持基金净值")
-            return method(code)
-        raise ProviderCallError("unsupported", "Provider 不支持基金净值")
+        Provider SDK 只允许出现在对应 adapter 内部。runtime 负责能力路由和
+        响应校验，不再根据 provider id 直接 import 或调用具体 SDK。
+        """
+        method = getattr(adapter, "get_fund_nav_history", None)
+        if method is None:
+            raise ProviderCallError("unsupported", f"{provider_id} 不支持基金净值")
+        return method(symbol.removesuffix(".OF"))
 
     def smoke(self, provider_id: str, capability: str) -> dict[str, Any]:
         """Run one bounded, read-only representative call without changing policy."""
@@ -499,6 +807,11 @@ class ThesisLedgerProviderRuntime:
             elif normalized_capability == "FUND_NAV_HISTORY":
                 value = self._fund_nav_from_provider(provider_id, "000001.OF", adapter)
                 self._validate_fund_nav_history(value)
+            elif normalized_capability == "CHIP_SUMMARY":
+                method = getattr(adapter, "get_chip_distribution", None)
+                if method is None:
+                    raise ProviderCallError("unsupported", "Provider 不支持筹码摘要")
+                self._validate_chip_summary(method("600519"))
             else:
                 raise ProviderCallError("unsupported", "Provider 不支持该 Capability")
         except ProviderCallError as exc:
@@ -535,8 +848,242 @@ class ThesisLedgerProviderRuntime:
         }
 
 
+@dataclass(frozen=True)
+class ThesisLedgerDataResult:
+    """Standard output shared by ThesisLedger consumer capability callers."""
+
+    request: ThesisLedgerDataRequest
+    data: Any
+    provider: str
+    fallback_used: bool
+    effective_policy: Mapping[str, Any] | None
+    route: tuple[str, ...]
+    attempted_providers: tuple[str, ...]
+    served_from_cache: bool = False
+
+    @property
+    def value(self) -> Any:
+        """Alias for callers that use the runtime's value terminology."""
+        return self.data
+
+    @property
+    def capability(self) -> str:
+        """Return the normalized request capability."""
+        return self.request.capability
+
+    @property
+    def effective_revision(self) -> int | None:
+        """Return the Effective Policy revision used for this result."""
+        if not self.effective_policy:
+            return None
+        revision = self.effective_policy.get("revision")
+        return int(revision) if isinstance(revision, int) else None
+
+    @property
+    def source_desired_revision(self) -> int | None:
+        """Return the Desired Policy revision projected into this result."""
+        if not self.effective_policy:
+            return None
+        revision = self.effective_policy.get("sourceDesiredRevision")
+        return int(revision) if isinstance(revision, int) else None
+
+    @property
+    def fallbackUsed(self) -> bool:  # noqa: N802 - Contract-compatible alias.
+        """Expose the existing Data Contract spelling for compatibility."""
+        return self.fallback_used
+
+    @property
+    def servedFromCache(self) -> bool:  # noqa: N802 - Contract-compatible alias.
+        """Expose cache provenance separately from the actual Provider."""
+        return self.served_from_cache
+
+    @property
+    def provenance(self) -> dict[str, Any]:
+        """Return provider, fallback and policy provenance metadata."""
+        return {
+            "provider": self.provider,
+            "servedFromCache": self.served_from_cache,
+            "fallbackUsed": self.fallback_used,
+            "attemptedProviders": list(self.attempted_providers),
+            "effectiveRevision": self.effective_revision,
+            "sourceDesiredRevision": self.source_desired_revision,
+        }
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a transport-neutral result projection for future facades."""
+        return {
+            "data": self.data,
+            "provider": self.provider,
+            "fallbackUsed": self.fallback_used,
+            "servedFromCache": self.served_from_cache,
+            "provenance": self.provenance,
+            "effectivePolicy": self.effective_policy,
+            "requestId": self.request.request_id,
+        }
+
+
+class ThesisLedgerDataGateway:
+    """Single compatibility boundary for ThesisLedger consumer data access.
+
+    Core provider-routed capabilities are delegated to
+    :class:`ThesisLedgerProviderRuntime`.  Optional handlers make the boundary
+    extensible for derived capabilities.  Handlers must return a
+    ``ProviderExecution`` so provenance cannot be silently discarded.
+    """
+
+    DECLARED_CAPABILITIES = (
+        "REALTIME_QUOTE",
+        "DAILY_BAR",
+        "FUND_NAV",
+        "FUND_NAV_HISTORY",
+        "INDICATOR",
+        "CHIP_SUMMARY",
+    )
+
+    def __init__(
+        self,
+        runtime: ThesisLedgerProviderRuntime | None = None,
+        *,
+        handlers: Mapping[str, Callable[[ThesisLedgerDataRequest], ProviderExecution]] | None = None,
+    ) -> None:
+        self.runtime = runtime or get_thesis_ledger_runtime()
+        self._handlers: dict[str, Callable[[ThesisLedgerDataRequest], ProviderExecution]] = {}
+        for capability, handler in (handlers or {}).items():
+            self.register_handler(capability, handler)
+
+    def register_handler(
+        self,
+        capability: str,
+        handler: Callable[[ThesisLedgerDataRequest], ProviderExecution],
+    ) -> None:
+        """Register a metadata-preserving handler for a declared capability."""
+        normalized = str(capability or "").strip().upper()
+        if normalized not in self.DECLARED_CAPABILITIES:
+            raise ValueError(f"未声明的 ThesisLedger Capability: {capability}")
+        if not callable(handler):
+            raise TypeError("handler 必须可调用")
+        self._handlers[normalized] = handler
+
+    @staticmethod
+    def _coerce_request(
+        request: ThesisLedgerDataRequest | Mapping[str, Any],
+        kwargs: Mapping[str, Any],
+    ) -> ThesisLedgerDataRequest:
+        if isinstance(request, ThesisLedgerDataRequest):
+            if kwargs:
+                raise ProviderCallError(
+                    "invalid_request",
+                    "ThesisLedgerDataRequest 不应同时传入额外字段",
+                )
+            return request
+        if not isinstance(request, Mapping):
+            raise ProviderCallError("invalid_request", "request 必须是对象")
+        payload = dict(request)
+        payload.update(kwargs)
+        return ThesisLedgerDataRequest(**payload)
+
+    @staticmethod
+    def _result_from_execution(
+        request: ThesisLedgerDataRequest,
+        execution: ProviderExecution,
+    ) -> ThesisLedgerDataResult:
+        return ThesisLedgerDataResult(
+            request=request,
+            data=execution.value,
+            provider=execution.provider,
+            fallback_used=execution.fallback_used,
+            effective_policy=execution.effective_policy,
+            route=execution.route,
+            attempted_providers=execution.attempted_providers,
+        )
+
+    def fetch(
+        self,
+        request: ThesisLedgerDataRequest | Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> ThesisLedgerDataResult:
+        """Fetch one capability with standard request/result semantics."""
+        if request is None:
+            request = kwargs
+            kwargs = {}
+        try:
+            normalized = self._coerce_request(request, kwargs)
+        except ProviderCallError as exc:
+            payload = dict(request) if isinstance(request, Mapping) else {}
+            fallback_request = ThesisLedgerDataRequest(
+                str(payload.get("capability") or "UNKNOWN"),
+                str(payload.get("symbol") or "_invalid"),
+                request_id=str(payload.get("request_id") or uuid.uuid4()),
+            )
+            raise ThesisLedgerGatewayError(
+                exc.code,
+                str(exc),
+                fallback_request,
+                retryable=exc.retryable,
+            ) from exc
+        handler = self._handlers.get(normalized.capability)
+        try:
+            execution = (
+                handler(normalized)
+                if handler is not None
+                else self.runtime.execute_request(normalized)
+            )
+        except ThesisLedgerGatewayError:
+            raise
+        except ProviderCallError as exc:
+            raise ThesisLedgerGatewayError(
+                exc.code,
+                str(exc),
+                normalized,
+                retryable=exc.retryable,
+            ) from exc
+        except Exception as exc:  # handler boundary; raw Provider details stay in logs.
+            logger.warning(
+                "ThesisLedger gateway handler failed capability=%s: %s",
+                normalized.capability,
+                exc,
+            )
+            raise ThesisLedgerGatewayError(
+                "upstream_failure",
+                "Provider 请求失败",
+                normalized,
+            ) from exc
+        if not isinstance(execution, ProviderExecution):
+            raise ThesisLedgerGatewayError(
+                "invalid_response",
+                "Gateway handler 必须返回 ProviderExecution",
+                normalized,
+            )
+        return self._result_from_execution(normalized, execution)
+
+    execute = fetch
+    request = fetch
+
+    def quote(self, symbol: str, **kwargs: Any) -> ThesisLedgerDataResult:
+        """Fetch realtime Quote through the standard gateway boundary."""
+        return self.fetch(ThesisLedgerDataRequest("REALTIME_QUOTE", symbol, **kwargs))
+
+    def bars(self, symbol: str, **kwargs: Any) -> ThesisLedgerDataResult:
+        """Fetch Daily Bar data through the standard gateway boundary."""
+        return self.fetch(ThesisLedgerDataRequest("DAILY_BAR", symbol, **kwargs))
+
+    def fund_nav(self, symbol: str, **kwargs: Any) -> ThesisLedgerDataResult:
+        """Fetch one Fund NAV result through the standard gateway boundary."""
+        return self.fetch(ThesisLedgerDataRequest("FUND_NAV", symbol, **kwargs))
+
+    def fund_nav_history(self, symbol: str, **kwargs: Any) -> ThesisLedgerDataResult:
+        """Fetch a complete Fund NAV history sequence through the gateway."""
+        return self.fetch(ThesisLedgerDataRequest("FUND_NAV_HISTORY", symbol, **kwargs))
+
+    def chip_summary(self, symbol: str, **kwargs: Any) -> ThesisLedgerDataResult:
+        """Fetch one complete CHIP_SUMMARY through the Effective Policy route."""
+        return self.fetch(ThesisLedgerDataRequest("CHIP_SUMMARY", symbol, **kwargs))
+
+
 _runtime: ThesisLedgerProviderRuntime | None = None
 _runtime_database_path: str | None = None
+_gateway: ThesisLedgerDataGateway | None = None
+_gateway_runtime: ThesisLedgerProviderRuntime | None = None
 
 
 def get_thesis_ledger_runtime() -> ThesisLedgerProviderRuntime:
@@ -546,3 +1093,16 @@ def get_thesis_ledger_runtime() -> ThesisLedgerProviderRuntime:
         _runtime = ThesisLedgerProviderRuntime()
         _runtime_database_path = database_path
     return _runtime
+
+
+def get_thesis_ledger_data_gateway() -> ThesisLedgerDataGateway:
+    """Return the process-local gateway paired with the current runtime."""
+    global _gateway, _gateway_runtime
+    runtime = get_thesis_ledger_runtime()
+    if _gateway is None or _gateway_runtime is not runtime:
+        _gateway = ThesisLedgerDataGateway(runtime)
+        _gateway_runtime = runtime
+    return _gateway
+
+
+get_thesis_ledger_gateway = get_thesis_ledger_data_gateway

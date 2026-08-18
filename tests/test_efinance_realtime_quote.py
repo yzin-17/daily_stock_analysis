@@ -14,6 +14,27 @@ def _fetcher() -> EfinanceFetcher:
     return EfinanceFetcher(sleep_min=0, sleep_max=0)
 
 
+def test_fund_nav_history_normalizes_provider_descending_dates(monkeypatch) -> None:
+    """efinance 倒序净值历史应在 adapter 边界归一化为升序。"""
+    frame = pd.DataFrame(
+        {
+            "日期": ["2026-01-02", "2026-01-01"],
+            "单位净值": [1.2, 1.1],
+        }
+    )
+    fake_fund = types.SimpleNamespace(get_quote_history=lambda _code: frame)
+    monkeypatch.setitem(
+        sys.modules,
+        "efinance",
+        types.SimpleNamespace(fund=fake_fund),
+    )
+
+    result = _fetcher().get_fund_nav_history("110022")
+
+    assert list(result["日期"]) == ["2026-01-01", "2026-01-02"]
+    assert list(result["单位净值"]) == [1.1, 1.2]
+
+
 def test_snapshot_dataframe_maps_normal_fields() -> None:
     """DataFrame snapshot 应映射中文字段并保留完整数值。"""
     snapshot = pd.DataFrame(

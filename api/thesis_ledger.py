@@ -13,7 +13,6 @@ import logging
 import uuid
 from contextvars import ContextVar
 from datetime import datetime, time, timedelta, timezone
-from functools import lru_cache
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
@@ -86,6 +85,30 @@ def _control_store() -> ThesisLedgerControlStore:
 
 def _control_http_error(error: ControlContractError) -> None:
     raise HTTPException(status_code=error.status_code, detail=error.detail()) from error
+
+
+def _data_gateway_error(
+    exc: Exception,
+    message: str,
+    *,
+    no_eligible_message: str | None = None,
+) -> None:
+    """Map gateway failures to stable Data Contract errors without raw details."""
+    code_value = getattr(exc, "code", "upstream_unavailable")
+    request_id = getattr(exc, "request_id", None)
+    if code_value == "NO_ELIGIBLE_PROVIDER":
+        _error(
+            "no_eligible_provider",
+            no_eligible_message or "当前策略没有可用的 Provider",
+            503,
+            request_id,
+        )
+    if code_value in {"invalid_response", "upstream_invalid_response"}:
+        _error("upstream_invalid_response", "Provider 返回了无效数据", 502, request_id)
+    if code_value == "unsupported_capability":
+        _error("unsupported_capability", message, 422, request_id)
+    logger.warning("ThesisLedger data gateway failed: %s", exc)
+    _error("upstream_unavailable", message, 503, request_id)
 
 
 def _fixture_mode() -> bool:
@@ -174,13 +197,6 @@ def _freshness(is_stale: bool, provider_timestamp: Optional[str]) -> str:
     if provider_timestamp:
         return "live"
     return "unknown"
-
-
-@lru_cache(maxsize=1)
-def _manager() -> Any:
-    from data_provider.base import DataFetcherManager
-
-    return DataFetcherManager()
 
 
 def _fixture_quote(symbol: str) -> dict[str, Any]:
@@ -326,31 +342,25 @@ def _fixture_fund_nav_history(symbol: str, limit: int = 90) -> list[dict[str, An
     ]
 
 
-def _real_fund_nav(symbol: str) -> dict[str, Any]:
+def _real_fund_nav(symbol: str, request_id: str | None = None) -> dict[str, Any]:
     canonical = _canonical_fund_symbol(symbol)
-    code = canonical[:-3]
-    frame = None
-    provider = "akshare"
-    fallback_used = False
-    if _control_store().effective_policy() is not None:
-        try:
-            from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_runtime
+    request_id = request_id or _request_id_context.get()
+    try:
+        from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
 
-            frame, provider, fallback_used = get_thesis_ledger_runtime().fund_nav(canonical)
-        except Exception as exc:  # noqa: BLE001 - runtime maps raw failures to diagnostics.
-            code_value = getattr(exc, "code", "upstream_unavailable")
-            if code_value == "NO_ELIGIBLE_PROVIDER":
-                _error("no_eligible_provider", "当前策略没有可用的基金净值 Provider", 503)
-            logger.warning("ThesisLedger fund NAV failed: %s", exc)
-            _error("upstream_unavailable", "基金单位净值暂时不可用", 503)
-    else:
-        try:
-            import akshare as ak
-
-            frame = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
-        except Exception as exc:  # noqa: BLE001 - optional provider boundary.
-            logger.warning("Legacy fund NAV failed: %s", exc)
-            _error("upstream_unavailable", "基金单位净值暂时不可用", 503)
+        gateway_result = get_thesis_ledger_data_gateway().fund_nav(
+            canonical,
+            request_id=request_id,
+        )
+        frame = gateway_result.data
+        provider = gateway_result.provider
+        fallback_used = gateway_result.fallback_used
+    except Exception as exc:  # noqa: BLE001 - gateway maps provider failures to diagnostics.
+        _data_gateway_error(
+            exc,
+            "基金单位净值暂时不可用",
+            no_eligible_message="当前策略没有可用的基金净值 Provider",
+        )
     if frame is None or getattr(frame, "empty", True):
         _error("upstream_unavailable", f"没有 {canonical} 的单位净值数据", 503)
 
@@ -383,18 +393,29 @@ def _real_fund_nav_history(
     start: Optional[str],
     end: Optional[str],
     limit: int,
+    request_id: str | None = None,
 ) -> list[dict[str, Any]]:
     canonical = _canonical_fund_symbol(symbol)
+    request_id = request_id or _request_id_context.get()
     try:
-        from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_runtime
+        from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
 
-        frame, provider, fallback_used = get_thesis_ledger_runtime().fund_nav_history(canonical)
-    except Exception as exc:  # noqa: BLE001 - runtime exposes stable error codes.
-        code_value = getattr(exc, "code", "upstream_unavailable")
-        if code_value == "NO_ELIGIBLE_PROVIDER":
-            _error("no_eligible_provider", "当前策略没有可用的基金净值历史 Provider", 503)
-        logger.warning("ThesisLedger fund NAV history failed: %s", exc)
-        _error("upstream_unavailable", "基金净值历史暂时不可用", 503)
+        gateway_result = get_thesis_ledger_data_gateway().fund_nav_history(
+            canonical,
+            start=start,
+            end=end,
+            limit=limit,
+            request_id=request_id,
+        )
+        frame = gateway_result.data
+        provider = gateway_result.provider
+        fallback_used = gateway_result.fallback_used
+    except Exception as exc:  # noqa: BLE001 - gateway exposes stable error codes.
+        _data_gateway_error(
+            exc,
+            "基金净值历史暂时不可用",
+            no_eligible_message="当前策略没有可用的基金净值历史 Provider",
+        )
 
     date_columns = ("净值日期", "日期", "date", "nav_date")
     nav_columns = ("单位净值", "单位净值(元)", "unit_nav", "nav")
@@ -436,57 +457,24 @@ def _real_fund_nav_history(
         )
     return result[-limit:]
 
-def _daily_data(symbol: str, days: int = 90) -> tuple[Any, str]:
+def _real_quote(symbol: str, request_id: str | None = None) -> dict[str, Any]:
+    request_id = request_id or _request_id_context.get()
     try:
-        return _manager().get_daily_data(symbol, days=days)
-    except Exception as exc:  # noqa: BLE001 - adapter maps provider failures to contract errors.
-        _error("upstream_unavailable", f"日线数据获取失败: {exc}", 503)
+        from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
 
-
-def _real_quote(symbol: str) -> dict[str, Any]:
-    if _control_store().effective_policy() is not None:
-        try:
-            from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_runtime
-
-            quote, provider, fallback_used = get_thesis_ledger_runtime().quote(symbol)
-            fetched_at = _iso_timestamp(getattr(quote, "fetched_at", None) or _now_iso())
-            provider_timestamp = getattr(quote, "provider_timestamp", None)
-            market_time = _iso_timestamp(provider_timestamp or fetched_at)
-            stale = bool(getattr(quote, "is_stale", False))
-            fields = {
-                "open": getattr(quote, "open_price", None),
-                "high": getattr(quote, "high", None),
-                "low": getattr(quote, "low", None),
-                "price": getattr(quote, "price", None),
-                "previousClose": getattr(quote, "pre_close", None),
-                "volume": getattr(quote, "volume", None),
-                "amount": getattr(quote, "amount", None),
-            }
-            values = {key: _number(value, key) for key, value in fields.items()}
-            return {
-                "version": 1,
-                "symbol": _canonical_symbol(symbol),
-                **values,
-                "stale": stale,
-                "provider": provider,
-                "marketTime": market_time,
-                "fetchedAt": fetched_at,
-                "freshness": _freshness(stale, provider_timestamp),
-                "fallbackUsed": fallback_used,
-            }
-        except Exception as exc:  # noqa: BLE001 - runtime maps raw failures to diagnostics.
-            code_value = getattr(exc, "code", "upstream_unavailable")
-            if code_value == "NO_ELIGIBLE_PROVIDER":
-                _error("no_eligible_provider", "当前策略没有可用的实时行情 Provider", 503)
-            logger.warning("ThesisLedger quote failed: %s", exc)
-            _error("upstream_unavailable", "实时行情暂时不可用", 503)
-    try:
-        quote = _manager().get_realtime_quote(symbol)
-    except Exception as exc:  # noqa: BLE001 - adapter boundary.
-        logger.warning("Legacy quote failed: %s", exc)
-        _error("upstream_unavailable", "实时行情暂时不可用", 503)
-    if quote is None or getattr(quote, "price", None) is None:
-        _error("upstream_unavailable", f"没有 {symbol} 的实时行情", 503)
+        gateway_result = get_thesis_ledger_data_gateway().quote(
+            symbol,
+            request_id=request_id,
+        )
+        quote = gateway_result.data
+        provider = gateway_result.provider
+        fallback_used = gateway_result.fallback_used
+    except Exception as exc:  # noqa: BLE001 - gateway maps provider failures to diagnostics.
+        _data_gateway_error(
+            exc,
+            "实时行情暂时不可用",
+            no_eligible_message="当前策略没有可用的实时行情 Provider",
+        )
 
     fetched_at = _iso_timestamp(getattr(quote, "fetched_at", None) or _now_iso())
     provider_timestamp = getattr(quote, "provider_timestamp", None)
@@ -507,33 +495,42 @@ def _real_quote(symbol: str) -> dict[str, Any]:
         "symbol": _canonical_symbol(symbol),
         **values,
         "stale": stale,
-        "provider": _provider_name(getattr(quote, "source", None)),
+        "provider": provider,
         "marketTime": market_time,
         "fetchedAt": fetched_at,
         "freshness": _freshness(stale, provider_timestamp),
-        "fallbackUsed": False,
+        "fallbackUsed": fallback_used,
     }
 
 
-def _real_bars(symbol: str, start: Optional[str], end: Optional[str], limit: int) -> list[dict[str, Any]]:
-    fallback_used = False
-    if _control_store().effective_policy() is not None:
-        try:
-            from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_runtime
+def _real_bars(
+    symbol: str,
+    start: Optional[str],
+    end: Optional[str],
+    limit: int,
+    request_id: str | None = None,
+) -> list[dict[str, Any]]:
+    request_id = request_id or _request_id_context.get()
+    try:
+        from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
 
-            result, source, fallback_used = get_thesis_ledger_runtime().bars(symbol, days=limit)
-            frame = result
-        except Exception as exc:  # noqa: BLE001 - runtime maps raw failures to diagnostics.
-            code_value = getattr(exc, "code", "upstream_unavailable")
-            if code_value == "NO_ELIGIBLE_PROVIDER":
-                _error("no_eligible_provider", "当前策略没有可用的日线 Provider", 503)
-            logger.warning("ThesisLedger bars failed: %s", exc)
-            _error("upstream_unavailable", "日线数据暂时不可用", 503)
-    else:
-        frame, source = _daily_data(symbol, days=limit)
+        gateway_result = get_thesis_ledger_data_gateway().bars(
+            symbol,
+            timeframe="1d",
+            limit=limit,
+            request_id=request_id,
+        )
+        frame = gateway_result.data
+        provider = gateway_result.provider
+        fallback_used = gateway_result.fallback_used
+    except Exception as exc:  # noqa: BLE001 - gateway maps provider failures to diagnostics.
+        _data_gateway_error(
+            exc,
+            "日线数据暂时不可用",
+            no_eligible_message="当前策略没有可用的日线 Provider",
+        )
     if frame is None or frame.empty:
         _error("upstream_unavailable", f"没有 {symbol} 的日线数据", 503)
-    provider = source if isinstance(source, str) else _provider_name(source)
     result: list[dict[str, Any]] = []
     for _, row in frame.iterrows():
         date_value = row.get("date")
@@ -564,11 +561,33 @@ def _real_bars(symbol: str, start: Optional[str], end: Optional[str], limit: int
     return result[-limit:]
 
 
-def _real_indicator(symbol: str, name: str) -> dict[str, Any]:
+def _real_indicator(
+    symbol: str,
+    name: str,
+    request_id: str | None = None,
+) -> dict[str, Any]:
     normalized = name.upper()
     if normalized not in {"MA", "MACD", "RSI"}:
         _error("unsupported_capability", f"指标 {normalized} 在 Contract V1 不可用", 422)
-    frame, source = _daily_data(symbol, days=90)
+    request_id = request_id or _request_id_context.get()
+    try:
+        from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
+
+        gateway_result = get_thesis_ledger_data_gateway().bars(
+            symbol,
+            timeframe="1d",
+            limit=90,
+            request_id=request_id,
+        )
+        frame = gateway_result.data
+        provider = gateway_result.provider
+        fallback_used = gateway_result.fallback_used
+    except Exception as exc:  # noqa: BLE001 - gateway maps provider failures to diagnostics.
+        _data_gateway_error(
+            exc,
+            "指标输入日线暂时不可用",
+            no_eligible_message="当前策略没有可用的指标输入日线 Provider",
+        )
     if frame is None or frame.empty:
         _error("upstream_unavailable", f"没有 {symbol} 的指标输入数据", 503)
     try:
@@ -605,7 +624,8 @@ def _real_indicator(symbol: str, name: str) -> dict[str, Any]:
         "marketTime": _iso_timestamp(latest),
         "calculatedAt": _now_iso(),
         "values": {key: _number(value, key) for key, value in values.items()},
-        "provider": _provider_name(source),
+        "provider": provider,
+        "fallbackUsed": fallback_used,
         "engineVersion": ENGINE_VERSION,
     }
 
@@ -619,11 +639,24 @@ def _ratio(value: Any, field: str) -> float:
     return result
 
 
-def _real_chip(symbol: str) -> dict[str, Any]:
+def _real_chip(symbol: str, request_id: str | None = None) -> dict[str, Any]:
+    request_id = request_id or _request_id_context.get()
     try:
-        chip = _manager().get_chip_distribution(symbol)
-    except Exception as exc:  # noqa: BLE001 - adapter boundary.
-        _error("upstream_unavailable", f"筹码数据获取失败: {exc}", 503)
+        from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
+
+        gateway_result = get_thesis_ledger_data_gateway().chip_summary(
+            symbol,
+            request_id=request_id,
+        )
+        chip = gateway_result.data
+        provider = gateway_result.provider
+        fallback_used = gateway_result.fallback_used
+    except Exception as exc:  # noqa: BLE001 - gateway maps provider failures to diagnostics.
+        _data_gateway_error(
+            exc,
+            "筹码摘要暂时不可用",
+            no_eligible_message="当前策略没有可用的筹码摘要 Provider",
+        )
     if chip is None:
         _error("upstream_unavailable", f"没有 {symbol} 的筹码摘要", 503)
     average_cost = _number(getattr(chip, "avg_cost", None), "averageCost", allow_zero=False)
@@ -646,7 +679,8 @@ def _real_chip(symbol: str) -> dict[str, Any]:
             getattr(chip, "concentration_90", None),
             "concentration",
         ),
-        "provider": _provider_name(getattr(chip, "source", None)),
+        "provider": provider,
+        "fallbackUsed": fallback_used,
         "engineVersion": ENGINE_VERSION,
         "calculatedAt": _iso_timestamp(getattr(chip, "date", None) or _now_iso()),
     }
@@ -677,8 +711,12 @@ def capabilities() -> dict[str, Any]:
             "fund-nav": {"assetSuffix": ".OF", "freshness": ["delayed", "stale", "unavailable"]},
             "fund-nav-history": {"assetSuffix": ".OF", "maxLimit": 3650},
             "bars": {"timeframes": ["1d"]},
-            "indicators": {"names": ["MA", "MACD", "RSI"], "timeframes": ["1d"]},
-            "chip": {"summary": True, "distribution": False},
+            "indicators": {
+                "names": ["MA", "MACD", "RSI"],
+                "timeframes": ["1d"],
+                "inputCapability": "DAILY_BAR",
+            },
+            "chip": {"summary": True, "capability": "CHIP_SUMMARY", "distribution": False},
             "catalog": {"snapshot": True, "delta": True},
         },
         "unsupported": ["bars:1m", "indicator:ATR", "chip:distribution"],
@@ -687,12 +725,21 @@ def capabilities() -> dict[str, Any]:
 
 
 @router.get("/market/fund-nav", dependencies=[Depends(require_contract_token)])
-def fund_nav(symbol: str = Query(..., min_length=1)) -> dict[str, Any]:
-    return _fixture_fund_nav(symbol) if _fixture_mode() else _real_fund_nav(symbol)
+def fund_nav(
+    request: Request,
+    symbol: str = Query(..., min_length=1),
+) -> dict[str, Any]:
+    request_id = request.headers.get("x-request-id") or _request_id_context.get()
+    return (
+        _fixture_fund_nav(symbol)
+        if _fixture_mode()
+        else _real_fund_nav(symbol, request_id=request_id)
+    )
 
 
 @router.get("/market/fund-nav/history", dependencies=[Depends(require_contract_token)])
 def fund_nav_history(
+    request: Request,
     symbol: str = Query(..., min_length=1),
     start: Optional[str] = Query(default=None),
     end: Optional[str] = Query(default=None),
@@ -705,16 +752,26 @@ def fund_nav_history(
         if end:
             rows = [row for row in rows if str(row["navDate"]) <= end]
         return rows
-    return _real_fund_nav_history(symbol, start, end, limit)
+    request_id = request.headers.get("x-request-id") or _request_id_context.get()
+    return _real_fund_nav_history(symbol, start, end, limit, request_id=request_id)
 
 
 @router.get("/market/quote", dependencies=[Depends(require_contract_token)])
-def quote(symbol: str = Query(..., min_length=1)) -> dict[str, Any]:
-    return _fixture_quote(symbol) if _fixture_mode() else _real_quote(symbol)
+def quote(
+    request: Request,
+    symbol: str = Query(..., min_length=1),
+) -> dict[str, Any]:
+    request_id = request.headers.get("x-request-id") or _request_id_context.get()
+    return (
+        _fixture_quote(symbol)
+        if _fixture_mode()
+        else _real_quote(symbol, request_id=request_id)
+    )
 
 
 @router.get("/market/bars", dependencies=[Depends(require_contract_token)])
 def bars(
+    request: Request,
     symbol: str = Query(..., min_length=1),
     timeframe: str = Query("1d"),
     start: Optional[str] = Query(default=None),
@@ -732,23 +789,35 @@ def bars(
             and (not end or item["timestamp"][:10] <= end[:10])
         ]
         return filtered[-limit:]
-    return _real_bars(symbol, start, end, limit)
+    request_id = request.headers.get("x-request-id") or _request_id_context.get()
+    return _real_bars(symbol, start, end, limit, request_id=request_id)
 
 
 @router.get("/market/indicators/{name}", dependencies=[Depends(require_contract_token)])
 def indicator(
     name: str,
+    request: Request,
     symbol: str = Query(..., min_length=1),
     timeframe: str = Query("1d"),
 ) -> dict[str, Any]:
     if timeframe != "1d":
         _error("unsupported_capability", "Contract V1 只支持 1d indicators", 422)
-    return _fixture_indicator(symbol, name) if _fixture_mode() else _real_indicator(symbol, name)
+    request_id = request.headers.get("x-request-id") or _request_id_context.get()
+    return (
+        _fixture_indicator(symbol, name)
+        if _fixture_mode()
+        else _real_indicator(symbol, name, request_id=request_id)
+    )
 
 
 @router.get("/market/chip", dependencies=[Depends(require_contract_token)])
-def chip(symbol: str = Query(..., min_length=1)) -> dict[str, Any]:
-    return _fixture_chip(symbol) if _fixture_mode() else _real_chip(symbol)
+def chip(request: Request, symbol: str = Query(..., min_length=1)) -> dict[str, Any]:
+    request_id = request.headers.get("x-request-id") or _request_id_context.get()
+    return (
+        _fixture_chip(symbol)
+        if _fixture_mode()
+        else _real_chip(symbol, request_id=request_id)
+    )
 
 
 def _require_control_envelope(payload: Any) -> dict[str, Any]:
@@ -879,6 +948,8 @@ def control_provider_test(
                             validate_fund_nav_history_rows(
                                 [(row["navDate"], row["unitNav"]) for row in history]
                             )
+                        elif capability == "CHIP_SUMMARY":
+                            _fixture_chip("600519.SH")
                         else:
                             raise ControlContractError(
                                 "UNSUPPORTED_CAPABILITY",
@@ -978,6 +1049,14 @@ def control_catalog_job(payload: dict[str, Any] = Body(default_factory=dict)) ->
     try:
         _control_envelope(payload)
         return _control_store().trigger_catalog_job()
+    except ControlContractError as error:
+        _control_http_error(error)
+
+
+@router.get("/control/catalog/jobs/{job_id}", dependencies=[Depends(require_control_token)])
+def control_catalog_job_status(job_id: str) -> dict[str, Any]:
+    try:
+        return _control_store().get_catalog_job(job_id)
     except ControlContractError as error:
         _control_http_error(error)
 

@@ -1,4 +1,5 @@
 import hashlib
+import os
 import random
 import secrets
 import threading
@@ -39,6 +40,57 @@ class PatchSign:
 
 
 _patch_sign = PatchSign()
+
+
+EASTMONEY_COOKIE_ENV = "EFINANCE_EASTMONEY_COOKIE"
+
+
+def _configured_eastmoney_cookie():
+    """Return the optional Eastmoney Cookie without exposing its value."""
+    cookie = os.getenv(EASTMONEY_COOKIE_ENV, "").strip()
+    if not cookie:
+        return None
+    if "\r" in cookie or "\n" in cookie:
+        logger.warning("忽略包含非法换行符的东方财富 Cookie 配置")
+        return None
+    return cookie
+
+
+def _merge_cookie_values(*cookie_values):
+    """Merge Cookie header values by cookie name, preserving the last value."""
+    merged = {}
+    for cookie_value in cookie_values:
+        if not cookie_value:
+            continue
+        for item in str(cookie_value).split(";"):
+            item = item.strip()
+            if not item or "=" not in item:
+                continue
+            name, value = item.split("=", 1)
+            name = name.strip()
+            value = value.strip()
+            if name:
+                merged[name] = value
+    return "; ".join(f"{name}={value}" for name, value in merged.items())
+
+
+def configure_eastmoney_cookie():
+    """Inject the optional Cookie into efinance's shared Eastmoney headers."""
+    cookie = _configured_eastmoney_cookie()
+    if not cookie:
+        return False
+    try:
+        from efinance.common import config as efinance_config
+
+        headers = getattr(efinance_config, "EASTMONEY_REQUEST_HEADERS", None)
+        if not isinstance(headers, dict):
+            logger.warning("efinance 未提供可配置的东方财富请求头")
+            return False
+        headers["Cookie"] = _merge_cookie_values(headers.get("Cookie"), cookie)
+        return True
+    except (ImportError, AttributeError):
+        logger.warning("efinance 未加载，暂不注入东方财富 Cookie")
+        return False
 
 
 def _get_nid(user_agent):
@@ -148,6 +200,7 @@ def _get_nid(user_agent):
 
 
 def eastmoney_patch():
+    configure_eastmoney_cookie()
     if _patch_sign.is_patched():
         return
 
@@ -166,11 +219,16 @@ def eastmoney_patch():
         # 获取一个随机的 User-Agent
         user_agent = ua.random
         # 处理 Headers：确保不破坏业务代码传入的 headers
-        headers = kwargs.get("headers", {})
+        headers = dict(kwargs.get("headers") or {})
         headers["User-Agent"] = user_agent
         nid = _get_nid(user_agent)
+        configured_cookie = _configured_eastmoney_cookie()
+        existing_cookie = headers.get("Cookie") or headers.get("cookie")
+        merged_cookie = _merge_cookie_values(existing_cookie, configured_cookie)
         if nid:
-            headers["Cookie"] = f"nid18={nid}"
+            merged_cookie = _merge_cookie_values(merged_cookie, f"nid18={nid}")
+        if merged_cookie:
+            headers["Cookie"] = merged_cookie
         kwargs["headers"] = headers
         # 随机休眠，降低被封风险
         sleep_time = random.uniform(1, 4)

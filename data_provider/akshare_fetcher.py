@@ -724,6 +724,15 @@ class AkshareFetcher(BaseFetcher):
                 raise RateLimitError(f"Akshare 可能被限流: {e}") from e
             
             raise DataFetchError(f"Akshare 获取 ETF 数据失败: {e}") from e
+
+    def get_fund_nav_history(self, fund_code: str) -> Any:
+        """获取场外基金单位净值历史，供 ThesisLedger runtime 统一调用。"""
+        import akshare as ak
+
+        return ak.fund_open_fund_info_em(
+            symbol=fund_code,
+            indicator="单位净值走势",
+        )
     
     def _fetch_us_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
         """

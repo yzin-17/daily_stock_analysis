@@ -64,7 +64,8 @@
 2. 减少自选股数量，或增加请求间隔
 3. 避免频繁手动触发分析
 4. 若东财接口频繁失败，可设置 `ENABLE_EASTMONEY_PATCH=true` 启用东财补丁（注入 NID 令牌与随机 User-Agent，降低被限流概率）
-5. 将 `MAX_WORKERS=1` 改为串行获取，减少对东财的并发压力
+5. 如果接口要求登录态，可通过 `EFINANCE_EASTMONEY_COOKIE` 注入东方财富登录后的 `ct=...` Cookie；Cookie 属于敏感会话凭证，不要提交或打印
+6. 将 `MAX_WORKERS=1` 改为串行获取，减少对东财的并发压力
 
 ---
 

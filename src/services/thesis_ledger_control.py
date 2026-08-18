@@ -12,23 +12,30 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
+import queue
 import secrets
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+logger = logging.getLogger(__name__)
+
 CONTROL_CONTRACT_VERSION = 1
 CONSUMER_NAMESPACE = "thesis-ledger"
+CATALOG_JOB_LEASE_SECONDS = 300
+CATALOG_JOB_LEASE_EXPIRED_CODE = "CATALOG_JOB_LEASE_EXPIRED"
 
 CAPABILITIES = (
     "REALTIME_QUOTE",
     "DAILY_BAR",
     "FUND_NAV",
     "FUND_NAV_HISTORY",
+    "CHIP_SUMMARY",
 )
 INSTRUMENT_TYPES = (
     "STOCK",
@@ -70,6 +77,7 @@ PROVIDER_MANIFESTS: dict[str, dict[str, Any]] = {
             "DAILY_BAR": ("STOCK", "ETF"),
             "FUND_NAV": ("MUTUAL_FUND",),
             "FUND_NAV_HISTORY": ("MUTUAL_FUND",),
+            "CHIP_SUMMARY": ("STOCK",),
         },
     ),
     "efinance": _manifest(
@@ -107,6 +115,7 @@ DEFAULT_ROUTES: dict[str, dict[str, list[str]]] = {
     },
     "FUND_NAV": {"MUTUAL_FUND": ["akshare", "efinance"]},
     "FUND_NAV_HISTORY": {"MUTUAL_FUND": ["akshare", "efinance"]},
+    "CHIP_SUMMARY": {"STOCK": ["akshare"]},
 }
 
 DEFAULT_CATALOG: tuple[dict[str, Any], ...] = (
@@ -151,6 +160,29 @@ DEFAULT_CATALOG: tuple[dict[str, Any], ...] = (
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_utc(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _lease_expires_at(started_at: str) -> str:
+    parsed = _parse_utc(started_at) or datetime.now(timezone.utc)
+    return (parsed + timedelta(seconds=CATALOG_JOB_LEASE_SECONDS)).isoformat()
+
+
+def _lease_is_valid(lease_expires_at: Any, now: str) -> bool:
+    expires = _parse_utc(lease_expires_at)
+    current = _parse_utc(now)
+    return expires is not None and current is not None and expires > current
 
 
 def _json(value: Any) -> str:
@@ -221,6 +253,20 @@ def _secret_key() -> tuple[str, bytes]:
     return version, hashlib.sha256(raw.encode("utf-8")).digest()
 
 
+def _secret_key_candidates() -> dict[str, bytes]:
+    """Return current and explicitly retained previous keys by version."""
+
+    current_version, current_key = _secret_key()
+    candidates = {current_version: current_key}
+    previous_raw = os.getenv("THESIS_LEDGER_DSA_SECRET_KEY_PREVIOUS", "").strip()
+    previous_version = (
+        os.getenv("THESIS_LEDGER_DSA_SECRET_KEY_PREVIOUS_VERSION", "v1").strip() or "v1"
+    )
+    if previous_raw and previous_version not in candidates:
+        candidates[previous_version] = hashlib.sha256(previous_raw.encode("utf-8")).digest()
+    return candidates
+
+
 def _encrypt_secret(value: str) -> tuple[str, str]:
     version, key = _secret_key()
     nonce = secrets.token_bytes(16)
@@ -233,6 +279,42 @@ def _encrypt_secret(value: str) -> tuple[str, str]:
     ciphertext = bytes(left ^ right for left, right in zip(plaintext, stream))
     tag = hmac.new(key, nonce + ciphertext, hashlib.sha256).digest()
     return version, base64.urlsafe_b64encode(nonce + ciphertext + tag).decode("ascii")
+
+
+def _decrypt_secret(version: str, encoded: str) -> str:
+    """Decrypt one stored credential using the explicitly configured key ring."""
+
+    key = _secret_key_candidates().get(str(version or "").strip())
+    if key is None:
+        raise ControlContractError(
+            "SECRET_KEY_UNAVAILABLE",
+            "Provider 凭证所需的旧 DSA Secret Key 未配置",
+            status_code=503,
+        )
+    try:
+        payload = base64.urlsafe_b64decode(str(encoded).encode("ascii"))
+        if len(payload) < 16 + 32:
+            raise ValueError("ciphertext too short")
+        nonce, ciphertext, tag = payload[:16], payload[16:-32], payload[-32:]
+        expected = hmac.new(key, nonce + ciphertext, hashlib.sha256).digest()
+        if not hmac.compare_digest(tag, expected):
+            raise ValueError("ciphertext authentication failed")
+        return bytes(
+            left ^ right
+            for left, right in zip(
+                ciphertext,
+                b"".join(
+                    hashlib.sha256(key + nonce + counter.to_bytes(4, "big")).digest()
+                    for counter in range((len(ciphertext) + 31) // 32)
+                ),
+            )
+        ).decode("utf-8")
+    except (ValueError, UnicodeDecodeError, TypeError, base64.binascii.Error) as exc:
+        raise ControlContractError(
+            "SECRET_CREDENTIAL_INVALID",
+            "Provider 凭证密文校验失败",
+            status_code=503,
+        ) from exc
 
 
 def _validate_provider_id(provider_id: Any, request_id: str) -> str:
@@ -275,6 +357,15 @@ def _normalize_routes(routes: Any, request_id: str) -> dict[str, dict[str, list[
                 raise ControlContractError(
                     "UNSUPPORTED_INSTRUMENT_TYPE",
                     f"InstrumentType {raw_type!s} 不支持",
+                    request_id=request_id,
+                )
+            if not any(
+                instrument_type in manifest.get("capabilities", {}).get(capability, [])
+                for manifest in PROVIDER_MANIFESTS.values()
+            ):
+                raise ControlContractError(
+                    "UNSUPPORTED_ROUTE",
+                    f"没有 Provider 支持 {capability}/{instrument_type}",
                     request_id=request_id,
                 )
             if not isinstance(raw_providers, list):
@@ -351,7 +442,12 @@ class ThesisLedgerControlStore:
 
     def __init__(self, database_path: str | None = None) -> None:
         self.database_path = database_path or _database_path()
+        # Every store instance gets a fencing identity. A new service process
+        # therefore cannot accidentally finalize a lease owned by its
+        # predecessor, while valid running jobs remain globally deduplicated.
+        self._catalog_job_owner = f"pid:{os.getpid()}:{uuid.uuid4().hex}"
         self._ensure_schema()
+        self._rotate_provider_credentials()
 
     def _connect(self) -> sqlite3.Connection:
         if self.database_path != ":memory:":
@@ -432,6 +528,8 @@ class ThesisLedgerControlStore:
                     generation INTEGER NOT NULL,
                     checksum TEXT NOT NULL,
                     error_json TEXT,
+                    owner TEXT,
+                    lease_expires_at TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -444,6 +542,41 @@ class ThesisLedgerControlStore:
                 );
                 """
             )
+            # Existing DSA volumes predate Catalog Job leases. Keep the
+            # upgrade additive and idempotent so restarting against an old
+            # SQLite file is sufficient; deleting the volume is never needed.
+            job_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(thesis_ledger_catalog_job)"
+                ).fetchall()
+            }
+            if "owner" not in job_columns:
+                connection.execute(
+                    "ALTER TABLE thesis_ledger_catalog_job ADD COLUMN owner TEXT"
+                )
+            if "lease_expires_at" not in job_columns:
+                connection.execute(
+                    "ALTER TABLE thesis_ledger_catalog_job ADD COLUMN lease_expires_at TEXT"
+                )
+            if "updated_at" not in job_columns:
+                connection.execute(
+                    "ALTER TABLE thesis_ledger_catalog_job ADD COLUMN updated_at TEXT"
+                )
+                connection.execute(
+                    """
+                    UPDATE thesis_ledger_catalog_job
+                    SET updated_at = COALESCE(created_at, ?)
+                    WHERE updated_at IS NULL
+                    """,
+                    (_utc_now(),),
+                )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS thesis_ledger_catalog_job_status_lease_idx
+                ON thesis_ledger_catalog_job (status, lease_expires_at, created_at)
+                """
+            )
 
     def _configuration(self, connection: sqlite3.Connection) -> dict[str, sqlite3.Row]:
         return {
@@ -452,6 +585,64 @@ class ThesisLedgerControlStore:
                 "SELECT * FROM thesis_ledger_provider_config"
             ).fetchall()
         }
+
+    def _rotate_provider_credentials(self) -> None:
+        """Re-encrypt credentials with the current key when a previous key is retained."""
+
+        try:
+            current_version, _ = _secret_key()
+        except ControlContractError:
+            # A store without configured credentials must remain usable for read-only
+            # Contract and fixture tests; saving credentials still fails closed.
+            return
+        with self._schema_lock, self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT provider_id, credential_ciphertext, secret_key_version
+                FROM thesis_ledger_provider_config
+                WHERE credential_ciphertext IS NOT NULL
+                  AND secret_key_version IS NOT NULL
+                  AND secret_key_version != ?
+                """,
+                (current_version,),
+            ).fetchall()
+            updates: list[tuple[str, str]] = []
+            for row in rows:
+                try:
+                    plaintext = _decrypt_secret(
+                        str(row["secret_key_version"]),
+                        str(row["credential_ciphertext"]),
+                    )
+                    _, ciphertext = _encrypt_secret(plaintext)
+                except ControlContractError:
+                    logger.warning(
+                        "Provider credential rotation deferred provider=%s version=%s",
+                        row["provider_id"],
+                        row["secret_key_version"],
+                    )
+                    # Do not partially rotate the key ring. The previous key
+                    # must remain available until every stored credential is
+                    # verified under the new key.
+                    return
+                updates.append((ciphertext, str(row["provider_id"])))
+            if not updates:
+                return
+            now = _utc_now()
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                for ciphertext, provider_id in updates:
+                    connection.execute(
+                        """
+                        UPDATE thesis_ledger_provider_config
+                        SET credential_ciphertext=?, secret_key_version=?, updated_at=?
+                        WHERE provider_id=?
+                        """,
+                        (ciphertext, current_version, now, provider_id),
+                    )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
 
     def _health(
         self,
@@ -535,46 +726,51 @@ class ThesisLedgerControlStore:
         policy = normalize_policy(payload)
         request_id = policy["requestId"]
         with self._schema_lock, self._connect() as connection:
-            current = self._current_state(connection)
-            if current is not None:
-                current_revision = int(current["revision"])
-                if policy["revision"] < current_revision:
-                    raise ControlContractError(
-                        "STALE_REVISION",
-                        f"Policy revision {policy['revision']} 早于当前 revision {current_revision}",
-                        request_id=request_id,
-                    )
-                if policy["revision"] == current_revision:
-                    same = (
-                        bool(current["enabled"]) == policy["enabled"]
-                        and _json_load(current["routes_json"], {}) == policy["routes"]
-                    )
-                    if not same:
+            try:
+                # Read, validate and write under the same SQLite writer lock. A
+                # process-local lock cannot protect separate workers or
+                # connections, while BEGIN IMMEDIATE makes the revision check
+                # observe the latest committed policy before any write occurs.
+                connection.execute("BEGIN IMMEDIATE")
+                current = self._current_state(connection)
+                if current is not None:
+                    current_revision = int(current["revision"])
+                    if policy["revision"] < current_revision:
                         raise ControlContractError(
-                            "REVISION_CONFLICT",
-                            "相同 revision 的 Policy 内容不同",
+                            "STALE_REVISION",
+                            f"Policy revision {policy['revision']} 早于当前 revision {current_revision}",
                             request_id=request_id,
                         )
-                    return {
-                        "status": current["status"],
-                        "idempotent": True,
-                        "desired": {
-                            "contractVersion": CONTROL_CONTRACT_VERSION,
-                            "consumer": CONSUMER_NAMESPACE,
-                            "revision": current_revision,
-                            "enabled": bool(current["enabled"]),
-                            "routes": _json_load(current["routes_json"], {}),
-                        },
-                        "effective": _json_load(current["effective_json"], {}),
-                        "requestId": request_id,
-                    }
+                    if policy["revision"] == current_revision:
+                        same = (
+                            bool(current["enabled"]) == policy["enabled"]
+                            and _json_load(current["routes_json"], {}) == policy["routes"]
+                        )
+                        if not same:
+                            raise ControlContractError(
+                                "REVISION_CONFLICT",
+                                "相同 revision 的 Policy 内容不同",
+                                request_id=request_id,
+                            )
+                        connection.commit()
+                        return {
+                            "status": current["status"],
+                            "idempotent": True,
+                            "desired": {
+                                "contractVersion": CONTROL_CONTRACT_VERSION,
+                                "consumer": CONSUMER_NAMESPACE,
+                                "revision": current_revision,
+                                "enabled": bool(current["enabled"]),
+                                "routes": _json_load(current["routes_json"], {}),
+                            },
+                            "effective": _json_load(current["effective_json"], {}),
+                            "requestId": request_id,
+                        }
 
-            effective = self._effective(connection, policy)
-            now = _utc_now()
-            desired_json = _json(policy["routes"])
-            effective_json = _json(effective)
-            connection.execute("BEGIN IMMEDIATE")
-            try:
+                effective = self._effective(connection, policy)
+                now = _utc_now()
+                desired_json = _json(policy["routes"])
+                effective_json = _json(effective)
                 connection.execute(
                     """
                     INSERT INTO thesis_ledger_policy_state
@@ -619,6 +815,26 @@ class ThesisLedgerControlStore:
                     ),
                 )
                 connection.commit()
+            except ControlContractError:
+                connection.rollback()
+                raise
+            except sqlite3.IntegrityError as error:
+                connection.rollback()
+                raise ControlContractError(
+                    "REVISION_CONFLICT",
+                    "Policy revision 竞争冲突，请重试",
+                    request_id=request_id,
+                ) from error
+            except sqlite3.OperationalError as error:
+                connection.rollback()
+                if "locked" in str(error).lower():
+                    raise ControlContractError(
+                        "POLICY_APPLY_CONFLICT",
+                        "Policy Apply 正在竞争，请重试",
+                        status_code=409,
+                        request_id=request_id,
+                    ) from error
+                raise
             except Exception:
                 connection.rollback()
                 raise
@@ -1116,28 +1332,384 @@ class ThesisLedgerControlStore:
             connection.commit()
         return {"acknowledged": True, "generation": snapshot["generation"], "cursor": snapshot["cursor"]}
 
-    def trigger_catalog_job(self) -> dict[str, Any]:
+    def _catalog_job_owner_value(self, owner: str | None) -> str:
+        value = str(owner or "").strip()
+        return value[:128] if value else self._catalog_job_owner
+
+    @staticmethod
+    def _timeout_catalog_job(
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+        now: str,
+    ) -> sqlite3.Row:
+        error = _json_load(row["error_json"], {})
+        if not isinstance(error, dict):
+            error = {}
+        error.update(
+            {
+                "code": CATALOG_JOB_LEASE_EXPIRED_CODE,
+                "message": "Catalog Job lease 已过期，任务可重试",
+                "retryable": True,
+            }
+        )
+        connection.execute(
+            """
+            UPDATE thesis_ledger_catalog_job
+            SET status='timeout', error_json=?, updated_at=?
+            WHERE id=? AND status='running'
+            """,
+            (_json(error), now, row["id"]),
+        )
+        return connection.execute(
+            "SELECT * FROM thesis_ledger_catalog_job WHERE id = ?",
+            (row["id"],),
+        ).fetchone()
+
+    def _reclaim_expired_catalog_jobs(
+        self,
+        connection: sqlite3.Connection,
+        now: str,
+    ) -> None:
+        running_jobs = connection.execute(
+            "SELECT * FROM thesis_ledger_catalog_job WHERE status='running'"
+        ).fetchall()
+        for row in running_jobs:
+            if not _lease_is_valid(row["lease_expires_at"], now):
+                self._timeout_catalog_job(connection, row, now)
+
+    def _claim_catalog_job(
+        self,
+        owner: str,
+        *,
+        initial_status: str = "pending",
+    ) -> tuple[sqlite3.Row, bool]:
+        """在单一 SQLite 写事务中去重并声明一个 Catalog Job。"""
+        if initial_status not in {"pending", "running"}:
+            raise ValueError(f"unsupported Catalog Job initial status: {initial_status}")
         job_id = str(uuid.uuid4())
-        now = _utc_now()
         with self._schema_lock, self._connect() as connection:
-            running = connection.execute(
-                "SELECT * FROM thesis_ledger_catalog_job WHERE status='running' ORDER BY created_at LIMIT 1"
-            ).fetchone()
-            if running:
-                return self._job_payload(running)
-            latest = connection.execute(
-                "SELECT generation FROM thesis_ledger_catalog_generation ORDER BY generation DESC LIMIT 1"
-            ).fetchone()
-            requested_generation = int(latest["generation"]) + 1 if latest else 1
-            connection.execute(
-                """
-                INSERT INTO thesis_ledger_catalog_job
-                (id, status, generation, checksum, error_json, created_at, updated_at)
-                VALUES (?, 'running', ?, '', NULL, ?, ?)
-                """,
-                (job_id, requested_generation, now, now),
+            try:
+                # Claim, stale-lease reclamation and de-duplication must be a
+                # single SQLite writer transaction so separate API workers
+                # cannot both create a running Catalog Job.
+                connection.execute("BEGIN IMMEDIATE")
+                now = _utc_now()
+                self._reclaim_expired_catalog_jobs(connection, now)
+                running = connection.execute(
+                    """
+                    SELECT * FROM thesis_ledger_catalog_job
+                    WHERE status IN ('pending', 'running')
+                    ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END,
+                             created_at
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if running is not None:
+                    connection.commit()
+                    return running, False
+                latest = connection.execute(
+                    """
+                    SELECT generation FROM thesis_ledger_catalog_generation
+                    ORDER BY generation DESC LIMIT 1
+                    """
+                ).fetchone()
+                requested_generation = int(latest["generation"]) + 1 if latest else 1
+                connection.execute(
+                    """
+                    INSERT INTO thesis_ledger_catalog_job
+                    (id, status, generation, checksum, error_json, owner,
+                     lease_expires_at, created_at, updated_at)
+                    VALUES (?, ?, ?, '', NULL, ?, ?, ?, ?)
+                    """,
+                    (
+                        job_id,
+                        initial_status,
+                        requested_generation,
+                        owner,
+                        _lease_expires_at(now) if initial_status == "running" else None,
+                        now,
+                        now,
+                    ),
+                )
+                connection.commit()
+                row = connection.execute(
+                    "SELECT * FROM thesis_ledger_catalog_job WHERE id = ?", (job_id,)
+                ).fetchone()
+                return row, True
+            except Exception:
+                connection.rollback()
+                raise
+
+    def _start_catalog_job(self, job_id: str, owner: str) -> sqlite3.Row | None:
+        """Atomically move one pending Job to running and acquire its lease."""
+        with self._schema_lock, self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                row = connection.execute(
+                    "SELECT * FROM thesis_ledger_catalog_job WHERE id = ?",
+                    (job_id,),
+                ).fetchone()
+                if row is None:
+                    connection.commit()
+                    return None
+                if row["status"] != "pending":
+                    connection.commit()
+                    return row
+                now = _utc_now()
+                connection.execute(
+                    """
+                    UPDATE thesis_ledger_catalog_job
+                    SET status='running', lease_expires_at=?, updated_at=?
+                    WHERE id=? AND status='pending' AND owner=?
+                    """,
+                    (_lease_expires_at(now), now, job_id, owner),
+                )
+                connection.commit()
+                return connection.execute(
+                    "SELECT * FROM thesis_ledger_catalog_job WHERE id = ?",
+                    (job_id,),
+                ).fetchone()
+            except Exception:
+                connection.rollback()
+                raise
+
+    def _complete_catalog_job(
+        self,
+        job_id: str,
+        owner: str,
+        items: list[dict[str, Any]],
+        failures: dict[str, str],
+    ) -> sqlite3.Row:
+        """校验 owner/lease 后原子发布 Catalog generation 并完成 Job。"""
+        checksum = hashlib.sha256(_json(items).encode("utf-8")).hexdigest()
+        with self._schema_lock, self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                row = connection.execute(
+                    "SELECT * FROM thesis_ledger_catalog_job WHERE id = ?", (job_id,)
+                ).fetchone()
+                now = _utc_now()
+                if row is None:
+                    raise ControlContractError(
+                        "CATALOG_JOB_NOT_FOUND",
+                        "Catalog Job 不存在，无法完成任务",
+                        status_code=409,
+                    )
+                if row["status"] != "running" or row["owner"] != owner:
+                    connection.commit()
+                    return row
+                if not _lease_is_valid(row["lease_expires_at"], now):
+                    timed_out = self._timeout_catalog_job(connection, row, now)
+                    connection.commit()
+                    return timed_out
+
+                latest = connection.execute(
+                    "SELECT * FROM thesis_ledger_catalog_generation ORDER BY generation DESC LIMIT 1"
+                ).fetchone()
+                if latest is not None and latest["checksum"] == checksum:
+                    generation = int(latest["generation"])
+                    cursor = str(latest["cursor"])
+                else:
+                    generation = int(latest["generation"]) + 1 if latest else 1
+                    cursor = f"generation:{generation}"
+                    connection.execute(
+                        """
+                        INSERT INTO thesis_ledger_catalog_generation
+                        (generation, checksum, cursor, complete, items_json, created_at)
+                        VALUES (?, ?, ?, 1, ?, ?)
+                        """,
+                        (generation, checksum, cursor, _json(items), now),
+                    )
+                    connection.execute(
+                        "DELETE FROM thesis_ledger_catalog_generation WHERE generation < ?",
+                        (max(1, generation - 4),),
+                    )
+                connection.execute(
+                    """
+                    UPDATE thesis_ledger_catalog_job
+                    SET status='succeeded', generation=?, checksum=?, error_json=?, updated_at=?
+                    WHERE id=? AND owner=? AND status='running'
+                    """,
+                    (
+                        generation,
+                        checksum,
+                        _json({"providerFailures": failures}) if failures else None,
+                        now,
+                        job_id,
+                        owner,
+                    ),
+                )
+                connection.commit()
+                return connection.execute(
+                    "SELECT * FROM thesis_ledger_catalog_job WHERE id = ?", (job_id,)
+                ).fetchone()
+            except Exception:
+                connection.rollback()
+                raise
+
+    def _fail_catalog_job(
+        self,
+        job_id: str,
+        owner: str,
+        *,
+        error: dict[str, Any] | None = None,
+    ) -> sqlite3.Row:
+        """在 owner/lease 仍有效时记录可重试的 Catalog Job 失败。"""
+        with self._schema_lock, self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                row = connection.execute(
+                    "SELECT * FROM thesis_ledger_catalog_job WHERE id = ?", (job_id,)
+                ).fetchone()
+                now = _utc_now()
+                if row is None or row["status"] != "running" or row["owner"] != owner:
+                    connection.commit()
+                    return row
+                if not _lease_is_valid(row["lease_expires_at"], now):
+                    result = self._timeout_catalog_job(connection, row, now)
+                else:
+                    connection.execute(
+                        """
+                    UPDATE thesis_ledger_catalog_job
+                        SET status='failed',
+                            error_json=?,
+                            updated_at=?
+                        WHERE id=? AND owner=? AND status='running'
+                        """,
+                        (
+                            _json(
+                                error
+                                or {
+                                    "code": "catalog_provider_unavailable",
+                                    "retryable": True,
+                                }
+                            ),
+                            now,
+                            job_id,
+                            owner,
+                        ),
+                    )
+                    result = connection.execute(
+                        "SELECT * FROM thesis_ledger_catalog_job WHERE id = ?",
+                        (job_id,),
+                    ).fetchone()
+                connection.commit()
+                return result
+            except Exception:
+                connection.rollback()
+                raise
+
+    def recover_catalog_jobs(self, owner: str) -> list[tuple[str, str]]:
+        """Recover pending Jobs after a process restart without duplicating work."""
+        recovered: list[tuple[str, str]] = []
+        with self._schema_lock, self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                now = _utc_now()
+                self._reclaim_expired_catalog_jobs(connection, now)
+                timeout_rows = connection.execute(
+                    "SELECT * FROM thesis_ledger_catalog_job WHERE status='timeout'"
+                ).fetchall()
+                for row in timeout_rows:
+                    error = _json_load(row["error_json"], {})
+                    if not isinstance(error, dict):
+                        continue
+                    if error.get("code") != CATALOG_JOB_LEASE_EXPIRED_CODE:
+                        continue
+                    if error.get("requeued"):
+                        continue
+                    active = connection.execute(
+                        """
+                        SELECT 1 FROM thesis_ledger_catalog_job
+                        WHERE status IN ('pending', 'running') AND generation = ?
+                        LIMIT 1
+                        """,
+                        (row["generation"],),
+                    ).fetchone()
+                    if active is not None:
+                        continue
+                    error["requeued"] = True
+                    connection.execute(
+                        """
+                        UPDATE thesis_ledger_catalog_job
+                        SET error_json=?, updated_at=?
+                        WHERE id=? AND status='timeout'
+                        """,
+                        (_json(error), now, row["id"]),
+                    )
+                    requeued_id = str(uuid.uuid4())
+                    connection.execute(
+                        """
+                        INSERT INTO thesis_ledger_catalog_job
+                        (id, status, generation, checksum, error_json, owner,
+                         lease_expires_at, created_at, updated_at)
+                        VALUES (?, 'pending', ?, '', NULL, ?, NULL, ?, ?)
+                        """,
+                        (requeued_id, row["generation"], owner, now, now),
+                    )
+                pending_rows = connection.execute(
+                    """
+                    SELECT id, owner FROM thesis_ledger_catalog_job
+                    WHERE status='pending'
+                    ORDER BY created_at
+                    """
+                ).fetchall()
+                connection.commit()
+                recovered.extend(
+                    (str(row["id"]), str(row["owner"] or owner))
+                    for row in pending_rows
+                )
+                return recovered
+            except Exception:
+                connection.rollback()
+                raise
+
+    def trigger_catalog_job(self, *, owner: str | None = None) -> dict[str, Any]:
+        """Create or reuse a Catalog Job without waiting for Provider I/O."""
+        job_owner = self._catalog_job_owner_value(owner)
+        job, claimed = self._claim_catalog_job(job_owner, initial_status="pending")
+        if claimed:
+            _catalog_job_manager_for(self.database_path).enqueue(
+                str(job["id"]), job_owner
             )
-            connection.commit()
+        return self._job_payload(job)
+
+    def get_catalog_job(self, job_id: str) -> dict[str, Any]:
+        """读取一个 Catalog Job，并在读取时回收已失效的 running lease。"""
+        with self._schema_lock, self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                self._reclaim_expired_catalog_jobs(connection, _utc_now())
+                row = connection.execute(
+                    "SELECT * FROM thesis_ledger_catalog_job WHERE id = ?",
+                    (job_id,),
+                ).fetchone()
+                if row is None:
+                    connection.rollback()
+                    raise ControlContractError(
+                        "CATALOG_JOB_NOT_FOUND",
+                        "Catalog Job 不存在",
+                        status_code=404,
+                    )
+                connection.commit()
+                return self._job_payload(row)
+            except ControlContractError:
+                raise
+            except Exception:
+                connection.rollback()
+                raise
+
+    def execute_catalog_job(self, job_id: str, owner: str) -> dict[str, Any]:
+        """Run one claimed Job; called by the process-local Catalog worker."""
+        started = self._start_catalog_job(job_id, owner)
+        if started is None:
+            raise ControlContractError(
+                "CATALOG_JOB_NOT_FOUND",
+                "Catalog Job 不存在，无法执行",
+                status_code=409,
+            )
+        if started["status"] != "running" or started["owner"] != owner:
+            return self._job_payload(started)
         try:
             fixture_mode = os.getenv("THESIS_LEDGER_FIXTURE_MODE", "false").strip().lower() in {
                 "1",
@@ -1160,71 +1732,86 @@ class ThesisLedgerControlStore:
                     item["instrumentType"],
                 ),
             )
-            checksum = hashlib.sha256(_json(items).encode("utf-8")).hexdigest()
-            with self._schema_lock, self._connect() as connection:
-                latest = connection.execute(
-                    "SELECT * FROM thesis_ledger_catalog_generation ORDER BY generation DESC LIMIT 1"
-                ).fetchone()
-                if latest is not None and latest["checksum"] == checksum:
-                    generation = int(latest["generation"])
-                    cursor = str(latest["cursor"])
-                else:
-                    generation = int(latest["generation"]) + 1 if latest else 1
-                    cursor = f"generation:{generation}"
-                    connection.execute(
-                        """
-                        INSERT INTO thesis_ledger_catalog_generation
-                        (generation, checksum, cursor, complete, items_json, created_at)
-                        VALUES (?, ?, ?, 1, ?, ?)
-                        """,
-                        (generation, checksum, cursor, _json(items), _utc_now()),
-                    )
-                    connection.execute(
-                        "DELETE FROM thesis_ledger_catalog_generation WHERE generation < ?",
-                        (max(1, generation - 4),),
-                    )
-                connection.execute(
-                    """
-                    UPDATE thesis_ledger_catalog_job
-                    SET status='succeeded', generation=?, checksum=?, error_json=?, updated_at=?
-                    WHERE id=?
-                    """,
-                    (
-                        generation,
-                        checksum,
-                        _json({"providerFailures": failures}) if failures else None,
-                        _utc_now(),
-                        job_id,
-                    ),
-                )
-                connection.commit()
-                row = connection.execute(
-                    "SELECT * FROM thesis_ledger_catalog_job WHERE id = ?", (job_id,)
-                ).fetchone()
-                return self._job_payload(row)
-        except Exception:
-            with self._schema_lock, self._connect() as connection:
-                connection.execute(
-                    """
-                    UPDATE thesis_ledger_catalog_job
-                    SET status='failed', error_json=?, updated_at=? WHERE id=?
-                    """,
-                    (_json({"code": "catalog_provider_unavailable"}), _utc_now(), job_id),
-                )
-                connection.commit()
-                row = connection.execute(
-                    "SELECT * FROM thesis_ledger_catalog_job WHERE id = ?", (job_id,)
-                ).fetchone()
-                return self._job_payload(row)
+            completed = self._complete_catalog_job(job_id, owner, items, failures)
+            return self._job_payload(completed)
+        except Exception as exc:
+            failure = {
+                "code": str(getattr(exc, "code", "catalog_provider_unavailable")),
+                "retryable": bool(getattr(exc, "retryable", True)),
+            }
+            if hasattr(exc, "code"):
+                failure["message"] = str(exc)
+            failed = self._fail_catalog_job(job_id, owner, error=failure)
+            if failed is None:
+                raise
+            return self._job_payload(failed)
 
     @staticmethod
-    def _job_payload(row: sqlite3.Row) -> dict[str, Any]:
+    def _job_payload(row: sqlite3.Row, *, now: str | None = None) -> dict[str, Any]:
+        status = str(row["status"])
+        current_time = now or _utc_now()
         return {
             "id": row["id"],
-            "status": row["status"],
+            "status": status,
             "generation": int(row["generation"]),
             "checksum": row["checksum"],
             "error": _json_load(row["error_json"], None),
+            "owner": row["owner"],
+            "leaseExpiresAt": row["lease_expires_at"],
+            "leaseValid": status == "running"
+            and _lease_is_valid(row["lease_expires_at"], current_time),
+            "retryable": status in {"failed", "timeout"},
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
         }
+
+
+class _CatalogJobManager:
+    """One bounded process-local queue for manual and scheduled Catalog triggers."""
+
+    def __init__(self, database_path: str) -> None:
+        self.database_path = database_path
+        self.owner = f"catalog-worker:pid:{os.getpid()}:{uuid.uuid4().hex}"
+        self._queue: queue.Queue[tuple[str, str]] = queue.Queue()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="thesis-ledger-catalog-worker",
+            daemon=True,
+        )
+        self._thread.start()
+        self._recover()
+
+    def enqueue(self, job_id: str, owner: str) -> None:
+        """将已声明的 Catalog Job 放入当前进程的有界工作流。"""
+        self._queue.put((job_id, owner))
+
+    def _recover(self) -> None:
+        """恢复 pending 与 lease 过期后可重试的 Job。"""
+        store = ThesisLedgerControlStore(self.database_path)
+        for job_id, owner in store.recover_catalog_jobs(self.owner):
+            self.enqueue(job_id, owner)
+
+    def _run(self) -> None:
+        """持续消费 Job，并让 Job 自身记录稳定失败状态。"""
+        store = ThesisLedgerControlStore(self.database_path)
+        while True:
+            job_id, owner = self._queue.get()
+            try:
+                store.execute_catalog_job(job_id, owner)
+            except Exception:  # noqa: BLE001 - the Job itself records stable failure state.
+                logger.exception("Catalog worker failed job=%s", job_id)
+            finally:
+                self._queue.task_done()
+
+
+_catalog_job_managers: dict[str, _CatalogJobManager] = {}
+_catalog_job_managers_lock = threading.Lock()
+
+
+def _catalog_job_manager_for(database_path: str) -> _CatalogJobManager:
+    with _catalog_job_managers_lock:
+        manager = _catalog_job_managers.get(database_path)
+        if manager is None:
+            manager = _CatalogJobManager(database_path)
+            _catalog_job_managers[database_path] = manager
+        return manager

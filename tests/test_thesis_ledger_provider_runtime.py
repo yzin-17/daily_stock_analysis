@@ -4,10 +4,17 @@ from dataclasses import dataclass
 
 import pytest
 
-from src.services.thesis_ledger_control import ThesisLedgerControlStore
+from src.services.thesis_ledger_control import (
+    PROVIDER_MANIFESTS,
+    ControlContractError,
+    ThesisLedgerControlStore,
+)
 from src.services.thesis_ledger_provider_runtime import (
     ProviderCallError,
+    ThesisLedgerDataGateway,
+    ThesisLedgerDataRequest,
     ThesisLedgerProviderRuntime,
+    ThesisLedgerGatewayError,
 )
 
 
@@ -22,6 +29,20 @@ class _Quote:
     pre_close: float = 99.5
     volume: float = 1000.0
     amount: float = 100000.0
+
+
+@dataclass
+class _Chip:
+    """最小的完整筹码摘要 fixture。"""
+
+    avg_cost: float = 100.0
+    profit_ratio: float = 0.5
+    cost_70_low: float = 95.0
+    cost_70_high: float = 105.0
+    concentration_70: float = 0.1
+    cost_90_low: float = 90.0
+    cost_90_high: float = 110.0
+    concentration_90: float = 0.2
 
 
 class _Row(dict):
@@ -68,6 +89,136 @@ def _quote_routes():
 def _bar_routes():
     """返回 Daily Bar 测试用 route。"""
     return {"DAILY_BAR": {"STOCK": ["akshare", "efinance"]}}
+
+
+def _chip_routes():
+    """返回 CHIP_SUMMARY 摘要级 fallback 测试用 route。"""
+    return {"CHIP_SUMMARY": {"STOCK": ["akshare", "efinance"]}}
+
+
+def test_chip_summary_uses_effective_route_and_preserves_fallback_metadata(tmp_path, monkeypatch):
+    """筹码摘要失败时切换完整 Provider，不允许字段级混源。"""
+    monkeypatch.setitem(
+        PROVIDER_MANIFESTS["efinance"]["capabilities"],
+        "CHIP_SUMMARY",
+        ["STOCK"],
+    )
+
+    class _UnavailableAdapter:
+        """模拟没有返回摘要的主 Provider。"""
+
+        calls = 0
+
+        def get_chip_distribution(self, _symbol):
+            """返回空摘要，触发下一候选。"""
+            self.calls += 1
+            return None
+
+    class _HealthyAdapter:
+        """模拟返回完整摘要的后备 Provider。"""
+
+        calls = 0
+        symbols = []
+
+        def get_chip_distribution(self, symbol):
+            """返回单一来源的完整摘要。"""
+            self.calls += 1
+            self.symbols.append(symbol)
+            return _Chip()
+
+    primary = _UnavailableAdapter()
+    fallback = _HealthyAdapter()
+    from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataGateway
+
+    gateway = ThesisLedgerDataGateway(
+        ThesisLedgerProviderRuntime(
+            _store(tmp_path, _chip_routes()),
+            adapters={"akshare": primary, "efinance": fallback},
+        )
+    )
+
+    result = gateway.chip_summary("600519.SH", request_id="chip-request")
+
+    assert result.data.avg_cost == 100.0
+    assert result.provider == "efinance"
+    assert result.fallback_used is True
+    assert result.route == ("akshare", "efinance")
+    assert result.attempted_providers == ("akshare", "efinance")
+    assert primary.calls == 1
+    assert fallback.calls == 1
+    assert fallback.symbols == ["600519"]
+
+
+def test_chip_summary_rejects_non_stock_route_before_provider_call(tmp_path):
+    """不支持的 CHIP_SUMMARY/InstrumentType 组合必须原子拒绝。"""
+    with pytest.raises(ControlContractError, match="没有 Provider 支持"):
+        _store(tmp_path, {"CHIP_SUMMARY": {"ETF": []}})
+
+    store = _store(tmp_path, {"CHIP_SUMMARY": {"STOCK": ["akshare"]}})
+    runtime = ThesisLedgerProviderRuntime(store, adapters={"akshare": object()})
+    with pytest.raises(ProviderCallError, match="STOCK 的 CHIP_SUMMARY"):
+        runtime.execute_request(
+            ThesisLedgerDataRequest(
+                "CHIP_SUMMARY",
+                "510300.SH",
+                instrument_type="ETF",
+                request_id="chip-invalid-route",
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("enabled", "circuit"),
+    [(False, "closed"), (True, "open")],
+)
+def test_chip_summary_skips_disabled_or_circuit_open_provider(
+    tmp_path,
+    enabled,
+    circuit,
+):
+    """CHIP_SUMMARY 的非 eligible Provider 不得收到适配器请求。"""
+    store = ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db"))
+    store.save_provider_config("akshare", {"enabled": enabled, "settings": {}})
+    if circuit != "closed":
+        store.record_health(
+            "akshare",
+            "CHIP_SUMMARY",
+            "STOCK",
+            state="degraded",
+            circuit=circuit,
+            consecutive_failures=3,
+            error_code="transient_failure",
+        )
+    store.apply_policy(
+        {
+            "contractVersion": 1,
+            "consumer": "thesis-ledger",
+            "requestId": "chip-state-test",
+            "revision": 1,
+            "enabled": True,
+            "routes": {"CHIP_SUMMARY": {"STOCK": ["akshare"]}},
+        }
+    )
+
+    class _Adapter:
+        """记录不应发生的摘要调用。"""
+
+        calls = 0
+
+        def get_chip_distribution(self, _symbol):
+            self.calls += 1
+            return _Chip()
+
+    adapter = _Adapter()
+    gateway = ThesisLedgerDataGateway(
+        ThesisLedgerProviderRuntime(store, adapters={"akshare": adapter})
+    )
+    with pytest.raises(ThesisLedgerGatewayError) as raised:
+        gateway.chip_summary("600519.SH", request_id="chip-state-request")
+
+    assert raised.value.code == "NO_ELIGIBLE_PROVIDER"
+    assert raised.value.request_id == "chip-state-request"
+    assert adapter.calls == 0
 
 
 def test_quote_retries_transient_primary_once_then_uses_one_complete_fallback(tmp_path):
