@@ -175,6 +175,8 @@ def test_capability_smoke_does_not_change_policy(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
     assert response.json()["capabilityResults"]["REALTIME_QUOTE"]["attempted"] is True
+    assert response.json()["capabilityResults"]["FUND_NAV_HISTORY"]["status"] == "healthy"
+    assert response.json()["capabilityResults"]["FUND_NAV_HISTORY"]["attempted"] is True
     registry = client.get("/api/v1/thesis-ledger/control/providers", headers=headers)
     assert registry.json()["providers"][0]["credentialConfigured"] is False
 

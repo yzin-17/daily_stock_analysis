@@ -2,8 +2,13 @@
 
 from dataclasses import dataclass
 
+import pytest
+
 from src.services.thesis_ledger_control import ThesisLedgerControlStore
-from src.services.thesis_ledger_provider_runtime import ThesisLedgerProviderRuntime
+from src.services.thesis_ledger_provider_runtime import (
+    ProviderCallError,
+    ThesisLedgerProviderRuntime,
+)
 
 
 @dataclass
@@ -73,7 +78,7 @@ def test_quote_retries_transient_primary_once_then_uses_one_complete_fallback(tm
 
         calls = 0
 
-        def get_realtime_quote(self, _symbol):
+        def get_realtime_quote(self, _symbol, *, source=None):
             """抛出 transient timeout。"""
             self.calls += 1
             raise TimeoutError("upstream timeout")
@@ -82,10 +87,12 @@ def test_quote_retries_transient_primary_once_then_uses_one_complete_fallback(tm
         """模拟返回完整 Quote 的后备 Provider。"""
 
         calls = 0
+        symbols = []
 
-        def get_realtime_quote(self, _symbol):
+        def get_realtime_quote(self, symbol, *, source=None):
             """返回完整 Quote。"""
             self.calls += 1
+            self.symbols.append(symbol)
             return _Quote()
 
     primary = _TimeoutAdapter()
@@ -102,10 +109,95 @@ def test_quote_retries_transient_primary_once_then_uses_one_complete_fallback(tm
     assert fallback_used is True
     assert primary.calls == 2
     assert fallback.calls == 1
+    assert fallback.symbols == ["600519"]
 
 
 def test_bars_returns_one_complete_frame_and_uses_route_provider_identity(tmp_path):
     """确认 Bars 返回完整序列并使用 route Provider 而非 adapter source。"""
+
+    frame = _Frame(
+        [
+            _Row(
+                date="2025-01-01",
+                open=99.0,
+                high=102.0,
+                low=98.0,
+                close=100.0,
+                volume=1000.0,
+                amount=100000.0,
+            ),
+            _Row(
+                date="2025-01-02",
+                open=100.0,
+                high=103.0,
+                low=99.0,
+                close=101.0,
+                volume=1100.0,
+                amount=110000.0,
+            ),
+        ]
+    )
+
+    class _Adapter:
+        """模拟返回完整 Bars frame 的 Provider。"""
+
+        symbols = []
+
+        def get_daily_data(self, symbol, *, days):
+            """返回带无关 source 标签的完整 Bars frame。"""
+            assert days == 30
+            self.symbols.append(symbol)
+            return frame, "adapter-source-must-not-be-used-as-provider"
+
+    runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, _bar_routes()),
+        adapters={"akshare": _Adapter()},
+    )
+
+    result, provider, fallback_used = runtime.bars("600519.SH", days=30)
+
+    assert result is frame
+    assert provider == "akshare"
+    assert fallback_used is False
+    assert runtime.adapters["akshare"].symbols == ["600519"]
+
+
+def test_provider_smoke_uses_native_symbol_format(tmp_path):
+    """确认真实 Provider smoke 不把 Contract 的交易所后缀传给适配器。"""
+
+    class _Adapter:
+        """模拟返回供 runtime smoke 校验的行情与日线数据源。"""
+
+        quote_symbols = []
+        quote_sources = []
+        bar_symbols = []
+
+        def get_realtime_quote(self, symbol, *, source=None):
+            """记录原生代码与通道并返回最小合法 Quote。"""
+            self.quote_symbols.append(symbol)
+            self.quote_sources.append(source)
+            return _Quote()
+
+        def get_daily_data(self, symbol, *, days):
+            """记录日线请求并返回空但结构完整的 frame。"""
+            self.bar_symbols.append((symbol, days))
+            return _Frame([]), "adapter-source"
+
+    adapter = _Adapter()
+    runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, {}),
+        adapters={"akshare": adapter},
+    )
+
+    assert runtime.smoke("akshare", "REALTIME_QUOTE")["status"] == "healthy"
+    assert runtime.smoke("akshare", "DAILY_BAR")["status"] == "healthy"
+    assert adapter.quote_symbols == ["600519"]
+    assert adapter.quote_sources == ["sina"]
+    assert adapter.bar_symbols == [("600519", 5)]
+
+
+def test_bars_accepts_direct_fetcher_frame_result(tmp_path):
+    """确认直接调用 BaseFetcher 时的 DataFrame 返回值不会被错误解包。"""
 
     frame = _Frame(
         [
@@ -122,12 +214,12 @@ def test_bars_returns_one_complete_frame_and_uses_route_provider_identity(tmp_pa
     )
 
     class _Adapter:
-        """模拟返回完整 Bars frame 的 Provider。"""
+        """模拟返回直接 frame 的日线 Provider。"""
 
         def get_daily_data(self, _symbol, *, days):
-            """返回带无关 source 标签的完整 Bars frame。"""
+            """校验 facade 传入的天数并返回 fixture frame。"""
             assert days == 30
-            return frame, "adapter-source-must-not-be-used-as-provider"
+            return frame
 
     runtime = ThesisLedgerProviderRuntime(
         _store(tmp_path, _bar_routes()),
@@ -154,7 +246,16 @@ def test_real_bars_facade_consumes_runtime_frame(monkeypatch, tmp_path):
                 close=100.0,
                 volume=1000.0,
                 amount=100000.0,
-            )
+            ),
+            _Row(
+                date="2025-01-02",
+                open=100.0,
+                high=103.0,
+                low=99.0,
+                close=101.0,
+                volume=1100.0,
+                amount=110000.0,
+            ),
         ]
     )
 
@@ -178,8 +279,10 @@ def test_real_bars_facade_consumes_runtime_frame(monkeypatch, tmp_path):
 
     monkeypatch.setattr(runtime_module, "get_thesis_ledger_runtime", lambda: runtime)
 
-    rows = contract._real_bars("600519.SH", None, None, 30)
+    rows = contract._real_bars("600519.SH", None, None, 1)
 
+    assert len(rows) == 1
+    assert rows[0]["timestamp"] == "2025-01-02T00:00:00+00:00"
     assert rows[0]["provider"] == "akshare"
     assert rows[0]["symbol"] == "600519.SH"
     assert rows[0]["fallbackUsed"] is False
@@ -222,6 +325,53 @@ def test_fund_nav_history_switches_the_complete_sequence_on_invalid_primary(
     assert provider == "efinance"
     assert fallback_used is True
     assert calls == {"akshare": 1, "efinance": 1}
+
+
+def test_fund_nav_history_rejects_non_ascending_sequence(monkeypatch, tmp_path):
+    """历史净值日期倒序时必须拒绝整条序列，而不是返回部分数据。"""
+    frame = _Frame(
+        [
+            _Row(日期="2025-01-02", 单位净值=1.2),
+            _Row(日期="2025-01-01", 单位净值=1.1),
+        ],
+        columns=("日期", "单位净值"),
+    )
+    runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, {"FUND_NAV_HISTORY": {"MUTUAL_FUND": ["akshare"]}}),
+        adapters={"akshare": object()},
+    )
+
+    monkeypatch.setattr(
+        "src.services.thesis_ledger_provider_runtime.ThesisLedgerProviderRuntime._fund_nav_from_provider",
+        staticmethod(lambda _provider_id, _symbol, _adapter: frame),
+    )
+
+    with pytest.raises(ProviderCallError, match="严格升序"):
+        runtime.fund_nav_history("000001.OF")
+
+
+def test_provider_history_smoke_validates_complete_sequence(monkeypatch, tmp_path):
+    """FUND_NAV_HISTORY smoke 必须校验非空、唯一、升序和正数净值。"""
+    frame = _Frame(
+        [
+            _Row(日期="2025-01-01", 单位净值=1.1),
+            _Row(日期="2025-01-02", 单位净值=1.2),
+        ],
+        columns=("日期", "单位净值"),
+    )
+    runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, {}),
+        adapters={"akshare": object()},
+    )
+    monkeypatch.setattr(
+        "src.services.thesis_ledger_provider_runtime.ThesisLedgerProviderRuntime._fund_nav_from_provider",
+        staticmethod(lambda _provider_id, _symbol, _adapter: frame),
+    )
+
+    result = runtime.smoke("akshare", "FUND_NAV_HISTORY")
+
+    assert result["status"] == "healthy"
+    assert result["readOnly"] is True
 
 
 def test_control_projection_catalog_ack_and_tombstone_survive_store_reopen(tmp_path, monkeypatch):

@@ -82,6 +82,22 @@ def add_error_handlers(app) -> None:
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
         """处理 HTTP 异常"""
+        # ThesisLedger Data/Control Contract errors must remain structured under
+        # ``detail`` so clients can branch on the stable error code.
+        if (
+            isinstance(exc.detail, dict)
+            and "contractVersion" in exc.detail
+            and "code" in exc.detail
+            and "message" in exc.detail
+        ):
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    "error": "http_error",
+                    "message": str(exc.detail["message"]),
+                    "detail": exc.detail,
+                },
+            )
         # 如果 detail 已经是 ErrorResponse 格式的 dict，直接使用
         if isinstance(exc.detail, dict) and "error" in exc.detail and "message" in exc.detail:
             return JSONResponse(

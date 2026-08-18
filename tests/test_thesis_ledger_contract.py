@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.thesis_ledger import router
+from api.middlewares.error_handler import add_error_handlers
 
 
 def _client(monkeypatch) -> TestClient:
@@ -49,6 +50,24 @@ def test_contract_returns_structured_unsupported_error(monkeypatch):
         headers={"authorization": "Bearer test-token"},
     )
     assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "unsupported_capability"
+
+
+def test_global_error_handler_preserves_contract_error_detail(monkeypatch):
+    monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "test-token")
+    monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "true")
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    add_error_handlers(app)
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/v1/thesis-ledger/market/bars?symbol=600519.SH&timeframe=1m",
+        headers={"authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["contractVersion"] == 1
     assert response.json()["detail"]["code"] == "unsupported_capability"
 
 

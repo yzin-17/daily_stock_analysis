@@ -138,6 +138,9 @@ _realtime_cache: Dict[str, Any] = {
     'ttl': 600  # 10分钟缓存有效期
 }
 
+# 单标的 snapshot 行情缓存，避免 ThesisLedger consumer 的代表性探测触发全市场请求。
+_realtime_snapshot_cache: Dict[str, Tuple[float, UnifiedRealtimeQuote]] = {}
+
 # ETF 实时行情缓存（与股票分开缓存）
 _etf_realtime_cache: Dict[str, Any] = {
     'data': None,
@@ -619,6 +622,100 @@ class EfinanceFetcher(BaseFetcher):
         df = df[existing_cols]
         
         return df
+
+    @staticmethod
+    def _row_value(row: Any, *columns: str) -> Any:
+        """从中英文列名别名中取第一个非空值。"""
+        for column in columns:
+            value = row.get(column)
+            if value is None:
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            try:
+                if pd.isna(value):
+                    continue
+            except (TypeError, ValueError):
+                # 非标量值不适合当作缺失标记，交给后续字段转换器处理。
+                pass
+            return value
+        return None
+
+    @classmethod
+    def _quote_from_row(
+        cls, row: Any, stock_code: str
+    ) -> Optional[UnifiedRealtimeQuote]:
+        """将 efinance 行对象归一化为统一实时行情并校验标的代码。"""
+        expected_code = normalize_stock_code(stock_code)
+        response_value = cls._row_value(row, "代码", "股票代码", "code")
+        response_code = normalize_stock_code(str(response_value or ""))
+        if response_code and response_code != expected_code:
+            return None
+        price = safe_float(cls._row_value(row, "最新价", "price"))
+        if price is None:
+            return None
+        return UnifiedRealtimeQuote(
+            code=stock_code,
+            name=str(cls._row_value(row, "名称", "股票名称", "name") or ""),
+            source=RealtimeSource.EFINANCE,
+            price=price,
+            change_pct=safe_float(cls._row_value(row, "涨跌幅", "pct_chg")),
+            change_amount=safe_float(cls._row_value(row, "涨跌额", "change")),
+            volume=safe_int(cls._row_value(row, "成交量", "volume")),
+            amount=safe_float(cls._row_value(row, "成交额", "amount")),
+            turnover_rate=safe_float(cls._row_value(row, "换手率", "turnover_rate")),
+            amplitude=safe_float(cls._row_value(row, "振幅", "amplitude")),
+            high=safe_float(cls._row_value(row, "最高", "high")),
+            low=safe_float(cls._row_value(row, "最低", "low")),
+            open_price=safe_float(cls._row_value(row, "今开", "开盘", "open")),
+            pre_close=safe_float(cls._row_value(row, "昨收", "pre_close")),
+            volume_ratio=safe_float(cls._row_value(row, "量比", "volume_ratio")),
+            pe_ratio=safe_float(cls._row_value(row, "市盈率", "pe_ratio")),
+            total_mv=safe_float(cls._row_value(row, "总市值", "total_mv")),
+            circ_mv=safe_float(cls._row_value(row, "流通市值", "circ_mv")),
+        )
+
+    @classmethod
+    def _quote_from_snapshot(cls, snapshot: Any, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
+        """将 efinance 单标的 snapshot 转换为统一实时行情。"""
+        if isinstance(snapshot, pd.DataFrame):
+            if snapshot.empty:
+                return None
+            row = snapshot.iloc[0]
+        elif isinstance(snapshot, pd.Series):
+            row = snapshot
+        else:
+            return None
+        return cls._quote_from_row(row, stock_code)
+
+    def _get_realtime_snapshot_quote(
+        self, stock_code: str
+    ) -> Optional[UnifiedRealtimeQuote]:
+        """优先通过 efinance 单标的接口获取实时行情。"""
+        import efinance as ef
+
+        method = getattr(getattr(ef, "stock", None), "get_quote_snapshot", None)
+        if method is None:
+            return None
+        normalized = normalize_stock_code(stock_code)
+        now = time.time()
+        cached = _realtime_snapshot_cache.get(normalized)
+        if cached and now - cached[0] < _realtime_cache["ttl"]:
+            return cached[1]
+
+        self._set_random_user_agent()
+        self._enforce_rate_limit()
+        logger.info("[API调用] ef.stock.get_quote_snapshot(stock_code=%s)", normalized)
+        snapshot = _ef_call_with_timeout(method, normalized)
+        quote = self._quote_from_snapshot(snapshot, normalized)
+        if quote is not None:
+            _realtime_snapshot_cache[normalized] = (now, quote)
+            logger.info(
+                "[API返回] efinance 单标的实时行情成功: stock_code=%s, price=%s",
+                normalized,
+                quote.price,
+            )
+        return quote
     
     def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
         """
@@ -647,6 +744,18 @@ class EfinanceFetcher(BaseFetcher):
             return None
         
         try:
+            try:
+                snapshot_quote = self._get_realtime_snapshot_quote(stock_code)
+            except Exception as exc:
+                logger.info(
+                    "[API错误] efinance 单标的实时行情失败，回退全市场接口: %s",
+                    exc,
+                )
+                snapshot_quote = None
+            if snapshot_quote is not None:
+                circuit_breaker.record_success(source_key)
+                return snapshot_quote
+
             # 检查缓存
             current_time = time.time()
             if (_realtime_cache['data'] is not None and 
@@ -686,45 +795,10 @@ class EfinanceFetcher(BaseFetcher):
                 return None
             
             row = row.iloc[0]
-            
-            # 使用 realtime_types.py 中的统一转换函数
-            # 获取列名（可能是中文或英文）
-            name_col = '股票名称' if '股票名称' in df.columns else 'name'
-            price_col = '最新价' if '最新价' in df.columns else 'price'
-            pct_col = '涨跌幅' if '涨跌幅' in df.columns else 'pct_chg'
-            chg_col = '涨跌额' if '涨跌额' in df.columns else 'change'
-            vol_col = '成交量' if '成交量' in df.columns else 'volume'
-            amt_col = '成交额' if '成交额' in df.columns else 'amount'
-            turn_col = '换手率' if '换手率' in df.columns else 'turnover_rate'
-            amp_col = '振幅' if '振幅' in df.columns else 'amplitude'
-            high_col = '最高' if '最高' in df.columns else 'high'
-            low_col = '最低' if '最低' in df.columns else 'low'
-            open_col = '开盘' if '开盘' in df.columns else 'open'
-            # efinance 也返回量比、市盈率、市值等字段
-            vol_ratio_col = '量比' if '量比' in df.columns else 'volume_ratio'
-            pe_col = '市盈率' if '市盈率' in df.columns else 'pe_ratio'
-            total_mv_col = '总市值' if '总市值' in df.columns else 'total_mv'
-            circ_mv_col = '流通市值' if '流通市值' in df.columns else 'circ_mv'
-            
-            quote = UnifiedRealtimeQuote(
-                code=stock_code,
-                name=str(row.get(name_col, '')),
-                source=RealtimeSource.EFINANCE,
-                price=safe_float(row.get(price_col)),
-                change_pct=safe_float(row.get(pct_col)),
-                change_amount=safe_float(row.get(chg_col)),
-                volume=safe_int(row.get(vol_col)),
-                amount=safe_float(row.get(amt_col)),
-                turnover_rate=safe_float(row.get(turn_col)),
-                amplitude=safe_float(row.get(amp_col)),
-                high=safe_float(row.get(high_col)),
-                low=safe_float(row.get(low_col)),
-                open_price=safe_float(row.get(open_col)),
-                volume_ratio=safe_float(row.get(vol_ratio_col)),  # 量比
-                pe_ratio=safe_float(row.get(pe_col)),  # 市盈率
-                total_mv=safe_float(row.get(total_mv_col)),  # 总市值
-                circ_mv=safe_float(row.get(circ_mv_col)),  # 流通市值
-            )
+            quote = self._quote_from_row(row, stock_code)
+            if quote is None:
+                logger.info(f"[API返回] 股票 {stock_code} 的实时行情字段无效")
+                return None
             
             logger.info(f"[实时行情-efinance] {stock_code} {quote.name}: 价格={quote.price}, 涨跌={quote.change_pct}%, "
                        f"量比={quote.volume_ratio}, 换手率={quote.turnover_rate}%")

@@ -29,6 +29,34 @@ class ProviderCallError(Exception):
         self.retryable = retryable
 
 
+def validate_fund_nav_history_rows(rows: list[tuple[Any, Any]]) -> None:
+    """校验基金净值历史的非空、日期唯一升序和正数净值约束。"""
+    if not rows:
+        raise ProviderCallError("not_covered", "Provider 未返回基金净值历史")
+    seen: set[str] = set()
+    previous: datetime | None = None
+    for date_value, nav_value in rows:
+        date_text = str(date_value or "").strip()
+        if not date_text or date_text in seen:
+            raise ProviderCallError("invalid_response", "Provider 净值日期缺失或重复")
+        seen.add(date_text)
+        try:
+            current = datetime.fromisoformat(date_text.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ProviderCallError("invalid_response", "Provider 净值日期格式非法") from exc
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        if previous is not None and current <= previous:
+            raise ProviderCallError("invalid_response", "Provider 净值历史必须严格升序")
+        previous = current
+        try:
+            nav = float(nav_value)
+        except (TypeError, ValueError) as exc:
+            raise ProviderCallError("invalid_response", "Provider 响应字段 unitNav 非法") from exc
+        if not math.isfinite(nav) or nav <= 0:
+            raise ProviderCallError("invalid_response", "Provider 响应字段 unitNav 非法")
+
+
 class NoEligibleProviderError(ProviderCallError):
     def __init__(self, capability: str, instrument_type: str) -> None:
         super().__init__(
@@ -45,6 +73,25 @@ def instrument_type_for_symbol(symbol: str) -> str:
     if code.startswith(("15", "16", "18", "51", "52", "56", "58")):
         return "ETF"
     return "STOCK"
+
+
+def provider_symbol_for_contract(symbol: str) -> str:
+    """将 Contract 标的转换为现有 Provider 适配器接受的代码格式。"""
+    value = symbol.strip().upper()
+    if "." in value:
+        base, suffix = value.rsplit(".", 1)
+        if suffix in {"SH", "SS", "SZ", "BJ"} and base.isdigit():
+            return base
+        if suffix == "HK" and base.isdigit():
+            return f"HK{base.zfill(5)}"
+    for prefix in ("SH", "SZ", "SS", "BJ"):
+        if value.startswith(prefix):
+            remainder = value[len(prefix) :]
+            if remainder.startswith("."):
+                remainder = remainder[1:]
+            if remainder.isdigit():
+                return remainder
+    return value
 
 
 @dataclass
@@ -136,6 +183,22 @@ class ThesisLedgerProviderRuntime:
         return adapter
 
     @staticmethod
+    def _daily_frame(adapter_result: Any) -> Any:
+        """兼容 BaseFetcher 的 DataFrame 与 manager 的 ``(frame, source)`` 返回值。"""
+        if isinstance(adapter_result, tuple):
+            if len(adapter_result) != 2:
+                raise ProviderCallError("invalid_response", "Provider 日线响应结构非法")
+            return adapter_result[0]
+        return adapter_result
+
+    @staticmethod
+    def _realtime_quote(adapter: Any, provider_id: str, symbol: str) -> Any:
+        """为 AKShare 选择单标的轻量通道，其他 Provider 使用统一入口。"""
+        if provider_id == "akshare":
+            return adapter.get_realtime_quote(symbol, source="sina")
+        return adapter.get_realtime_quote(symbol)
+
+    @staticmethod
     def _finite_number(value: Any, field: str, *, positive: bool = False) -> float:
         try:
             number = float(value)
@@ -213,6 +276,26 @@ class ThesisLedgerProviderRuntime:
                 raise ProviderCallError("invalid_response", "Provider 净值日期缺失或重复")
             dates.add(date_value)
             cls._finite_number(row.get(nav_column), "unitNav", positive=True)
+        return frame
+
+    @classmethod
+    def _validate_fund_nav_history(cls, frame: Any) -> Any:
+        """复用单条净值字段校验并额外保证历史序列严格升序。"""
+        cls._validate_fund_nav(frame)
+        columns = set(getattr(frame, "columns", []))
+        date_column = next(
+            (column for column in ("净值日期", "日期", "date", "nav_date") if column in columns),
+            None,
+        )
+        nav_column = next(
+            (column for column in ("单位净值", "单位净值(元)", "unit_nav", "nav") if column in columns),
+            None,
+        )
+        if date_column is None or nav_column is None:
+            raise ProviderCallError("invalid_response", "Provider 净值响应缺少必要字段")
+        validate_fund_nav_history_rows(
+            [(row.get(date_column), row.get(nav_column)) for _, row in frame.iterrows()]
+        )
         return frame
 
     def _execute(
@@ -315,9 +398,10 @@ class ThesisLedgerProviderRuntime:
 
     def quote(self, symbol: str) -> tuple[Any, str, bool]:
         normalized = symbol.strip().upper()
+        provider_symbol = provider_symbol_for_contract(normalized)
 
-        def operation(_provider_id: str, adapter: Any) -> Any:
-            value = adapter.get_realtime_quote(normalized)
+        def operation(provider_id: str, adapter: Any) -> Any:
+            value = self._realtime_quote(adapter, provider_id, provider_symbol)
             if value is None:
                 raise ProviderCallError("not_covered", "Provider 未覆盖该标的")
             return self._validate_quote(value)
@@ -326,9 +410,10 @@ class ThesisLedgerProviderRuntime:
 
     def bars(self, symbol: str, days: int = 90) -> tuple[Any, str, bool]:
         normalized = symbol.strip().upper()
+        provider_symbol = provider_symbol_for_contract(normalized)
 
         def operation(_provider_id: str, adapter: Any) -> Any:
-            frame, _source = adapter.get_daily_data(normalized, days=days)
+            frame = self._daily_frame(adapter.get_daily_data(provider_symbol, days=days))
             return self._validate_bars(frame)
 
         return self._execute("DAILY_BAR", instrument_type_for_symbol(normalized), operation)
@@ -348,7 +433,7 @@ class ThesisLedgerProviderRuntime:
         return self._execute(
             "FUND_NAV_HISTORY",
             "MUTUAL_FUND",
-            lambda provider_id, adapter: self._validate_fund_nav(
+            lambda provider_id, adapter: self._validate_fund_nav_history(
                 self._fund_nav_from_provider(provider_id, normalized, adapter)
             ),
         )
@@ -394,17 +479,26 @@ class ThesisLedgerProviderRuntime:
         try:
             adapter = self._adapter(provider_id)
             if normalized_capability == "REALTIME_QUOTE":
-                value = adapter.get_realtime_quote("600519.SH")
+                value = self._realtime_quote(
+                    adapter,
+                    provider_id,
+                    provider_symbol_for_contract("600519.SH"),
+                )
                 if value is None or getattr(value, "price", None) is None:
                     raise ProviderCallError("not_covered", "Provider 未返回代表性行情")
             elif normalized_capability == "DAILY_BAR":
-                frame, _source = adapter.get_daily_data("600519.SH", days=5)
-                if frame is None or getattr(frame, "empty", True):
-                    raise ProviderCallError("not_covered", "Provider 未返回代表性日线")
-            elif normalized_capability in {"FUND_NAV", "FUND_NAV_HISTORY"}:
+                frame = self._daily_frame(
+                    adapter.get_daily_data(
+                        provider_symbol_for_contract("600519.SH"), days=5
+                    )
+                )
+                self._validate_bars(frame)
+            elif normalized_capability == "FUND_NAV":
                 value = self._fund_nav_from_provider(provider_id, "000001.OF", adapter)
-                if value is None or getattr(value, "empty", True):
-                    raise ProviderCallError("not_covered", "Provider 未返回代表性基金净值")
+                self._validate_fund_nav(value)
+            elif normalized_capability == "FUND_NAV_HISTORY":
+                value = self._fund_nav_from_provider(provider_id, "000001.OF", adapter)
+                self._validate_fund_nav_history(value)
             else:
                 raise ProviderCallError("unsupported", "Provider 不支持该 Capability")
         except ProviderCallError as exc:

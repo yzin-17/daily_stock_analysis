@@ -561,7 +561,7 @@ def _real_bars(symbol: str, start: Optional[str], end: Optional[str], limit: int
             }
         )
     result.sort(key=lambda item: item["timestamp"])
-    return result
+    return result[-limit:]
 
 
 def _real_indicator(symbol: str, name: str) -> dict[str, Any]:
@@ -868,8 +868,17 @@ def control_provider_test(
                             _fixture_quote("600519.SH")
                         elif capability == "DAILY_BAR":
                             _fixture_bars("600519.SH")
-                        elif capability in {"FUND_NAV", "FUND_NAV_HISTORY"}:
+                        elif capability == "FUND_NAV":
                             _fixture_fund_nav("000001.OF")
+                        elif capability == "FUND_NAV_HISTORY":
+                            from src.services.thesis_ledger_provider_runtime import (
+                                validate_fund_nav_history_rows,
+                            )
+
+                            history = _fixture_fund_nav_history("000001.OF", limit=5)
+                            validate_fund_nav_history_rows(
+                                [(row["navDate"], row["unitNav"]) for row in history]
+                            )
                         else:
                             raise ControlContractError(
                                 "UNSUPPORTED_CAPABILITY",
