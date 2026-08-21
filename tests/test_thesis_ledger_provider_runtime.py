@@ -263,6 +263,42 @@ def test_quote_retries_transient_primary_once_then_uses_one_complete_fallback(tm
     assert fallback.symbols == ["600519"]
 
 
+def test_quote_derives_missing_previous_close_from_change_amount(tmp_path):
+    """ETF 快照缺少昨收时，用同一快照的涨跌额补齐 Contract 字段。"""
+
+    class _Adapter:
+        """返回缺少 pre_close 但包含涨跌额的行情。"""
+
+        def get_realtime_quote(self, _symbol, *, source=None):
+            """模拟 AKShare ETF 快照的字段缺失。"""
+            return type(
+                "Quote",
+                (),
+                {
+                    "open_price": 99.0,
+                    "high": 102.0,
+                    "low": 98.0,
+                    "price": 100.0,
+                    "pre_close": None,
+                    "change_amount": 1.0,
+                    "change_pct": 1.0,
+                    "volume": 1000.0,
+                    "amount": 100000.0,
+                },
+            )()
+
+    runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, {"REALTIME_QUOTE": {"STOCK": ["akshare"]}}),
+        adapters={"akshare": _Adapter()},
+    )
+
+    quote, provider, fallback_used = runtime.quote("600519.SH")
+
+    assert quote.pre_close == 99.0
+    assert provider == "akshare"
+    assert fallback_used is False
+
+
 def test_bars_returns_one_complete_frame_and_uses_route_provider_identity(tmp_path):
     """确认 Bars 返回完整序列并使用 route Provider 而非 adapter source。"""
 

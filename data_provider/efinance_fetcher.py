@@ -769,8 +769,8 @@ class EfinanceFetcher(BaseFetcher):
         """
         获取实时行情数据
         
-        数据来源：ef.stock.get_realtime_quotes()
-        ETF 数据源：ef.stock.get_realtime_quotes(['ETF'])
+        数据来源：优先使用 efinance 单标的快照；失败后再使用全市场接口。
+        ETF 兜底数据源：ef.stock.get_realtime_quotes(['ETF'])
         
         Args:
             stock_code: 股票代码
@@ -778,8 +778,21 @@ class EfinanceFetcher(BaseFetcher):
         Returns:
             UnifiedRealtimeQuote 对象，获取失败返回 None
         """
-        # ETF 需要单独请求 ETF 实时行情接口
+        # efinance 0.5.9 的单标的快照接口也支持 A 股 ETF；优先走该接口，
+        # 避免每次进入 efinance fallback 都触发全量 ETF 快照。
         if _is_etf_code(stock_code):
+            circuit_breaker = get_realtime_circuit_breaker()
+            try:
+                snapshot_quote = self._get_realtime_snapshot_quote(stock_code)
+            except Exception as exc:
+                logger.info(
+                    "[API错误] efinance ETF 单标的实时行情失败，回退全量 ETF 接口: %s",
+                    exc,
+                )
+                snapshot_quote = None
+            if snapshot_quote is not None:
+                circuit_breaker.record_success("efinance_etf")
+                return snapshot_quote
             return self._get_etf_realtime_quote(stock_code)
 
         import efinance as ef
@@ -863,9 +876,10 @@ class EfinanceFetcher(BaseFetcher):
 
     def _get_etf_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
         """
-        获取 ETF 实时行情
+        获取 ETF 实时行情（单标的快照失败时的全量兜底）
 
-        efinance 默认实时接口仅返回股票数据，ETF 需要显式传入 ['ETF']。
+        efinance 的全量行情接口需要显式传入 ['ETF']，调用成本较高，
+        仅作为单标的快照接口不可用时的 fallback。
         """
         import efinance as ef
         circuit_breaker = get_realtime_circuit_breaker()

@@ -350,12 +350,42 @@ class ThesisLedgerProviderRuntime:
 
     @classmethod
     def _validate_quote(cls, value: Any) -> Any:
+        price = cls._finite_number(getattr(value, "price", None), "price", positive=True)
+        previous_close = getattr(value, "pre_close", None)
+        if previous_close is None:
+            change_amount = getattr(value, "change_amount", None)
+            if change_amount is not None:
+                try:
+                    derived = price - float(change_amount)
+                except (TypeError, ValueError):
+                    derived = None
+                if derived is not None and math.isfinite(derived) and derived >= 0:
+                    previous_close = derived
+            if previous_close is None:
+                change_pct = getattr(value, "change_pct", None)
+                if change_pct is not None:
+                    try:
+                        divisor = 1.0 + float(change_pct) / 100.0
+                        derived = price / divisor if divisor > 0 else None
+                    except (TypeError, ValueError, ZeroDivisionError):
+                        derived = None
+                    if derived is not None and math.isfinite(derived) and derived >= 0:
+                        previous_close = derived
+        if previous_close is None:
+            raise ProviderCallError("invalid_response", "Provider 响应字段 previousClose 缺失")
+        if getattr(value, "pre_close", None) is None:
+            try:
+                setattr(value, "pre_close", previous_close)
+            except (AttributeError, TypeError) as exc:
+                raise ProviderCallError(
+                    "invalid_response", "Provider 响应对象无法补齐 previousClose"
+                ) from exc
         fields = {
             "open": getattr(value, "open_price", None),
             "high": getattr(value, "high", None),
             "low": getattr(value, "low", None),
-            "price": getattr(value, "price", None),
-            "previousClose": getattr(value, "pre_close", None),
+            "price": price,
+            "previousClose": previous_close,
             "volume": getattr(value, "volume", None),
             "amount": getattr(value, "amount", None),
         }

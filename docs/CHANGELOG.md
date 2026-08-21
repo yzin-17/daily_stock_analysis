@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] ETF 实时行情缺少昨收字段时按同一报价的涨跌额或涨跌幅补齐，避免有效行情被 Contract 校验拒绝并导致组合数据标记陈旧。
+- [改进] efinance ETF 实时行情优先使用单标的快照接口，仅在快照不可用时拉取全量 ETF，降低上游解析失败和限流风险。
 - [改进] Catalog 同步触发改为可观察的异步 Job：DSA 先返回 Job 状态并由 worker 执行目录抓取，ThesisLedger 与 Desktop 不再把未完成任务误报为成功。
 - [改进] Catalog Provider 调用改用可终止的进程级隔离，超时后回收 hanging worker，并限制重试、退避和并发槽，保留稳定的 Job 错误分类。
 - [修复] 将 DSA Compose/`.env.example` 的 `THESIS_LEDGER_FIXTURE_MODE` 默认值改为 `false`，fixture 仅由 CI/确定性集成测试显式开启。

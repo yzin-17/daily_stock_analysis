@@ -7,6 +7,7 @@ import pandas as pd
 
 import data_provider.efinance_fetcher as efinance_module
 from data_provider.efinance_fetcher import EfinanceFetcher
+from data_provider.realtime_types import RealtimeSource, UnifiedRealtimeQuote
 
 
 def _fetcher() -> EfinanceFetcher:
@@ -165,3 +166,41 @@ def test_full_market_path_reuses_row_normalizer(monkeypatch) -> None:
     assert quote is not None
     assert quote.name == "贵州茅台"
     assert quote.price == 1800.5
+
+
+def test_etf_prefers_single_symbol_snapshot_over_full_market(monkeypatch) -> None:
+    """ETF 应优先使用单标的快照，避免正常 fallback 拉取全量 ETF。"""
+    fetcher = _fetcher()
+    snapshot_quote = UnifiedRealtimeQuote(
+        code="159516",
+        name="半导体设备ETF国泰",
+        source=RealtimeSource.EFINANCE,
+        price=0.729,
+        pre_close=0.733,
+    )
+    full_market = lambda _symbol: (_ for _ in ()).throw(
+        AssertionError("不应在单标的快照成功时调用全量 ETF 接口")
+    )
+    monkeypatch.setattr(fetcher, "_get_realtime_snapshot_quote", lambda _symbol: snapshot_quote)
+    monkeypatch.setattr(fetcher, "_get_etf_realtime_quote", full_market)
+
+    quote = fetcher.get_realtime_quote("159516")
+
+    assert quote is snapshot_quote
+
+
+def test_etf_falls_back_to_full_market_when_snapshot_unavailable(monkeypatch) -> None:
+    """单标的快照不可用时，ETF 仍保留全量接口兜底。"""
+    fetcher = _fetcher()
+    fallback_quote = UnifiedRealtimeQuote(
+        code="159516",
+        name="半导体设备ETF国泰",
+        source=RealtimeSource.EFINANCE,
+        price=0.729,
+    )
+    monkeypatch.setattr(fetcher, "_get_realtime_snapshot_quote", lambda _symbol: None)
+    monkeypatch.setattr(fetcher, "_get_etf_realtime_quote", lambda _symbol: fallback_quote)
+
+    quote = fetcher.get_realtime_quote("159516")
+
+    assert quote is fallback_quote
