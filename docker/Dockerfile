@@ -20,15 +20,6 @@ RUN DSA_WEB_VERSION="${DSA_WEB_VERSION}" DSA_WEB_REVISION="${DSA_WEB_REVISION}" 
 # Pin to bookworm: wkhtmltopdf was removed from Debian testing (2025)
 FROM python:3.11-slim-bookworm
 
-ARG DSA_VERSION=unconfigured
-ARG DSA_UPSTREAM_COMMIT=unknown
-ARG DSA_FORK_COMMIT=unknown
-LABEL org.opencontainers.image.title="daily-stock-analysis" \
-      org.opencontainers.image.version="${DSA_VERSION}" \
-      org.opencontainers.image.revision="${DSA_FORK_COMMIT}" \
-      org.opencontainers.image.base.name="${DSA_UPSTREAM_COMMIT}" \
-      org.openai.thesis-ledger.contract="1"
-
 # 设置工作目录
 WORKDIR /app
 
@@ -37,7 +28,15 @@ ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # 安装系统依赖（wkhtmltopdf 含 wkhtmltoimage，用于 Markdown 转图片 Issue #289）
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# /var/cache/apt 用 BuildKit cache mount 保存 .deb：即使该层缓存失效重跑，
+# 也只需刷新索引，包下载走本地缓存。docker-clean 会在每次装完后清空包缓存，先移除。
+# deb.debian.org（Fastly）从本机网络访问长期劣化：明文 HTTP 间歇 502、还吐过
+# 两个多月前的陈旧缓存。统一换成阿里云 HTTPS 镜像；debian-security 路径结构
+# 与官方一致，一条 sed 即可整体替换。
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     curl \
     gosu \
@@ -108,6 +107,18 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 # 启动入口先修复 bind mount 目录权限，再降权为 dsa 执行应用；
 # 文档化 docker-compose exec 命令需显式使用 -u dsa，避免手动进程写入 root-owned 文件。
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
+# 版本元数据放在所有重型层（apt/pip/代码 COPY）之后：
+# ARG 值（版本号、commit）每次发版都会变，若声明在前面会导致
+# 后面所有层（包括 apt-get 安装）缓存失效、全量重建。
+ARG DSA_VERSION=unconfigured
+ARG DSA_UPSTREAM_COMMIT=unknown
+ARG DSA_FORK_COMMIT=unknown
+LABEL org.opencontainers.image.title="daily-stock-analysis" \
+    org.opencontainers.image.version="${DSA_VERSION}" \
+    org.opencontainers.image.revision="${DSA_FORK_COMMIT}" \
+    org.opencontainers.image.base.name="${DSA_UPSTREAM_COMMIT}" \
+    org.openai.thesis-ledger.contract="1"
 
 # 默认命令（可被覆盖）
 CMD ["python", "main.py", "--schedule"]
