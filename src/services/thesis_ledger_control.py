@@ -35,6 +35,7 @@ CAPABILITIES = (
     "DAILY_BAR",
     "FUND_NAV",
     "FUND_NAV_HISTORY",
+    "FUND_HOLDINGS",
     "CHIP_SUMMARY",
 )
 INSTRUMENT_TYPES = (
@@ -77,6 +78,7 @@ PROVIDER_MANIFESTS: dict[str, dict[str, Any]] = {
             "DAILY_BAR": ("STOCK", "ETF"),
             "FUND_NAV": ("MUTUAL_FUND",),
             "FUND_NAV_HISTORY": ("MUTUAL_FUND",),
+            "FUND_HOLDINGS": ("MUTUAL_FUND",),
             "CHIP_SUMMARY": ("STOCK",),
         },
     ),
@@ -115,6 +117,7 @@ DEFAULT_ROUTES: dict[str, dict[str, list[str]]] = {
     },
     "FUND_NAV": {"MUTUAL_FUND": ["akshare", "efinance"]},
     "FUND_NAV_HISTORY": {"MUTUAL_FUND": ["akshare", "efinance"]},
+    "FUND_HOLDINGS": {"MUTUAL_FUND": ["akshare"]},
     "CHIP_SUMMARY": {"STOCK": ["akshare"]},
 }
 

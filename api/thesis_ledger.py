@@ -11,6 +11,9 @@ import math
 import os
 import logging
 import uuid
+import hashlib
+import json
+import re
 from contextvars import ContextVar
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
@@ -342,6 +345,27 @@ def _fixture_fund_nav_history(symbol: str, limit: int = 90) -> list[dict[str, An
         }
         for index in range(count)
     ]
+
+
+def _fixture_fund_holdings(symbol: str) -> dict[str, Any]:
+    canonical = _canonical_fund_symbol(symbol)
+    holdings = [
+        {"symbol": "600519.SH", "name": "贵州茅台", "weight": 0.08},
+        {"symbol": "000001.SZ", "name": "平安银行", "weight": 0.06},
+    ]
+    evidence = hashlib.sha256(
+        json.dumps(holdings, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return {
+        "version": 1,
+        "fundSymbol": canonical,
+        "reportPeriod": "2024-Q4",
+        "disclosureDate": _fixture_timestamp(),
+        "provider": PROVIDER_ID,
+        "fetchedAt": _fixture_timestamp(),
+        "evidenceVersion": evidence,
+        "holdings": holdings,
+    }
 
 
 def _normalize_fx_currency(value: str, field: str = "currency") -> str:
@@ -857,6 +881,80 @@ def _ratio(value: Any, field: str) -> float:
     return result
 
 
+def _fund_holdings_payload(
+    symbol: str,
+    frame: Any,
+    provider: str,
+    fallback_used: bool,
+) -> dict[str, Any]:
+    canonical = _canonical_fund_symbol(symbol)
+    if frame is None or getattr(frame, "empty", True):
+        _error("upstream_unavailable", f"没有 {canonical} 的基金持仓披露", 503)
+    required = {"股票代码", "股票名称", "占净值比例", "季度"}
+    if not required.issubset(set(frame.columns)):
+        _error("upstream_invalid_response", "基金持仓披露缺少必要字段", 502)
+
+    quarter_rows: list[tuple[tuple[int, int], Any]] = []
+    for _, row in frame.iterrows():
+        match = re.search(r"(\d{4})年\s*([1-4])季度", str(row["季度"]))
+        if match:
+            quarter_rows.append(((int(match.group(1)), int(match.group(2))), row))
+    if not quarter_rows:
+        _error("upstream_invalid_response", "基金持仓披露缺少可识别的报告期", 502)
+    latest = max(key for key, _ in quarter_rows)
+    aggregate: dict[str, dict[str, Any]] = {}
+    for key, row in quarter_rows:
+        if key != latest:
+            continue
+        holding_symbol = _canonical_symbol(str(row["股票代码"]))
+        weight = _number(row["占净值比例"], "weight") / 100
+        current = aggregate.get(holding_symbol)
+        if current is None:
+            aggregate[holding_symbol] = {
+                "symbol": holding_symbol,
+                "name": str(row["股票名称"]).strip(),
+                "weight": weight,
+            }
+        else:
+            current["weight"] = float(current["weight"]) + weight
+    holdings = sorted(aggregate.values(), key=lambda row: (-float(row["weight"]), row["symbol"]))
+    if not holdings or sum(float(row["weight"]) for row in holdings) > 1.000001:
+        _error("upstream_invalid_response", "基金持仓披露权重非法", 502)
+    fetched_at = _now_iso()
+    evidence = hashlib.sha256(
+        json.dumps(holdings, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return {
+        "version": 1,
+        "fundSymbol": canonical,
+        "reportPeriod": f"{latest[0]}-Q{latest[1]}",
+        "disclosureDate": fetched_at,
+        "provider": provider,
+        "fetchedAt": fetched_at,
+        "evidenceVersion": evidence,
+        "fallbackUsed": fallback_used,
+        "holdings": holdings,
+    }
+
+
+def _real_fund_holdings(symbol: str, request_id: str | None = None) -> dict[str, Any]:
+    canonical = _canonical_fund_symbol(symbol)
+    try:
+        from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
+
+        result = get_thesis_ledger_data_gateway().fund_holdings(
+            canonical,
+            request_id=request_id or _request_id_context.get(),
+        )
+    except Exception as exc:  # noqa: BLE001 - gateway exposes stable error codes.
+        _data_gateway_error(
+            exc,
+            "基金持仓披露暂时不可用",
+            no_eligible_message="当前策略没有可用的基金持仓 Provider",
+        )
+    return _fund_holdings_payload(canonical, result.data, result.provider, result.fallback_used)
+
+
 def _real_chip(symbol: str, request_id: str | None = None) -> dict[str, Any]:
     request_id = request_id or _request_id_context.get()
     try:
@@ -928,6 +1026,7 @@ def capabilities() -> dict[str, Any]:
             "quote": True,
             "fund-nav": {"assetSuffix": ".OF", "freshness": ["delayed", "stale", "unavailable"]},
             "fund-nav-history": {"assetSuffix": ".OF", "maxLimit": 3650},
+            "fund-holdings": {"assetSuffix": ".OF", "capability": "FUND_HOLDINGS"},
             "fx-rates": {"currencies": sorted(FX_CURRENCIES), "maxAgeDays": FX_MAX_AGE_DAYS},
             "bars": {"timeframes": ["1d"]},
             "indicators": {
@@ -996,6 +1095,19 @@ def fund_nav_history(
         return rows
     request_id = request.headers.get("x-request-id") or _request_id_context.get()
     return _real_fund_nav_history(symbol, start, end, limit, request_id=request_id)
+
+
+@router.get("/market/fund-holdings", dependencies=[Depends(require_contract_token)])
+def fund_holdings(
+    request: Request,
+    symbol: str = Query(..., min_length=1),
+) -> dict[str, Any]:
+    request_id = request.headers.get("x-request-id") or _request_id_context.get()
+    return (
+        _fixture_fund_holdings(symbol)
+        if _fixture_mode()
+        else _real_fund_holdings(symbol, request_id=request_id)
+    )
 
 
 @router.get("/market/quote", dependencies=[Depends(require_contract_token)])
@@ -1190,6 +1302,8 @@ def control_provider_test(
                             validate_fund_nav_history_rows(
                                 [(row["navDate"], row["unitNav"]) for row in history]
                             )
+                        elif capability == "FUND_HOLDINGS":
+                            _fixture_fund_holdings("000001.OF")
                         elif capability == "CHIP_SUMMARY":
                             _fixture_chip("600519.SH")
                         else:

@@ -174,6 +174,22 @@ def test_fund_nav_history_is_ordered_and_uses_of_identity(monkeypatch, tmp_path)
     )
 
 
+def test_fund_holdings_returns_unscaled_disclosure_weights(monkeypatch, tmp_path):
+    """基金披露保留未披露仓位，不把已披露持仓归一到 100%。"""
+    client = _client(monkeypatch, tmp_path)
+    response = client.get(
+        "/api/v1/thesis-ledger/market/fund-holdings?symbol=000001",
+        headers={"authorization": "Bearer data-token"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["fundSymbol"] == "000001.OF"
+    assert payload["reportPeriod"] == "2024-Q4"
+    assert sum(row["weight"] for row in payload["holdings"]) == 0.14
+    assert payload["evidenceVersion"]
+
+
 def test_policy_apply_is_latest_wins_idempotent_and_atomic(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     headers = {"authorization": "Bearer control-token"}
@@ -376,6 +392,8 @@ def test_capability_smoke_does_not_change_policy(monkeypatch, tmp_path):
     assert response.json()["capabilityResults"]["REALTIME_QUOTE"]["attempted"] is True
     assert response.json()["capabilityResults"]["FUND_NAV_HISTORY"]["status"] == "healthy"
     assert response.json()["capabilityResults"]["FUND_NAV_HISTORY"]["attempted"] is True
+    assert response.json()["capabilityResults"]["FUND_HOLDINGS"]["status"] == "healthy"
+    assert response.json()["capabilityResults"]["FUND_HOLDINGS"]["attempted"] is True
     assert response.json()["capabilityResults"]["CHIP_SUMMARY"]["status"] == "healthy"
     assert response.json()["capabilityResults"]["CHIP_SUMMARY"]["attempted"] is True
     registry = client.get("/api/v1/thesis-ledger/control/providers", headers=headers)

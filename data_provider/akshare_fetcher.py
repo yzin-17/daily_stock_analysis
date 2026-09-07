@@ -733,6 +733,17 @@ class AkshareFetcher(BaseFetcher):
             symbol=fund_code,
             indicator="单位净值走势",
         )
+
+    def get_fund_holdings(self, fund_code: str) -> Any:
+        """获取最近可用的场外基金股票持仓披露。"""
+        import akshare as ak
+
+        current_year = datetime.now().year
+        for year in (current_year, current_year - 1):
+            frame = ak.fund_portfolio_hold_em(symbol=fund_code, date=str(year))
+            if frame is not None and not frame.empty:
+                return frame
+        return frame
     
     def _fetch_us_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
         """

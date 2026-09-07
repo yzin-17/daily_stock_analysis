@@ -465,6 +465,24 @@ class ThesisLedgerProviderRuntime:
         return frame
 
     @classmethod
+    def _validate_fund_holdings(cls, frame: Any) -> Any:
+        """校验基金持仓披露，不归一或放大 Provider 权重。"""
+        if frame is None or getattr(frame, "empty", True):
+            raise ProviderCallError("not_covered", "Provider 未返回基金持仓披露")
+        required = {"股票代码", "股票名称", "占净值比例", "季度"}
+        if not required.issubset(set(getattr(frame, "columns", []))):
+            raise ProviderCallError("invalid_response", "Provider 基金持仓响应缺少必要字段")
+        for _, row in frame.iterrows():
+            symbol = str(row.get("股票代码") or "").strip()
+            quarter = str(row.get("季度") or "").strip()
+            if not symbol or not quarter:
+                raise ProviderCallError("invalid_response", "Provider 基金持仓代码或报告期缺失")
+            weight = cls._finite_number(row.get("占净值比例"), "weight")
+            if weight > 100:
+                raise ProviderCallError("invalid_response", "Provider 基金持仓权重超出范围")
+        return frame
+
+    @classmethod
     def _validate_chip_summary(cls, value: Any) -> Any:
         """Validate one complete chip summary before exposing it to the facade."""
         if value is None:
@@ -659,6 +677,11 @@ class ThesisLedgerProviderRuntime:
         execution = self.execute_request(ThesisLedgerDataRequest("FUND_NAV_HISTORY", symbol))
         return execution.value, execution.provider, execution.fallback_used
 
+    def fund_holdings(self, symbol: str) -> tuple[Any, str, bool]:
+        """通过统一路由获取基金披露持仓。"""
+        execution = self.execute_request(ThesisLedgerDataRequest("FUND_HOLDINGS", symbol))
+        return execution.value, execution.provider, execution.fallback_used
+
     def chip_summary(self, symbol: str) -> tuple[Any, str, bool]:
         """Keep a tuple convenience API for the explicit CHIP_SUMMARY route."""
         execution = self.execute_request(ThesisLedgerDataRequest("CHIP_SUMMARY", symbol))
@@ -733,6 +756,16 @@ class ThesisLedgerProviderRuntime:
                 ),
             )
 
+        if capability == "FUND_HOLDINGS":
+            return self._execute_request_with_boundary(
+                request,
+                capability,
+                "MUTUAL_FUND",
+                lambda provider_id, adapter: self._validate_fund_holdings(
+                    self._fund_holdings_from_provider(provider_id, request.symbol, adapter)
+                ),
+            )
+
         if capability == "CHIP_SUMMARY":
             if instrument_type != "STOCK":
                 raise ThesisLedgerGatewayError(
@@ -793,12 +826,19 @@ class ThesisLedgerProviderRuntime:
             raise ProviderCallError("unsupported", f"{provider_id} 不支持基金净值")
         return method(symbol.removesuffix(".OF"))
 
+    @staticmethod
+    def _fund_holdings_from_provider(provider_id: str, symbol: str, adapter: Any) -> Any:
+        method = getattr(adapter, "get_fund_holdings", None)
+        if method is None:
+            raise ProviderCallError("unsupported", f"{provider_id} 不支持基金持仓披露")
+        return method(symbol.removesuffix(".OF"))
+
     def smoke(self, provider_id: str, capability: str) -> dict[str, Any]:
         """Run one bounded, read-only representative call without changing policy."""
         normalized_capability = capability.strip().upper()
         instrument_type = (
             "MUTUAL_FUND"
-            if normalized_capability in {"FUND_NAV", "FUND_NAV_HISTORY"}
+            if normalized_capability in {"FUND_NAV", "FUND_NAV_HISTORY", "FUND_HOLDINGS"}
             else "STOCK"
         )
         started = self.clock()
@@ -837,6 +877,9 @@ class ThesisLedgerProviderRuntime:
             elif normalized_capability == "FUND_NAV_HISTORY":
                 value = self._fund_nav_from_provider(provider_id, "000001.OF", adapter)
                 self._validate_fund_nav_history(value)
+            elif normalized_capability == "FUND_HOLDINGS":
+                value = self._fund_holdings_from_provider(provider_id, "000001.OF", adapter)
+                self._validate_fund_holdings(value)
             elif normalized_capability == "CHIP_SUMMARY":
                 method = getattr(adapter, "get_chip_distribution", None)
                 if method is None:
@@ -966,6 +1009,7 @@ class ThesisLedgerDataGateway:
         "DAILY_BAR",
         "FUND_NAV",
         "FUND_NAV_HISTORY",
+        "FUND_HOLDINGS",
         "INDICATOR",
         "CHIP_SUMMARY",
     )
@@ -1104,6 +1148,10 @@ class ThesisLedgerDataGateway:
     def fund_nav_history(self, symbol: str, **kwargs: Any) -> ThesisLedgerDataResult:
         """Fetch a complete Fund NAV history sequence through the gateway."""
         return self.fetch(ThesisLedgerDataRequest("FUND_NAV_HISTORY", symbol, **kwargs))
+
+    def fund_holdings(self, symbol: str, **kwargs: Any) -> ThesisLedgerDataResult:
+        """Fetch the latest disclosed Fund holdings through the gateway."""
+        return self.fetch(ThesisLedgerDataRequest("FUND_HOLDINGS", symbol, **kwargs))
 
     def chip_summary(self, symbol: str, **kwargs: Any) -> ThesisLedgerDataResult:
         """Fetch one complete CHIP_SUMMARY through the Effective Policy route."""

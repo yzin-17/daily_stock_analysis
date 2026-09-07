@@ -30,12 +30,8 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # 安装系统依赖（wkhtmltopdf 含 wkhtmltoimage，用于 Markdown 转图片 Issue #289）
 # /var/cache/apt 用 BuildKit cache mount 保存 .deb：即使该层缓存失效重跑，
 # 也只需刷新索引，包下载走本地缓存。docker-clean 会在每次装完后清空包缓存，先移除。
-# deb.debian.org（Fastly）从本机网络访问长期劣化：明文 HTTP 间歇 502、还吐过
-# 两个多月前的陈旧缓存。统一换成阿里云 HTTPS 镜像；debian-security 路径结构
-# 与官方一致，一条 sed 即可整体替换。
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
-    sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
     apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     curl \

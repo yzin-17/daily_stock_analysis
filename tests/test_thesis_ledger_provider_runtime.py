@@ -96,6 +96,47 @@ def _chip_routes():
     return {"CHIP_SUMMARY": {"STOCK": ["akshare", "efinance"]}}
 
 
+def _fund_holdings_routes():
+    """返回基金持仓披露测试用 route。"""
+    return {"FUND_HOLDINGS": {"MUTUAL_FUND": ["akshare"]}}
+
+
+def test_fund_holdings_uses_effective_route_without_weight_normalization(tmp_path):
+    """基金持仓由声明能力的 Provider 返回，runtime 不改写披露权重。"""
+
+    class _Adapter:
+        calls = []
+
+        def get_fund_holdings(self, symbol):
+            self.calls.append(symbol)
+            return _Frame(
+                [
+                    _Row(
+                        股票代码="600519",
+                        股票名称="贵州茅台",
+                        占净值比例=8.0,
+                        季度="2024年4季度",
+                    )
+                ],
+                columns=("股票代码", "股票名称", "占净值比例", "季度"),
+            )
+
+    adapter = _Adapter()
+    gateway = ThesisLedgerDataGateway(
+        ThesisLedgerProviderRuntime(
+            _store(tmp_path, _fund_holdings_routes()),
+            adapters={"akshare": adapter},
+        )
+    )
+
+    result = gateway.fund_holdings("000001.OF", request_id="holdings-request")
+
+    assert result.provider == "akshare"
+    assert result.fallback_used is False
+    assert result.data._rows[0]["占净值比例"] == 8.0
+    assert adapter.calls == ["000001"]
+
+
 def test_chip_summary_uses_effective_route_and_preserves_fallback_metadata(tmp_path, monkeypatch):
     """筹码摘要失败时切换完整 Provider，不允许字段级混源。"""
     monkeypatch.setitem(
