@@ -101,6 +101,22 @@ def _fund_holdings_routes():
     return {"FUND_HOLDINGS": {"MUTUAL_FUND": ["akshare"]}}
 
 
+def test_provider_registry_exposes_tencent_as_a_dsa_daily_provider(tmp_path):
+    """腾讯独立适配器应进入 Control 注册表，但只声明真实日线能力。"""
+    registry = {
+        item["providerId"]: item
+        for item in ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db")).provider_registry()
+    }
+
+    assert registry["tencent"]["origin"] == "dsa"
+    assert registry["tencent"]["capabilities"] == {
+        "DAILY_BAR": ["ETF", "STOCK"]
+    }
+    assert registry["tencent"]["upstreamSources"] == [
+        {"sourceId": "tencent", "displayName": "腾讯财经"}
+    ]
+
+
 def test_fund_holdings_uses_effective_route_without_weight_normalization(tmp_path):
     """基金持仓由声明能力的 Provider 返回，runtime 不改写披露权重。"""
 
@@ -365,6 +381,7 @@ def test_bars_returns_one_complete_frame_and_uses_route_provider_identity(tmp_pa
             ),
         ]
     )
+    frame.attrs = {"upstream_source": "tencent"}
 
     class _Adapter:
         """模拟返回完整 Bars frame 的 Provider。"""
@@ -388,6 +405,92 @@ def test_bars_returns_one_complete_frame_and_uses_route_provider_identity(tmp_pa
     assert provider == "akshare"
     assert fallback_used is False
     assert runtime.adapters["akshare"].symbols == ["600519"]
+
+
+def test_daily_bar_request_passes_explicit_range_to_provider(tmp_path):
+    """显式日线区间必须进入 Provider，不能只在返回后过滤。"""
+    frame = _Frame(
+        [
+            _Row(
+                date="2025-01-02",
+                open=100.0,
+                high=103.0,
+                low=99.0,
+                close=101.0,
+                volume=1100.0,
+                amount=110000.0,
+            )
+        ]
+    )
+    calls = []
+
+    class _Adapter:
+        """记录 runtime 传给 Provider 的完整日线范围。"""
+
+        def get_daily_data(self, symbol, *, days, start_date, end_date):
+            calls.append((symbol, days, start_date, end_date))
+            return frame
+
+    runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, {"DAILY_BAR": {"STOCK": ["akshare"]}}),
+        adapters={"akshare": _Adapter()},
+    )
+
+    runtime.execute_request(
+        ThesisLedgerDataRequest(
+            "DAILY_BAR",
+            "600519.SH",
+            start="2025-01-01",
+            end="2025-12-31",
+            limit=365,
+        )
+    )
+
+    assert calls == [("600519", 365, "2025-01-01", "2025-12-31")]
+
+
+def test_tencent_daily_route_preserves_provider_and_actual_source(tmp_path):
+    """腾讯独立路由既是 route Provider，也是实际日线通道。"""
+    frame = _Frame(
+        [
+            _Row(
+                date="2025-01-02",
+                open=100.0,
+                high=103.0,
+                low=99.0,
+                close=101.0,
+                volume=1100.0,
+                amount=110000.0,
+            )
+        ]
+    )
+    frame.attrs = {}
+
+    class _Adapter:
+        """模拟腾讯日线适配器。"""
+
+        def get_daily_data(self, symbol, *, days):
+            assert symbol == "510300"
+            assert days == 30
+            return frame
+
+    runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, {"DAILY_BAR": {"ETF": ["tencent"]}}),
+        adapters={"tencent": _Adapter()},
+    )
+
+    result = runtime.execute_request(
+        ThesisLedgerDataRequest(
+            "DAILY_BAR",
+            "510300.SH",
+            instrument_type="ETF",
+            limit=30,
+        )
+    )
+
+    assert result.provider == "tencent"
+    assert result.fallback_used is False
+    assert result.value.attrs["upstream_source"] == "tencent"
 
 
 def test_provider_smoke_uses_native_symbol_format(tmp_path):
@@ -486,6 +589,7 @@ def test_real_bars_facade_consumes_runtime_frame(monkeypatch, tmp_path):
             ),
         ]
     )
+    frame.attrs = {"upstream_source": "tencent"}
 
     class _Adapter:
         """模拟返回供 facade 转换的 Bars Provider。"""
@@ -512,6 +616,7 @@ def test_real_bars_facade_consumes_runtime_frame(monkeypatch, tmp_path):
     assert len(rows) == 1
     assert rows[0]["timestamp"] == "2025-01-02T00:00:00+00:00"
     assert rows[0]["provider"] == "akshare"
+    assert rows[0]["upstreamSource"] == "tencent"
     assert rows[0]["symbol"] == "600519.SH"
     assert rows[0]["fallbackUsed"] is False
 

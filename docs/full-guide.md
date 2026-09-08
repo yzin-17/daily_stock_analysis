@@ -448,6 +448,9 @@ daily_stock_analysis/
 > - 任何异常走 fail-open，仅记录错误，不影响技术面/新闻/筹码主链路。
 > - 配置 `TICKFLOW_API_KEY` 后，TickFlow 会作为可选 A 股日 K 数据源和大盘复盘增强源实例化；`TICKFLOW_PRIORITY` 只影响日 K/通用数据源回退链。实时行情优先级由 `REALTIME_SOURCE_PRIORITY` 单独控制，只有显式包含 `tickflow` 时才会使用 TickFlow 实时行情。`REALTIME_SOURCE_PRIORITY` 中排在 `tickflow` 前面的数据源会先被尝试。
 > - TickFlow 日 K 默认 `TICKFLOW_KLINE_ADJUST=none`；日线 `volume` 从手统一转为股，`amount` 保持元口径。
+> - AkShare 获取沪深 ETF 日线时优先使用东方财富前复权接口；该接口抛错或返回空结果后，自动切换到腾讯财经前复权日线。这个切换发生在 AkShare 适配器内部，不改变 ThesisLedger 的 `provider=akshare` 或跨 Provider `fallbackUsed` 语义，但响应会附带 `upstreamSource=tencent`，调用方可以展示和审计实际通道。
+> - ThesisLedger Provider registry 同时公开腾讯财经独立 Provider，可作为股票和 ETF `DAILY_BAR` 的主数据源或备用数据源；它无需凭证，不承担实时行情、基金净值或筹码摘要能力。
+> - ThesisLedger 日线 facade 会把 `start`、`end`、`limit` 原样传入 Provider runtime；显式历史区间在上游抓取阶段生效，不会先按默认最近 90 根获取后再过滤。调用方查询一年日线时应将 `limit` 设为不小于预期交易日数量，当前接口上限为 365。
 > - TickFlow 日 K 区间请求会显式传入 `start_time` / `end_time` / `count`；官方 quickstart 明确说明时间范围查询仍受 `count` 限制。若返回非空但行数打满 `count` 且首个返回交易日晚于请求起始交易日，系统会判定为疑似截断，不写入缓存并让 manager 继续回退。
 > - 批量分析时，`prefetch_daily_klines()` 会在逐股 `get_daily_data()` 之前预热进程内缓存，不改变对外调用路径。
 > - TickFlow 能力按套餐权限分层：有限权限套餐仍可使用主指数查询；支持 `CN_Equity_A` 标的池查询的套餐才会启用 TickFlow 市场统计。

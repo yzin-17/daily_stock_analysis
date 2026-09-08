@@ -196,6 +196,22 @@ def _provider_name(value: Any, fallback: str = PROVIDER_ID) -> str:
     return text or fallback
 
 
+def _upstream_source(value: Any) -> Optional[str]:
+    """把适配器内部来源归一为稳定、可展示的上游来源 ID。"""
+    raw = getattr(value, "value", value)
+    normalized = str(raw or "").strip().lower()
+    aliases = {
+        "eastmoney": "eastmoney",
+        "akshare_em": "eastmoney",
+        "efinance": "eastmoney",
+        "sina": "sina",
+        "akshare_sina": "sina",
+        "akshare_qq": "tencent",
+        "tencent": "tencent",
+    }
+    return aliases.get(normalized)
+
+
 def _freshness(is_stale: bool, provider_timestamp: Optional[str]) -> str:
     if is_stale:
         return "stale"
@@ -722,6 +738,7 @@ def _real_quote(symbol: str, request_id: str | None = None) -> dict[str, Any]:
     provider_timestamp = getattr(quote, "provider_timestamp", None)
     market_time = _iso_timestamp(provider_timestamp or fetched_at)
     stale = bool(getattr(quote, "is_stale", False))
+    upstream_source = _upstream_source(getattr(quote, "source", None))
     fields = {
         "open": getattr(quote, "open_price", None),
         "high": getattr(quote, "high", None),
@@ -732,7 +749,7 @@ def _real_quote(symbol: str, request_id: str | None = None) -> dict[str, Any]:
         "amount": getattr(quote, "amount", None),
     }
     values = {key: _number(value, key) for key, value in fields.items()}
-    return {
+    result = {
         "version": 1,
         "symbol": _canonical_symbol(symbol),
         **values,
@@ -743,6 +760,9 @@ def _real_quote(symbol: str, request_id: str | None = None) -> dict[str, Any]:
         "freshness": _freshness(stale, provider_timestamp),
         "fallbackUsed": fallback_used,
     }
+    if upstream_source:
+        result["upstreamSource"] = upstream_source
+    return result
 
 
 def _real_bars(
@@ -759,6 +779,8 @@ def _real_bars(
         gateway_result = get_thesis_ledger_data_gateway().bars(
             symbol,
             timeframe="1d",
+            start=start,
+            end=end,
             limit=limit,
             request_id=request_id,
         )
@@ -773,6 +795,7 @@ def _real_bars(
         )
     if frame is None or frame.empty:
         _error("upstream_unavailable", f"没有 {symbol} 的日线数据", 503)
+    upstream_source = _upstream_source(getattr(frame, "attrs", {}).get("upstream_source"))
     result: list[dict[str, Any]] = []
     for _, row in frame.iterrows():
         date_value = row.get("date")
@@ -783,8 +806,7 @@ def _real_bars(
         if end and day > end[:10]:
             continue
         close = _number(row.get("close"), "close")
-        result.append(
-            {
+        item = {
                 "version": 1,
                 "symbol": _canonical_symbol(symbol),
                 "timeframe": "1d",
@@ -798,7 +820,9 @@ def _real_bars(
                 "provider": provider,
                 "fallbackUsed": fallback_used,
             }
-        )
+        if upstream_source:
+            item["upstreamSource"] = upstream_source
+        result.append(item)
     result.sort(key=lambda item: item["timestamp"])
     return result[-limit:]
 

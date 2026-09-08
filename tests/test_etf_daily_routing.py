@@ -53,6 +53,20 @@ def _history_frame(code: str = "563230") -> pd.DataFrame:
     )
 
 
+def _tencent_history_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "date": pd.date_range("2026-01-01", periods=5),
+            "open": [10.0, 10.1, 10.2, 10.3, 10.4],
+            "close": [10.1, 10.2, 10.3, 10.4, 10.5],
+            "high": [10.2, 10.3, 10.4, 10.5, 10.6],
+            "low": [9.9, 10.0, 10.1, 10.2, 10.3],
+            "volume": [1000, 1100, 1200, 1300, 1400],
+            "amount": [10100, 11220, 12360, 13520, 14700],
+        }
+    )
+
+
 def _run_efinance_daily(stock_code: str) -> tuple[pd.DataFrame, MagicMock]:
     fetcher = _make_efinance_fetcher()
     fake_efinance = types.SimpleNamespace(
@@ -120,6 +134,76 @@ def test_akshare_etf_uses_fund_etf_hist_em() -> None:
         end_date="20260105",
         adjust="qfq",
     )
+
+
+@pytest.mark.parametrize(
+    ("eastmoney_result", "eastmoney_error"),
+    [
+        (None, ConnectionError("remote closed connection")),
+        (pd.DataFrame(), None),
+    ],
+)
+def test_akshare_etf_falls_back_to_tencent_when_eastmoney_is_unavailable(
+    eastmoney_result: pd.DataFrame | None,
+    eastmoney_error: Exception | None,
+) -> None:
+    fetcher = _make_akshare_fetcher()
+    eastmoney = MagicMock(return_value=eastmoney_result, side_effect=eastmoney_error)
+    tencent_api = MagicMock(name="stock_zh_a_hist_tx")
+    tencent_call = MagicMock(return_value=_tencent_history_frame())
+    fake_akshare = types.SimpleNamespace(
+        fund_etf_hist_em=eastmoney,
+        stock_zh_a_hist_tx=tencent_api,
+    )
+
+    with patch.dict(sys.modules, {"akshare": fake_akshare}):
+        with patch("data_provider.akshare_fetcher._akshare_call_with_timeout", tencent_call):
+            with patch.object(fetcher, "_set_random_user_agent"), patch.object(
+                fetcher, "_enforce_rate_limit"
+            ):
+                df = fetcher.get_daily_data(
+                    "563230",
+                    start_date="2026-01-01",
+                    end_date="2026-01-05",
+                )
+
+    assert not df.empty
+    assert df.attrs["upstream_source"] == "tencent"
+    assert {"date", "open", "high", "low", "close", "volume", "amount"}.issubset(
+        df.columns
+    )
+    assert tencent_call.call_args.args[0] is tencent_api
+    assert tencent_call.call_args.kwargs == {
+        "symbol": "sh563230",
+        "start_date": "20260101",
+        "end_date": "20260105",
+        "adjust": "qfq",
+        "timeout": fetcher._history_call_timeout,
+        "call_name": "ak.stock_zh_a_hist_tx",
+    }
+
+
+def test_akshare_etf_reports_failure_when_eastmoney_and_tencent_fail() -> None:
+    fetcher = _make_akshare_fetcher()
+    fake_akshare = types.SimpleNamespace(
+        fund_etf_hist_em=MagicMock(side_effect=ConnectionError("eastmoney unavailable")),
+        stock_zh_a_hist_tx=MagicMock(name="stock_zh_a_hist_tx"),
+    )
+
+    with patch.dict(sys.modules, {"akshare": fake_akshare}):
+        with patch(
+            "data_provider.akshare_fetcher._akshare_call_with_timeout",
+            side_effect=ConnectionError("tencent unavailable"),
+        ):
+            with patch.object(fetcher, "_set_random_user_agent"), patch.object(
+                fetcher, "_enforce_rate_limit"
+            ):
+                with pytest.raises(DataFetchError, match="Akshare ETF 所有渠道获取失败"):
+                    fetcher.get_daily_data(
+                        "563230",
+                        start_date="2026-01-01",
+                        end_date="2026-01-05",
+                    )
 
 
 def test_manager_normalizes_prefixed_etf_before_efinance_secid_route() -> None:

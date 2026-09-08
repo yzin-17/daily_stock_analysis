@@ -469,7 +469,7 @@ class AkshareFetcher(BaseFetcher):
         根据代码类型自动选择 API：
         - 美股：不支持，抛出异常由 YfinanceFetcher 处理（Issue #311）
         - 港股：使用 ak.stock_hk_hist()
-        - ETF 基金：使用 ak.fund_etf_hist_em()
+        - ETF 基金：优先使用 ak.fund_etf_hist_em()，失败后使用腾讯日线接口
         - 普通 A 股：使用 ak.stock_zh_a_hist()
         
         流程：
@@ -504,19 +504,20 @@ class AkshareFetcher(BaseFetcher):
         """
         # 尝试列表
         methods = [
-            (self._fetch_stock_data_em, "东方财富"),
-            (self._fetch_stock_data_sina, "新浪财经"),
-            (self._fetch_stock_data_tx, "腾讯财经"),
+            (self._fetch_stock_data_em, "eastmoney", "东方财富"),
+            (self._fetch_stock_data_sina, "sina", "新浪财经"),
+            (self._fetch_stock_data_tx, "tencent", "腾讯财经"),
         ]
 
         last_error = None
 
-        for fetch_method, source_name in methods:
+        for fetch_method, source_id, source_name in methods:
             try:
                 logger.info(f"[数据源] 尝试使用 {source_name} 获取 {stock_code}...")
                 df = fetch_method(stock_code, start_date, end_date)
 
                 if df is not None and not df.empty:
+                    df.attrs["upstream_source"] = source_id
                     logger.info(f"[数据源] {source_name} 获取成功")
                     return df
             except Exception as e:
@@ -667,8 +668,10 @@ class AkshareFetcher(BaseFetcher):
     def _fetch_etf_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
         """
         获取 ETF 基金历史数据
-        
-        数据来源：ak.fund_etf_hist_em()
+
+        数据来源：
+        1. ak.fund_etf_hist_em()（东方财富）
+        2. ak.stock_zh_a_hist_tx()（腾讯财经）
         
         Args:
             stock_code: ETF 代码，如 '512400', '159883'
@@ -678,6 +681,31 @@ class AkshareFetcher(BaseFetcher):
         Returns:
             ETF 历史数据 DataFrame
         """
+        methods = [
+            (self._fetch_etf_data_em, "eastmoney", "东方财富"),
+            (self._fetch_stock_data_tx, "tencent", "腾讯财经"),
+        ]
+        last_error: Optional[Exception] = None
+
+        for fetch_method, source_id, source_name in methods:
+            try:
+                logger.info(f"[ETF 数据源] 尝试使用 {source_name} 获取 {stock_code}...")
+                df = fetch_method(stock_code, start_date, end_date)
+                if df is not None and not df.empty:
+                    df.attrs["upstream_source"] = source_id
+                    logger.info(f"[ETF 数据源] {source_name} 获取成功")
+                    return df
+
+                last_error = DataFetchError(f"{source_name} 返回空数据")
+                logger.warning(f"[ETF 数据源] {source_name} 返回空数据，继续尝试备用源")
+            except Exception as exc:
+                last_error = exc
+                logger.warning(f"[ETF 数据源] {source_name} 获取失败: {exc}")
+
+        raise DataFetchError(f"Akshare ETF 所有渠道获取失败: {last_error}")
+
+    def _fetch_etf_data_em(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+        """通过东方财富获取 ETF 前复权日线。"""
         import akshare as ak
         
         # 防封禁策略 1: 随机 User-Agent

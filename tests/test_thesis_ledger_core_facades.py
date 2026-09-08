@@ -158,7 +158,7 @@ def test_core_facades_use_gateway_and_preserve_wire_provenance(monkeypatch):
 
     quote = client.get("/api/v1/thesis-ledger/market/quote?symbol=600519.SH", headers=headers)
     bars = client.get(
-        "/api/v1/thesis-ledger/market/bars?symbol=600519.SH&limit=2",
+        "/api/v1/thesis-ledger/market/bars?symbol=600519.SH&start=2025-01-01&end=2025-01-02&limit=2",
         headers=headers,
     )
     nav = client.get("/api/v1/thesis-ledger/market/fund-nav?symbol=000001.OF", headers=headers)
@@ -187,6 +187,10 @@ def test_core_facades_use_gateway_and_preserve_wire_provenance(monkeypatch):
         "fund_nav",
         "fund_nav_history",
     ]
+    bars_call = next(call for call in gateway.calls if call[0] == "bars")
+    assert bars_call[2]["start"] == "2025-01-01"
+    assert bars_call[2]["end"] == "2025-01-02"
+    assert bars_call[2]["limit"] == 2
 
 
 def test_indicator_and_chip_facades_use_gateway_without_native_manager(monkeypatch):

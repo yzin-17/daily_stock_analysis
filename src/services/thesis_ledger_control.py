@@ -55,11 +55,17 @@ def _manifest(
     capabilities: dict[str, Iterable[str]],
     *,
     requires_credential: bool = False,
+    upstream_sources: Iterable[tuple[str, str]] = (),
 ) -> dict[str, Any]:
     return {
         "providerId": provider_id,
         "displayName": display_name,
         "version": 1,
+        "origin": "dsa",
+        "upstreamSources": [
+            {"sourceId": source_id, "displayName": source_name}
+            for source_id, source_name in upstream_sources
+        ],
         "capabilities": {key: sorted(set(value)) for key, value in capabilities.items()},
         "requiresCredential": requires_credential,
         "configSchema": {
@@ -81,6 +87,11 @@ PROVIDER_MANIFESTS: dict[str, dict[str, Any]] = {
             "FUND_HOLDINGS": ("MUTUAL_FUND",),
             "CHIP_SUMMARY": ("STOCK",),
         },
+        upstream_sources=(
+            ("eastmoney", "东方财富"),
+            ("sina", "新浪财经"),
+            ("tencent", "腾讯财经"),
+        ),
     ),
     "efinance": _manifest(
         "efinance",
@@ -91,6 +102,15 @@ PROVIDER_MANIFESTS: dict[str, dict[str, Any]] = {
             "FUND_NAV": ("MUTUAL_FUND",),
             "FUND_NAV_HISTORY": ("MUTUAL_FUND",),
         },
+        upstream_sources=(("eastmoney", "东方财富"),),
+    ),
+    "tencent": _manifest(
+        "tencent",
+        "腾讯财经",
+        {
+            "DAILY_BAR": ("STOCK", "ETF"),
+        },
+        upstream_sources=(("tencent", "腾讯财经"),),
     ),
 }
 

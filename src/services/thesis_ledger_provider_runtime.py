@@ -309,6 +309,10 @@ class ThesisLedgerProviderRuntime:
                 from data_provider.efinance_fetcher import EfinanceFetcher
 
                 adapter = EfinanceFetcher()
+            elif provider_id == "tencent":
+                from data_provider.tencent_fetcher import TencentFetcher
+
+                adapter = TencentFetcher()
             else:
                 raise ProviderCallError("UNKNOWN_PROVIDER", "未知 Provider")
         except ProviderCallError:
@@ -725,8 +729,19 @@ class ThesisLedgerProviderRuntime:
             provider_symbol = provider_symbol_for_contract(request.symbol)
             days = request.limit or 90
 
-            def operation(_provider_id: str, adapter: Any) -> Any:
-                frame = self._daily_frame(adapter.get_daily_data(provider_symbol, days=days))
+            def operation(provider_id: str, adapter: Any) -> Any:
+                options: dict[str, Any] = {"days": days}
+                if request.start is not None:
+                    options["start_date"] = request.start
+                if request.end is not None:
+                    options["end_date"] = request.end
+                frame = self._daily_frame(adapter.get_daily_data(provider_symbol, **options))
+                attrs = getattr(frame, "attrs", None)
+                if isinstance(attrs, dict) and not attrs.get("upstream_source"):
+                    if provider_id == "tencent":
+                        attrs["upstream_source"] = "tencent"
+                    elif provider_id == "efinance":
+                        attrs["upstream_source"] = "eastmoney"
                 return self._validate_bars(frame)
 
             return self._execute_request_with_boundary(
