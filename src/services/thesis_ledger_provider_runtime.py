@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import math
 import os
@@ -16,11 +17,26 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any, Callable, Mapping
 
 from src.services.thesis_ledger_control import ThesisLedgerControlStore
 
 logger = logging.getLogger(__name__)
+
+_PROVIDER_ADAPTER_IMPORTS = {
+    "akshare": ("data_provider.akshare_fetcher", "AkshareFetcher"),
+    "efinance": ("data_provider.efinance_fetcher", "EfinanceFetcher"),
+    "tencent": ("data_provider.tencent_fetcher", "TencentFetcher"),
+    "tushare": ("data_provider.tushare_fetcher", "TushareFetcher"),
+    "tickflow": ("data_provider.tickflow_fetcher", "TickFlowFetcher"),
+    "pytdx": ("data_provider.pytdx_fetcher", "PytdxFetcher"),
+    "baostock": ("data_provider.baostock_fetcher", "BaostockFetcher"),
+    "yfinance": ("data_provider.yfinance_fetcher", "YfinanceFetcher"),
+    "longbridge": ("data_provider.longbridge_fetcher", "LongbridgeFetcher"),
+    "finnhub": ("data_provider.finnhub_fetcher", "FinnhubFetcher"),
+    "alphavantage": ("data_provider.alphavantage_fetcher", "AlphaVantageFetcher"),
+}
 
 
 class ProviderCallError(Exception):
@@ -301,20 +317,24 @@ class ThesisLedgerProviderRuntime:
         if provider_id in self.adapters:
             return self.adapters[provider_id]
         try:
-            if provider_id == "akshare":
-                from data_provider.akshare_fetcher import AkshareFetcher
-
-                adapter = AkshareFetcher()
-            elif provider_id == "efinance":
-                from data_provider.efinance_fetcher import EfinanceFetcher
-
-                adapter = EfinanceFetcher()
-            elif provider_id == "tencent":
-                from data_provider.tencent_fetcher import TencentFetcher
-
-                adapter = TencentFetcher()
-            else:
+            adapter_import = _PROVIDER_ADAPTER_IMPORTS.get(provider_id)
+            if adapter_import is None:
                 raise ProviderCallError("UNKNOWN_PROVIDER", "未知 Provider")
+            module_name, class_name = adapter_import
+            adapter_class = getattr(importlib.import_module(module_name), class_name)
+            if provider_id == "tickflow":
+                from src.config import get_config
+
+                config = get_config()
+                adapter = adapter_class(
+                    api_key=getattr(config, "tickflow_api_key", None),
+                    kline_adjust=getattr(config, "tickflow_kline_adjust", "none"),
+                    batch_daily_enabled=getattr(config, "tickflow_batch_daily_enabled", True),
+                    batch_size=getattr(config, "tickflow_batch_size", 100),
+                    priority=getattr(config, "tickflow_priority", 2),
+                )
+            else:
+                adapter = adapter_class()
         except ProviderCallError:
             raise
         except Exception as exc:  # optional adapter dependency/configuration.
@@ -335,8 +355,26 @@ class ThesisLedgerProviderRuntime:
     def _realtime_quote(adapter: Any, provider_id: str, symbol: str) -> Any:
         """为 AKShare 选择单标的轻量通道，其他 Provider 使用统一入口。"""
         if provider_id == "akshare":
-            return adapter.get_realtime_quote(symbol, source="sina")
-        return adapter.get_realtime_quote(symbol)
+            value = adapter.get_realtime_quote(symbol, source="sina")
+        else:
+            value = adapter.get_realtime_quote(symbol)
+        if isinstance(value, Mapping):
+            return SimpleNamespace(
+                price=value.get("price"),
+                open_price=value.get("open_price", value.get("open")),
+                high=value.get("high"),
+                low=value.get("low"),
+                pre_close=value.get("pre_close", value.get("previousClose")),
+                volume=value.get("volume"),
+                amount=value.get("amount"),
+                change_amount=value.get("change_amount"),
+                change_pct=value.get("change_pct"),
+                fetched_at=value.get("fetched_at"),
+                provider_timestamp=value.get("provider_timestamp"),
+                is_stale=value.get("is_stale", False),
+                source=value.get("source"),
+            )
+        return value
 
     @staticmethod
     def _finite_number(value: Any, field: str, *, positive: bool = False) -> float:

@@ -7,7 +7,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.thesis_ledger import router
-from src.services.thesis_ledger_control import ControlContractError, ThesisLedgerControlStore
+from src.services.thesis_ledger_control import (
+    PROVIDER_MANIFESTS,
+    ControlContractError,
+    ThesisLedgerControlStore,
+)
 
 
 def _client(monkeypatch, tmp_path) -> TestClient:
@@ -245,11 +249,11 @@ def test_policy_apply_is_latest_wins_idempotent_and_atomic(monkeypatch, tmp_path
         json={
             **policy,
             "revision": 2,
-            "routes": {"REALTIME_QUOTE": {"STOCK": ["tushare"]}},
+            "routes": {"REALTIME_QUOTE": {"ETF": ["tushare"]}},
         },
     )
     assert invalid.status_code == 422
-    assert invalid.json()["detail"]["code"] == "UNKNOWN_PROVIDER"
+    assert invalid.json()["detail"]["code"] == "UNSUPPORTED_ROUTE"
     effective = client.get(
         "/api/v1/thesis-ledger/control/policies/effective", headers=headers
     )
@@ -327,11 +331,24 @@ def test_chip_summary_manifest_route_is_explicit_and_unsupported_provider_is_ato
     )
     assert invalid.status_code == 422
     assert invalid.json()["detail"]["code"] == "UNSUPPORTED_ROUTE"
-    unknown = client.post(
+    all_providers = client.post(
         "/api/v1/thesis-ledger/control/policies/apply",
         headers=headers,
         json=_envelope(
             revision=2,
+            enabled=True,
+            routes={"DAILY_BAR": {"STOCK": list(PROVIDER_MANIFESTS)}},
+        ),
+    )
+    assert all_providers.status_code == 200
+    assert all_providers.json()["effective"]["routes"]["DAILY_BAR"]["STOCK"] == list(
+        PROVIDER_MANIFESTS
+    )
+    unknown = client.post(
+        "/api/v1/thesis-ledger/control/policies/apply",
+        headers=headers,
+        json=_envelope(
+            revision=3,
             enabled=True,
             routes={"CHIP_DISTRIBUTION": {"STOCK": ["akshare"]}},
         ),
@@ -341,7 +358,7 @@ def test_chip_summary_manifest_route_is_explicit_and_unsupported_provider_is_ato
     effective = client.get(
         "/api/v1/thesis-ledger/control/policies/effective", headers=headers
     )
-    assert effective.json()["projection"]["desired"]["revision"] == 1
+    assert effective.json()["projection"]["desired"]["revision"] == 2
 
 
 def test_empty_routes_are_valid_and_disable_all_effective_routes(monkeypatch, tmp_path):

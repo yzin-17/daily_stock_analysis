@@ -10,6 +10,7 @@ from src.services.thesis_ledger_control import (
     ThesisLedgerControlStore,
 )
 from src.services.thesis_ledger_provider_runtime import (
+    _PROVIDER_ADAPTER_IMPORTS,
     ProviderCallError,
     ThesisLedgerDataGateway,
     ThesisLedgerDataRequest,
@@ -101,13 +102,28 @@ def _fund_holdings_routes():
     return {"FUND_HOLDINGS": {"MUTUAL_FUND": ["akshare"]}}
 
 
-def test_provider_registry_exposes_tencent_as_a_dsa_daily_provider(tmp_path):
-    """腾讯独立适配器应进入 Control 注册表，但只声明真实日线能力。"""
+def test_provider_registry_exposes_all_dsa_fetchers_for_routing(tmp_path):
+    """Control 注册表应完整列出可参与路由配置的 DSA 数据源。"""
     registry = {
         item["providerId"]: item
         for item in ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db")).provider_registry()
     }
 
+    assert set(registry) == {
+        "akshare",
+        "efinance",
+        "tencent",
+        "tushare",
+        "tickflow",
+        "pytdx",
+        "baostock",
+        "yfinance",
+        "longbridge",
+        "finnhub",
+        "alphavantage",
+    }
+    assert all("routeEligible" not in manifest for manifest in registry.values())
+    assert set(_PROVIDER_ADAPTER_IMPORTS) == set(registry)
     assert registry["tencent"]["origin"] == "dsa"
     assert registry["tencent"]["capabilities"] == {
         "DAILY_BAR": ["ETF", "STOCK"]
@@ -115,6 +131,37 @@ def test_provider_registry_exposes_tencent_as_a_dsa_daily_provider(tmp_path):
     assert registry["tencent"]["upstreamSources"] == [
         {"sourceId": "tencent", "displayName": "腾讯财经"}
     ]
+    assert registry["yfinance"]["markets"] == ["CN", "HK", "JP", "KR", "TW", "US"]
+    assert registry["tushare"]["configurationMode"] == "dsa_environment"
+
+
+def test_mapping_quote_is_normalized_for_route_contract(tmp_path):
+    """返回字典的内置 Provider 也能通过统一 Quote 契约。"""
+
+    class _MappingQuoteAdapter:
+        @staticmethod
+        def get_realtime_quote(_symbol):
+            return {
+                "open": 99.0,
+                "high": 102.0,
+                "low": 98.0,
+                "price": 101.0,
+                "pre_close": 100.0,
+                "volume": 1200,
+                "amount": 121200,
+            }
+
+    runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, {"REALTIME_QUOTE": {"STOCK": ["pytdx"]}}),
+        adapters={"pytdx": _MappingQuoteAdapter()},
+    )
+
+    quote, provider, fallback_used = runtime.quote("600519.SH")
+
+    assert provider == "pytdx"
+    assert fallback_used is False
+    assert quote.price == 101.0
+    assert quote.open_price == 99.0
 
 
 def test_fund_holdings_uses_effective_route_without_weight_normalization(tmp_path):

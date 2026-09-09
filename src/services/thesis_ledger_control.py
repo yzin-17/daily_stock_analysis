@@ -56,12 +56,16 @@ def _manifest(
     *,
     requires_credential: bool = False,
     upstream_sources: Iterable[tuple[str, str]] = (),
+    markets: Iterable[str] = ("CN",),
+    configuration_mode: str = "control",
 ) -> dict[str, Any]:
     return {
         "providerId": provider_id,
         "displayName": display_name,
         "version": 1,
         "origin": "dsa",
+        "markets": sorted(set(markets)),
+        "configurationMode": configuration_mode,
         "upstreamSources": [
             {"sourceId": source_id, "displayName": source_name}
             for source_id, source_name in upstream_sources
@@ -112,6 +116,89 @@ PROVIDER_MANIFESTS: dict[str, dict[str, Any]] = {
         },
         upstream_sources=(("tencent", "腾讯财经"),),
     ),
+    "tushare": _manifest(
+        "tushare",
+        "Tushare Pro",
+        {
+            "REALTIME_QUOTE": ("STOCK",),
+            "DAILY_BAR": ("STOCK",),
+            "CHIP_SUMMARY": ("STOCK",),
+        },
+        requires_credential=True,
+        markets=("CN", "HK"),
+        configuration_mode="dsa_environment",
+    ),
+    "tickflow": _manifest(
+        "tickflow",
+        "TickFlow",
+        {
+            "REALTIME_QUOTE": ("STOCK",),
+            "DAILY_BAR": ("STOCK",),
+        },
+        requires_credential=True,
+        markets=("CN",),
+        configuration_mode="dsa_environment",
+    ),
+    "pytdx": _manifest(
+        "pytdx",
+        "通达信（pytdx）",
+        {
+            "REALTIME_QUOTE": ("STOCK",),
+            "DAILY_BAR": ("STOCK",),
+        },
+        markets=("CN",),
+        configuration_mode="built_in",
+    ),
+    "baostock": _manifest(
+        "baostock",
+        "BaoStock",
+        {"DAILY_BAR": ("STOCK",)},
+        markets=("CN",),
+        configuration_mode="built_in",
+    ),
+    "yfinance": _manifest(
+        "yfinance",
+        "Yahoo Finance",
+        {
+            "REALTIME_QUOTE": ("STOCK", "ETF", "INDEX"),
+            "DAILY_BAR": ("STOCK", "ETF", "INDEX"),
+        },
+        markets=("CN", "HK", "US", "JP", "KR", "TW"),
+        configuration_mode="built_in",
+    ),
+    "longbridge": _manifest(
+        "longbridge",
+        "Longbridge",
+        {
+            "REALTIME_QUOTE": ("STOCK", "ETF"),
+            "DAILY_BAR": ("STOCK", "ETF"),
+        },
+        requires_credential=True,
+        markets=("HK", "US"),
+        configuration_mode="dsa_environment",
+    ),
+    "finnhub": _manifest(
+        "finnhub",
+        "Finnhub",
+        {
+            "REALTIME_QUOTE": ("STOCK",),
+            "DAILY_BAR": ("STOCK",),
+        },
+        requires_credential=True,
+        markets=("US",),
+        configuration_mode="dsa_environment",
+    ),
+    "alphavantage": _manifest(
+        "alphavantage",
+        "Alpha Vantage",
+        {
+            "REALTIME_QUOTE": ("STOCK",),
+            "DAILY_BAR": ("STOCK",),
+        },
+        requires_credential=True,
+        markets=("US",),
+        configuration_mode="dsa_environment",
+    ),
 }
 
 
@@ -121,6 +208,28 @@ def _provider_configured(
 ) -> bool:
     if not manifest.get("requiresCredential", False):
         return True
+    if manifest.get("configurationMode") == "dsa_environment":
+        try:
+            from src.config import get_config
+
+            runtime_config = get_config()
+            provider_id = str(manifest["providerId"])
+            credential_fields = {
+                "tushare": ("tushare_token",),
+                "tickflow": ("tickflow_api_key",),
+                "finnhub": ("finnhub_api_key",),
+                "alphavantage": ("alphavantage_api_key",),
+            }
+            if provider_id == "longbridge":
+                from data_provider.longbridge_fetcher import LongbridgeFetcher
+
+                return LongbridgeFetcher.has_configured_credentials(runtime_config)
+            return any(
+                bool(str(getattr(runtime_config, field, "") or "").strip())
+                for field in credential_fields.get(provider_id, ())
+            )
+        except Exception:
+            return False
     return bool(config and config["credential_ciphertext"])
 
 # These are only the initial product policy defaults. They are seeded by the

@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- [新功能] ThesisLedger Provider registry 新增腾讯财经独立数据源，支持股票与 ETF 日线主备路由；AKShare 内部切换腾讯通道时也会通过 `upstreamSource=tencent` 返回实际来源，便于市场数据页展示与审计。
+- [改进] ThesisLedger Provider registry 中的 11 个市场数据源均可按能力参与主备路由；Provider runtime 补齐全部适配器映射，并从 DSA 环境判断凭证型数据源是否就绪。
+- [新功能] ThesisLedger Provider registry 新增腾讯财经独立数据源，支持股票与 ETF 日线主备路由；AKShare 内部切换腾讯通道时也会通过 `upstreamSource=tencent` 返回实际来源，便于行情详情展示与审计。
 - [修复] ThesisLedger 日线请求将 `start`、`end`、`limit` 从 facade 透传到 Provider，避免历史区间只抓取默认最近 90 根后再过滤。
 - [修复] AkShare 获取 ETF 前复权日线时在东方财富异常或空结果后自动切换到腾讯财经独立通道，避免 AkShare 与 efinance 同时依赖东财端点而共同失败。
 - [修复] ETF 实时行情缺少昨收字段时按同一报价的涨跌额或涨跌幅补齐，避免有效行情被 Contract 校验拒绝并导致组合数据标记陈旧。
