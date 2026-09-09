@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -165,6 +166,96 @@ def _normalize_report_date(value: Any) -> Optional[str]:
     return parsed.date().isoformat() if parsed else None
 
 
+def _as_utc_iso(value: datetime, *, tz_name: str = "Asia/Shanghai") -> str:
+    """Convert a provider date/time to a stable UTC timestamp."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=ZoneInfo(tz_name))
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def normalize_corporate_actions_v2(
+    dividend_df: pd.DataFrame | None,
+    stock_code: str,
+    *,
+    start_date: str,
+    end_date: str,
+    data_as_of: datetime,
+    provider: str = "akshare",
+    provider_revision: str = "akshare-corporate-actions-v1",
+    source_complete: bool = False,
+) -> Dict[str, Any]:
+    """Normalize auditable CN stock cash dividends for the V2 contract.
+
+    The source table is considered complete only when it contains rows for the
+    requested symbol.  An upstream exception is represented by the caller as
+    ``complete=False``; this helper never turns an unknown result into an empty
+    fact set.  Events without a reliable announcement date are excluded and
+    make the coverage incomplete because their knowledge time cannot be proven.
+    """
+    coverage = {"start": start_date, "end": end_date, "complete": False}
+    if dividend_df is None or dividend_df.empty:
+        coverage["complete"] = bool(source_complete and dividend_df is not None)
+        return {"facts": [], "coverage": coverage}
+
+    work_df = _filter_rows_by_code(dividend_df, stock_code)
+    if work_df.empty:
+        return {"facts": [], "coverage": coverage}
+
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except ValueError:
+        return {"facts": [], "coverage": coverage}
+    as_of = data_as_of.astimezone(timezone.utc)
+    facts: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    complete = True
+
+    for _, row in work_df.iterrows():
+        if not isinstance(row, pd.Series):
+            complete = False
+            continue
+        ex_dt = _safe_datetime(_pick_by_keywords(row, _DIVIDEND_KEYWORD_MAP["ex_dividend_date"]))
+        record_dt = _safe_datetime(_pick_by_keywords(row, _DIVIDEND_KEYWORD_MAP["record_date"]))
+        announce_dt = _safe_datetime(_pick_by_keywords(row, _DIVIDEND_KEYWORD_MAP["announce_date"]))
+        per_share = _extract_cash_dividend_per_share(row)
+        # Announcement date is the minimum auditable knowledge-time evidence.
+        if announce_dt is None or per_share is None or per_share <= 0:
+            complete = False
+            continue
+        occurred_dt = ex_dt or record_dt or announce_dt
+        if occurred_dt is None:
+            complete = False
+            continue
+        occurred_date = occurred_dt.date()
+        available_at = _as_utc_iso(announce_dt)
+        available_dt = datetime.fromisoformat(available_at.replace("Z", "+00:00"))
+        if available_dt > as_of or occurred_date < start or occurred_date > end:
+            continue
+        key = (occurred_date.isoformat(), f"{per_share:.6f}")
+        if key in seen:
+            continue
+        seen.add(key)
+        facts.append(
+            {
+                "symbol": stock_code.upper(),
+                "market": "CN",
+                "instrumentType": "STOCK",
+                "type": "CASH_DIVIDEND",
+                "cashAmount": f"{per_share:.6f}".rstrip("0").rstrip("."),
+                "currency": "CNY",
+                "occurredAt": _as_utc_iso(occurred_dt),
+                "availableAt": available_at,
+                "provider": provider,
+                "providerRevision": provider_revision,
+            }
+        )
+
+    facts.sort(key=lambda item: item["occurredAt"])
+    coverage["complete"] = complete
+    return {"facts": facts, "coverage": coverage}
+
+
 def _build_dividend_payload(
     dividend_df: pd.DataFrame,
     stock_code: str,
@@ -264,9 +355,46 @@ def _extract_latest_row(df: pd.DataFrame, stock_code: str) -> Optional[pd.Series
 class AkshareFundamentalAdapter:
     """AkShare adapter for fundamentals, capital flow and dragon-tiger signals."""
 
+    def get_corporate_actions_v2(
+        self,
+        stock_code: str,
+        *,
+        start_date: str,
+        end_date: str,
+        data_as_of: datetime,
+    ) -> Dict[str, Any]:
+        """Return only auditable CN stock cash-dividend facts for V2."""
+        dividend_df, source, errors = self._call_df_candidates([
+            ("stock_fhps_detail_em", {"symbol": stock_code}),
+            ("stock_history_dividend_detail", {"symbol": stock_code, "indicator": "分红", "date": ""}),
+            ("stock_dividend_cninfo", {"symbol": stock_code}),
+        ], allow_empty=True)
+        if dividend_df is None:
+            return {
+                "facts": [],
+                "coverage": {"start": start_date, "end": end_date, "complete": False},
+                "source": source,
+                "errors": errors,
+            }
+        result = normalize_corporate_actions_v2(
+            dividend_df,
+            stock_code,
+            start_date=start_date,
+            end_date=end_date,
+            data_as_of=data_as_of,
+            provider="akshare",
+            provider_revision=f"akshare:{source or 'corporate-actions'}:v1",
+            source_complete=True,
+        )
+        result["source"] = source
+        result["errors"] = errors
+        return result
+
     def _call_df_candidates(
         self,
         candidates: List[Tuple[str, Dict[str, Any]]],
+        *,
+        allow_empty: bool = False,
     ) -> Tuple[Optional[pd.DataFrame], Optional[str], List[str]]:
         errors: List[str] = []
         try:
@@ -282,7 +410,7 @@ class AkshareFundamentalAdapter:
                 df = fn(**kwargs)
                 if isinstance(df, pd.Series):
                     df = df.to_frame().T
-                if isinstance(df, pd.DataFrame) and not df.empty:
+                if isinstance(df, pd.DataFrame) and (allow_empty or not df.empty):
                     return df, func_name, errors
             except Exception as exc:
                 errors.append(f"{func_name}:{type(exc).__name__}")

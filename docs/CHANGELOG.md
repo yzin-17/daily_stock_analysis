@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] ThesisLedger Contract V2 新增跨市场基础 Bar、交易日历、instrument、FX、公司行动与 NAV capability 契约，并将价格、数量、金额和汇率统一为规范十进制字符串。
+- [新功能] ThesisLedger V2 增加按依赖查询的 CN 股票交易日历、交易规则与现金分红接口；严格保留 `dataAsOf`、Provider revision 与覆盖完整性，未知覆盖不返回伪造空事实。
+- [修复] V2 CN 股票日线改用 Provider runtime 的显式不复权路径，以交易日 Asia/Shanghai 15:00 作为完整日线可知时间，并以 09:30 记录 `openedAt`/`openAvailableAt`；V1 日线前复权行为保持不变。
 - [改进] ThesisLedger Provider registry 中的 11 个市场数据源均可按能力参与主备路由；Provider runtime 补齐全部适配器映射，并从 DSA 环境判断凭证型数据源是否就绪。
 - [新功能] ThesisLedger Provider registry 新增腾讯财经独立数据源，支持股票与 ETF 日线主备路由；AKShare 内部切换腾讯通道时也会通过 `upstreamSource=tencent` 返回实际来源，便于行情详情展示与审计。
 - [修复] ThesisLedger 日线请求将 `start`、`end`、`limit` 从 facade 透传到 Provider，避免历史区间只抓取默认最近 90 根后再过滤。

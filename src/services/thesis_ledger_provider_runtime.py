@@ -766,6 +766,7 @@ class ThesisLedgerProviderRuntime:
                 )
             provider_symbol = provider_symbol_for_contract(request.symbol)
             days = request.limit or 90
+            raw_mode = str(request.parameters.get("priceMode") or "").strip().lower() == "raw"
 
             def operation(provider_id: str, adapter: Any) -> Any:
                 options: dict[str, Any] = {"days": days}
@@ -773,7 +774,13 @@ class ThesisLedgerProviderRuntime:
                     options["start_date"] = request.start
                 if request.end is not None:
                     options["end_date"] = request.end
-                frame = self._daily_frame(adapter.get_daily_data(provider_symbol, **options))
+                if raw_mode:
+                    raw_method = getattr(adapter, "get_daily_data_v2_raw", None)
+                    if not callable(raw_method):
+                        raise ProviderCallError("unsupported", "Provider 不支持 V2 不复权日线")
+                    frame = self._daily_frame(raw_method(provider_symbol, **options))
+                else:
+                    frame = self._daily_frame(adapter.get_daily_data(provider_symbol, **options))
                 attrs = getattr(frame, "attrs", None)
                 if isinstance(attrs, dict) and not attrs.get("upstream_source"):
                     if provider_id == "tencent":

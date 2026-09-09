@@ -30,7 +30,7 @@ import random
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple
 
 import pandas as pd
@@ -418,6 +418,35 @@ class AkshareFetcher(BaseFetcher):
         # 东财补丁开启才执行打补丁操作
         if get_config().enable_eastmoney_patch:
             eastmoney_patch()
+
+    def get_daily_data_v2_raw(
+        self,
+        stock_code: str,
+        *,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        days: int = 30,
+    ) -> pd.DataFrame:
+        """获取 V2 回测使用的 CN 股票不复权日线。
+
+        V1 的 ``get_daily_data`` 继续保持前复权默认值；该显式入口只由
+        ThesisLedger V2 runtime 调用，避免把复权价格误当作历史可知价格。
+        """
+        if end_date is None:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+        if start_date is None:
+            start_dt = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=days * 2)
+            start_date = start_dt.strftime("%Y-%m-%d")
+        raw_df = self._fetch_stock_data(
+            normalize_stock_code(stock_code),
+            start_date,
+            end_date,
+            adjust="",
+        )
+        if raw_df is None or raw_df.empty:
+            raise DataFetchError(f"Akshare 未返回 {stock_code} 的不复权日线")
+        frame = self._clean_data(self._normalize_data(raw_df, stock_code))
+        return self._calculate_indicators(frame)
     
     def _set_random_user_agent(self) -> None:
         """
@@ -493,7 +522,14 @@ class AkshareFetcher(BaseFetcher):
         else:
             return self._fetch_stock_data(stock_code, start_date, end_date)
     
-    def _fetch_stock_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def _fetch_stock_data(
+        self,
+        stock_code: str,
+        start_date: str,
+        end_date: str,
+        *,
+        adjust: str = "qfq",
+    ) -> pd.DataFrame:
         """
         获取普通 A 股历史数据
 
@@ -514,7 +550,10 @@ class AkshareFetcher(BaseFetcher):
         for fetch_method, source_id, source_name in methods:
             try:
                 logger.info(f"[数据源] 尝试使用 {source_name} 获取 {stock_code}...")
-                df = fetch_method(stock_code, start_date, end_date)
+                if adjust == "qfq":
+                    df = fetch_method(stock_code, start_date, end_date)
+                else:
+                    df = fetch_method(stock_code, start_date, end_date, adjust=adjust)
 
                 if df is not None and not df.empty:
                     df.attrs["upstream_source"] = source_id
@@ -528,7 +567,14 @@ class AkshareFetcher(BaseFetcher):
         # 所有都失败
         raise DataFetchError(f"Akshare 所有渠道获取失败: {last_error}")
 
-    def _fetch_stock_data_em(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def _fetch_stock_data_em(
+        self,
+        stock_code: str,
+        start_date: str,
+        end_date: str,
+        *,
+        adjust: str = "qfq",
+    ) -> pd.DataFrame:
         """
         获取普通 A 股历史数据 (东方财富)
         数据来源：ak.stock_zh_a_hist()
@@ -552,7 +598,7 @@ class AkshareFetcher(BaseFetcher):
                 period="daily",
                 start_date=start_date.replace('-', ''),
                 end_date=end_date.replace('-', ''),
-                adjust="qfq"
+                adjust=adjust
             )
 
             api_elapsed = _time.time() - api_start
@@ -570,7 +616,14 @@ class AkshareFetcher(BaseFetcher):
                 raise RateLimitError(f"Akshare(EM) 可能被限流: {e}") from e
             raise e
 
-    def _fetch_stock_data_sina(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def _fetch_stock_data_sina(
+        self,
+        stock_code: str,
+        start_date: str,
+        end_date: str,
+        *,
+        adjust: str = "qfq",
+    ) -> pd.DataFrame:
         """
         获取普通 A 股历史数据 (新浪财经)
         数据来源：ak.stock_zh_a_daily()
@@ -588,7 +641,7 @@ class AkshareFetcher(BaseFetcher):
                 symbol=symbol,
                 start_date=start_date.replace('-', ''),
                 end_date=end_date.replace('-', ''),
-                adjust="qfq",
+                adjust=adjust,
                 timeout=self._history_call_timeout,
                 call_name="ak.stock_zh_a_daily",
             )
@@ -619,7 +672,14 @@ class AkshareFetcher(BaseFetcher):
         except Exception as e:
             raise e
 
-    def _fetch_stock_data_tx(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def _fetch_stock_data_tx(
+        self,
+        stock_code: str,
+        start_date: str,
+        end_date: str,
+        *,
+        adjust: str = "qfq",
+    ) -> pd.DataFrame:
         """
         获取普通 A 股历史数据 (腾讯财经)
         数据来源：ak.stock_zh_a_hist_tx()
@@ -637,7 +697,7 @@ class AkshareFetcher(BaseFetcher):
                 symbol=symbol,
                 start_date=start_date.replace('-', ''),
                 end_date=end_date.replace('-', ''),
-                adjust="qfq",
+                adjust=adjust,
                 timeout=self._history_call_timeout,
                 call_name="ak.stock_zh_a_hist_tx",
             )

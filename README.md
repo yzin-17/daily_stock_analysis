@@ -60,6 +60,26 @@
 
 > 项目默认内置 AkShare、Baostock、YFinance 等免费行情源，可零配置运行；免费源受上游限流、接口变动和网络波动影响，稳定性不保证。长期定时、批量分析或更稳定行情建议配置 TickFlow、Tushare、Longbridge 等 token 型数据源，适用市场、Actions 映射和 fallback 规则见 [数据源配置](docs/full-guide.md#数据源配置)。
 
+### ThesisLedger V2 数据契约边界
+
+DSA 通过独立 Bearer Token 提供三个按依赖查询的 V2 事实接口：交易日历
+`GET /api/v1/thesis-ledger/v2/calendar`、交易规则事实
+`GET /api/v1/thesis-ledger/v2/instrument-facts` 和公司行动
+`GET /api/v1/thesis-ledger/v2/corporate-actions`。接口均返回
+`version/status/provider/providerRevision/coverage/facts/reason`；`dataAsOf` 是必填的带时区
+ISO 8601 时间，服务端拒绝未来事实、跨市场或不支持的标的类型。
+
+当前真实 Provider 闭环仅承诺 CN 股票日历与 `CASH_DIVIDEND`；CN 股票的 lot/tick/currency 使用
+版本化的 `dsa-market-rules`，其中 `tradable` 仅表示标准市场规则允许交易，不代表实时上市或停牌状态。
+公司行动以 AKShare 基本面适配器
+的公告日期作为可审计知识时间；Provider 无法确认覆盖完整性时返回 `unavailable`，不会把空结果
+伪装成“无公司行动”。ETF、NAV、FX、拆分及无法验证交易规则的 instrument facts 保持显式
+`unsupported` 或 `unavailable`。fixture 只能通过 `THESIS_LEDGER_FIXTURE_MODE=true` 显式开启，
+生产默认不读取 fixture。CN STOCK/1d V2 Bar 通过 Provider runtime 的显式不复权入口获取，
+V1 日线仍保持前复权默认；V2 的 `availableAt` 取对应交易日 Asia/Shanghai 15:00，当前交易日
+尚未收盘或未来事实会被拒绝；`openedAt` 与 `openAvailableAt` 则记录对应交易日 09:30，
+避免把完整日线的收盘可用时间误当成下一交易日开盘价的可用时间。
+
 ## 🚀 快速开始
 
 ### 方式一：[GitHub Actions（推荐）](https://www.bilibili.com/video/BV11FEb66EXG/)

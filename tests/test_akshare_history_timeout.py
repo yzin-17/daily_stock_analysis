@@ -205,3 +205,44 @@ def test_stock_data_falls_back_after_sina_timeout(monkeypatch) -> None:
     result = fetcher._fetch_stock_data("605218", "2026-05-01", "2026-05-25")
 
     assert result is tx_df
+
+
+def test_v2_raw_daily_entry_requests_unadjusted_prices(monkeypatch) -> None:
+    fetcher = AkshareFetcher(sleep_min=0, sleep_max=0)
+    captured = {}
+    raw_df = pd.DataFrame(
+        {
+            "日期": ["2026-05-25"],
+            "开盘": [10.0],
+            "最高": [10.5],
+            "最低": [9.8],
+            "收盘": [10.2],
+            "成交量": [1000],
+            "成交额": [20000],
+        }
+    )
+
+    def fake_fetch(stock_code, start_date, end_date, *, adjust="qfq"):
+        captured.update(
+            stock_code=stock_code,
+            start_date=start_date,
+            end_date=end_date,
+            adjust=adjust,
+        )
+        return raw_df
+
+    monkeypatch.setattr(fetcher, "_fetch_stock_data", fake_fetch)
+    result = fetcher.get_daily_data_v2_raw(
+        "605218",
+        start_date="2026-05-01",
+        end_date="2026-05-25",
+        days=30,
+    )
+
+    assert captured == {
+        "stock_code": "605218",
+        "start_date": "2026-05-01",
+        "end_date": "2026-05-25",
+        "adjust": "",
+    }
+    assert result.iloc[0]["close"] == 10.2

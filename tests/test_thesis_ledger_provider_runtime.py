@@ -496,6 +496,49 @@ def test_daily_bar_request_passes_explicit_range_to_provider(tmp_path):
     assert calls == [("600519", 365, "2025-01-01", "2025-12-31")]
 
 
+def test_v2_raw_daily_bar_request_uses_explicit_raw_provider_method(tmp_path):
+    """V2 raw 请求走专用不复权入口，V1 仍调用默认日线入口。"""
+    frame = _Frame(
+        [
+            _Row(
+                date="2025-01-02",
+                open=100.0,
+                high=103.0,
+                low=99.0,
+                close=101.0,
+                volume=1100.0,
+                amount=110000.0,
+            )
+        ]
+    )
+    calls: list[tuple[str, str]] = []
+
+    class _Adapter:
+        def get_daily_data(self, symbol, *, days):
+            calls.append(("v1", symbol))
+            return frame
+
+        def get_daily_data_v2_raw(self, symbol, *, days):
+            calls.append(("v2-raw", symbol))
+            return frame
+
+    runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, {"DAILY_BAR": {"STOCK": ["akshare"]}}),
+        adapters={"akshare": _Adapter()},
+    )
+
+    runtime.execute_request(ThesisLedgerDataRequest("DAILY_BAR", "600519.SH"))
+    runtime.execute_request(
+        ThesisLedgerDataRequest(
+            "DAILY_BAR",
+            "600519.SH",
+            parameters={"priceMode": "raw"},
+        )
+    )
+
+    assert calls == [("v1", "600519"), ("v2-raw", "600519")]
+
+
 def test_tencent_daily_route_preserves_provider_and_actual_source(tmp_path):
     """腾讯独立路由既是 route Provider，也是实际日线通道。"""
     frame = _Frame(

@@ -14,9 +14,11 @@ import uuid
 import hashlib
 import json
 import re
+from decimal import Decimal
 from contextvars import ContextVar
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
 
@@ -25,6 +27,17 @@ from src.services.thesis_ledger_control import (
     CONTROL_CONTRACT_VERSION,
     ControlContractError,
     ThesisLedgerControlStore,
+)
+from src.services.thesis_ledger_v2_dependencies import (
+    V2DependencyError,
+    calendar_fact,
+    fixture_calendar,
+    parse_data_as_of,
+    real_corporate_actions,
+    response as v2_response,
+    static_cn_instrument_fact,
+    validate_cn_stock,
+    validate_range,
 )
 
 CONTRACT_VERSION = 1
@@ -133,6 +146,326 @@ def _fixture_timestamp() -> str:
     return datetime(2025, 1, 10, 7, 0, tzinfo=timezone.utc).isoformat()
 
 
+def _backtest_market_for_symbol(symbol: str) -> str:
+    canonical = symbol.strip().upper()
+    if canonical.endswith(".HK"):
+        return "HK"
+    if canonical.endswith(".US") or re.match(r"^[A-Z]{1,6}$", canonical):
+        return "US"
+    return "CN"
+
+
+def _real_daily_bar_provider_route() -> tuple[str, ...]:
+    """Return eligible registry providers for the supported CN daily-bar slice."""
+    try:
+        route = _control_store().route("DAILY_BAR", "STOCK")
+    except Exception as exc:  # registry is an availability input, never a reason to claim support
+        logger.warning("读取 ThesisLedger DAILY_BAR Provider route 失败: %s", exc)
+        return ()
+    return tuple(str(provider).strip() for provider in route if str(provider).strip())
+
+
+def _real_v2_raw_provider_route() -> tuple[str, ...]:
+    """Keep only registry providers exposing the explicit V2 raw-bar method."""
+    eligible: list[str] = []
+    try:
+        from src.services.thesis_ledger_provider_runtime import _PROVIDER_ADAPTER_IMPORTS
+
+        for provider_id in _real_daily_bar_provider_route():
+            try:
+                adapter_import = _PROVIDER_ADAPTER_IMPORTS.get(provider_id)
+                if adapter_import is None:
+                    continue
+                module_name, class_name = adapter_import
+                module = __import__(module_name, fromlist=[class_name])
+                adapter_class = getattr(module, class_name, None)
+                if callable(getattr(adapter_class, "get_daily_data_v2_raw", None)):
+                    eligible.append(provider_id)
+            except Exception as exc:
+                logger.warning("Provider %s 未声明 V2 raw 日线: %s", provider_id, exc)
+    except Exception as exc:
+        logger.warning("读取 V2 raw 日线 Provider 能力失败: %s", exc)
+    return tuple(eligible)
+
+
+def _backtest_capabilities() -> dict[str, Any]:
+    """Return the V2 data contract without claiming provider data is live.
+
+    DSA owns base facts and capability metadata.  Derived intraday windows are
+    deliberately marked as Server-owned so they cannot be mistaken for a DSA
+    provider timeframe.
+    """
+    fixture_mode = _fixture_mode()
+    generated_at = _fixture_timestamp() if fixture_mode else _now_iso()
+    daily_ranges = {"start": "2024-11-12", "end": "2025-01-10"}
+    intraday_ranges = {"start": "2025-01-10", "end": "2025-01-10"}
+    unavailable_ranges = {"start": None, "end": None}
+    calendar_ranges = intraday_ranges if fixture_mode else unavailable_ranges
+    provider_revision = (
+        "dsa-backtest-v2-fixture-1"
+        if fixture_mode
+        else "dsa-backtest-v2-contract-unavailable"
+    )
+    real_v2_raw_route = _real_v2_raw_provider_route() if not fixture_mode else ()
+    capabilities: list[dict[str, Any]] = []
+    for market, timezone_name in (
+        ("CN", "Asia/Shanghai"),
+        ("HK", "Asia/Hong_Kong"),
+        ("US", "America/New_York"),
+    ):
+        for instrument_type in ("STOCK", "ETF"):
+            for timeframe in ("1m", "1d"):
+                base_status = "supported"
+                base_reason = None
+                if not fixture_mode:
+                    base_status = "unavailable"
+                    base_reason = "当前 Provider registry/health 未确认该基础周期可用"
+                    if (
+                        market == "CN"
+                        and instrument_type == "STOCK"
+                        and timeframe == "1d"
+                        and real_v2_raw_route
+                    ):
+                        base_status = "supported"
+                        base_reason = None
+                capability_provider = PROVIDER_ID
+                capability_revision = provider_revision
+                if base_status == "supported" and not fixture_mode:
+                    capability_provider = real_v2_raw_route[0]
+                    capability_revision = "dsa-backtest-v2-provider-registry-raw-1"
+                capabilities.append(
+                    {
+                        "market": market,
+                        "instrumentType": instrument_type,
+                        "timeframe": timeframe,
+                        "kind": "base",
+                        "status": base_status,
+                        "provider": capability_provider,
+                        "providerRevision": capability_revision,
+                        "range": (
+                            intraday_ranges if timeframe == "1m" else daily_ranges
+                        )
+                        if fixture_mode
+                        else unavailable_ranges,
+                        "freshness": "unknown",
+                        "quality": "unknown",
+                        "completeness": "unavailable" if base_status == "unavailable" else "partial",
+                        "timezone": timezone_name,
+                        **({} if base_reason is None else {"reason": base_reason}),
+                    }
+                )
+            for timeframe in ("5m", "15m", "30m", "60m"):
+                capabilities.append(
+                    {
+                        "market": market,
+                        "instrumentType": instrument_type,
+                        "timeframe": timeframe,
+                        "kind": "derived",
+                        "status": "unsupported",
+                        "provider": "thesis-ledger-server",
+                        "providerRevision": "server-aggregation-v2",
+                        "range": {"start": None, "end": None},
+                        "freshness": "unknown",
+                        "quality": "unknown",
+                        "completeness": "unavailable",
+                        "timezone": timezone_name,
+                        "reason": "派生分钟周期由 Server 从冻结 1m 派生",
+                    }
+                )
+        nav_fixture_supported = market == "CN" and fixture_mode
+        nav_status = "supported" if nav_fixture_supported else "unsupported"
+        nav_reason = None
+        if market == "CN" and not fixture_mode:
+            nav_status = "unavailable"
+            nav_reason = "当前 Provider registry/health 未确认 CN NAV 可用"
+        elif market != "CN":
+            nav_status = "unsupported"
+            nav_reason = "V2 仅支持中国内地 NAV Fund"
+        nav_capability = {
+            "market": market,
+            "instrumentType": "NAV_FUND",
+            "timeframe": "1d",
+            "kind": "base",
+            "status": nav_status,
+            "provider": PROVIDER_ID,
+            "providerRevision": provider_revision,
+            "range": (
+                {"start": "2025-01-09", "end": "2025-01-09"}
+                if nav_fixture_supported
+                else unavailable_ranges
+            ),
+            "freshness": "delayed" if nav_fixture_supported else "unknown",
+            "quality": "complete" if nav_fixture_supported else "unknown",
+            "completeness": "complete" if nav_fixture_supported else "unavailable",
+            "timezone": timezone_name,
+        }
+        if nav_reason is not None:
+            nav_capability["reason"] = nav_reason
+        capabilities.append(nav_capability)
+
+    calendars = [
+        {
+            "market": "CN",
+            "timezone": "Asia/Shanghai",
+            "provider": "exchange-calendar",
+            "providerRevision": "fixture-calendar-2025-01-10",
+            "sessions": [
+                {"startMinute": 570, "endMinute": 690},
+                {"startMinute": 780, "endMinute": 900},
+            ],
+            "holidays": [],
+            "range": calendar_ranges,
+        },
+        {
+            "market": "HK",
+            "timezone": "Asia/Hong_Kong",
+            "provider": "exchange-calendar",
+            "providerRevision": "fixture-calendar-2025-01-10",
+            "sessions": [
+                {"startMinute": 570, "endMinute": 720},
+                {"startMinute": 780, "endMinute": 960},
+            ],
+            "holidays": [],
+            "range": calendar_ranges,
+        },
+        {
+            "market": "US",
+            "timezone": "America/New_York",
+            "provider": "exchange-calendar",
+            "providerRevision": "fixture-calendar-2025-01-10",
+            "sessions": [{"startMinute": 570, "endMinute": 960}],
+            "holidays": [],
+            "range": calendar_ranges,
+        },
+    ]
+    instrument_facts = [
+        {
+            "symbol": "600519.SH",
+            "market": "CN",
+            "instrumentType": "STOCK",
+            "currency": "CNY",
+            "lotSize": "100",
+            "tickSize": "0.01",
+            "tradable": True,
+            "provider": PROVIDER_ID,
+            "providerRevision": "instrument-v2-fixture-1",
+            "occurredAt": generated_at,
+            "availableAt": generated_at,
+        },
+        {
+            "symbol": "00005.HK",
+            "market": "HK",
+            "instrumentType": "STOCK",
+            "currency": "HKD",
+            "lotSize": "500",
+            "tickSize": "0.01",
+            "tradable": True,
+            "provider": PROVIDER_ID,
+            "providerRevision": "instrument-v2-fixture-1",
+            "occurredAt": generated_at,
+            "availableAt": generated_at,
+        },
+        {
+            "symbol": "AAPL.US",
+            "market": "US",
+            "instrumentType": "STOCK",
+            "currency": "USD",
+            "lotSize": "1",
+            "tickSize": "0.01",
+            "tradable": True,
+            "provider": PROVIDER_ID,
+            "providerRevision": "instrument-v2-fixture-1",
+            "occurredAt": generated_at,
+            "availableAt": generated_at,
+        },
+    ]
+    fx_facts = [
+        {
+            "fromCurrency": "HKD",
+            "toCurrency": "CNY",
+            "rate": "0.92",
+            "occurredAt": generated_at,
+            "availableAt": generated_at,
+            "provider": PROVIDER_ID,
+            "providerRevision": "fx-v2-fixture-1",
+            "freshness": "delayed",
+            "quality": "complete",
+        },
+        {
+            "fromCurrency": "USD",
+            "toCurrency": "CNY",
+            "rate": "7.2",
+            "occurredAt": generated_at,
+            "availableAt": generated_at,
+            "provider": PROVIDER_ID,
+            "providerRevision": "fx-v2-fixture-1",
+            "freshness": "delayed",
+            "quality": "complete",
+        },
+    ]
+    corporate_actions = [
+        {
+            "symbol": "600519.SH",
+            "type": "CASH_DIVIDEND",
+            "cashAmount": "1.0",
+            "currency": "CNY",
+            "occurredAt": generated_at,
+            "availableAt": generated_at,
+            "provider": PROVIDER_ID,
+            "providerRevision": "corporate-action-v2-fixture-1",
+        }
+    ]
+    nav_facts = [
+        {
+            "symbol": "000001.OF",
+            "market": "CN",
+            "instrumentType": "NAV_FUND",
+            "nav": "1.2345",
+            "valuationDate": "2025-01-09",
+            "occurredAt": "2025-01-09T07:00:00+00:00",
+            "availableAt": generated_at,
+            "provider": PROVIDER_ID,
+            "providerRevision": "nav-v2-fixture-1",
+            "freshness": "delayed",
+            "quality": "complete",
+            "status": "supported",
+        }
+    ]
+    if not fixture_mode:
+        instrument_facts = []
+        calendars = []
+        fx_payload = {
+            "status": "unavailable",
+            "facts": [],
+            "reason": "V2 FX facts 尚未由 Provider registry/health 确认",
+        }
+        corporate_action_payload = {
+            "status": "unavailable",
+            "facts": [],
+            "reason": "V2 公司行动 Provider 尚未接入",
+        }
+        nav_payload = {
+            "status": "unavailable",
+            "facts": [],
+            "reason": "V2 NAV facts 尚未由 Provider registry/health 确认",
+        }
+    else:
+        fx_payload = {"status": "supported", "facts": fx_facts}
+        corporate_action_payload = {"status": "supported", "facts": corporate_actions}
+        nav_payload = {"status": "supported", "facts": nav_facts}
+    return {
+        "version": 2,
+        "provider": PROVIDER_ID,
+        "generatedAt": generated_at,
+        "capabilities": capabilities,
+        "calendars": calendars,
+        "instrumentFacts": instrument_facts,
+        "fx": fx_payload,
+        "corporateActions": corporate_action_payload,
+        "nav": nav_payload,
+    }
+
+
 def _canonical_symbol(symbol: str) -> str:
     value = symbol.strip().upper()
     if value.isdigit() and len(value) == 6:
@@ -149,6 +482,8 @@ def _fixture_price(symbol: str) -> float:
         "600519.SH": 1488.0,
         "510300.SH": 4.08,
         "000001.SZ": 11.68,
+        "00005.HK": 300.0,
+        "AAPL.US": 200.0,
     }
     try:
         return prices[_canonical_symbol(symbol)]
@@ -164,6 +499,23 @@ def _number(value: Any, field: str, *, allow_zero: bool = True) -> float:
     if not math.isfinite(result) or (not allow_zero and result <= 0):
         _error("upstream_invalid_response", f"字段 {field} 数值非法", 502)
     return result
+
+
+def _decimal_string(value: Any, field: str) -> str:
+    """Serialize provider numerics without crossing the JSON Number boundary."""
+    raw = value.item() if hasattr(value, "item") else value
+    try:
+        parsed = Decimal(str(raw))
+    except (TypeError, ValueError, ArithmeticError):
+        _error("upstream_invalid_response", f"字段 {field} 不是有效数字", 502)
+    if not parsed.is_finite():
+        _error("upstream_invalid_response", f"字段 {field} 数值非法", 502)
+    if parsed.is_zero():
+        return "0"
+    rendered = format(parsed, "f")
+    if "." in rendered:
+        rendered = rendered.rstrip("0").rstrip(".")
+    return rendered or "0"
 
 
 def _iso_timestamp(value: Any) -> str:
@@ -264,6 +616,69 @@ def _fixture_bars(symbol: str) -> list[dict[str, Any]]:
                 "provider": PROVIDER_ID,
             }
         )
+    return result
+
+
+def _fixture_minute_bars(symbol: str) -> list[dict[str, Any]]:
+    canonical = symbol.strip().upper()
+    market = _backtest_market_for_symbol(canonical)
+    timezone_name = {
+        "CN": "Asia/Shanghai",
+        "HK": "Asia/Hong_Kong",
+        "US": "America/New_York",
+    }[market]
+    sessions = {
+        "CN": ((9, 30, 11, 30), (13, 0, 15, 0)),
+        "HK": ((9, 30, 12, 0), (13, 0, 16, 0)),
+        "US": ((9, 30, 16, 0),),
+    }[market]
+    local_day = date(2025, 1, 10)
+    result: list[dict[str, Any]] = []
+    index = 0
+    for start_hour, start_minute, end_hour, end_minute in sessions:
+        cursor = datetime(
+            local_day.year,
+            local_day.month,
+            local_day.day,
+            start_hour,
+            start_minute,
+            tzinfo=ZoneInfo(timezone_name),
+        )
+        end = datetime(
+            local_day.year,
+            local_day.month,
+            local_day.day,
+            end_hour,
+            end_minute,
+            tzinfo=ZoneInfo(timezone_name),
+        )
+        while cursor < end and index < 240:
+            close = Decimal("100") + Decimal(index) / Decimal("100")
+            occurred_at = cursor.astimezone(timezone.utc).isoformat()
+            result.append(
+                {
+                    "version": 2,
+                    "symbol": canonical,
+                    "market": market,
+                    "timeframe": "1m",
+                    "occurredAt": occurred_at,
+                    "availableAt": occurred_at,
+                    "timestamp": occurred_at,
+                    "open": format(close - Decimal("0.01"), "f"),
+                    "high": format(close + Decimal("0.02"), "f"),
+                    "low": format(close - Decimal("0.02"), "f"),
+                    "close": format(close, "f"),
+                    "volume": str(1000 + index),
+                    "amount": format(close * (1000 + index), "f"),
+                    "provider": PROVIDER_ID,
+                    "providerRevision": "dsa-backtest-v2-fixture-1",
+                    "freshness": "delayed",
+                    "quality": "complete",
+                    "completeness": "complete",
+                }
+            )
+            index += 1
+            cursor += timedelta(minutes=1)
     return result
 
 
@@ -613,6 +1028,7 @@ def _real_fund_nav(symbol: str, request_id: str | None = None) -> dict[str, Any]
         frame = gateway_result.data
         provider = gateway_result.provider
         fallback_used = gateway_result.fallback_used
+        fetched_at = _now_iso()
     except Exception as exc:  # noqa: BLE001 - gateway maps provider failures to diagnostics.
         _data_gateway_error(
             exc,
@@ -771,6 +1187,8 @@ def _real_bars(
     end: Optional[str],
     limit: int,
     request_id: str | None = None,
+    *,
+    v2_raw: bool = False,
 ) -> list[dict[str, Any]]:
     request_id = request_id or _request_id_context.get()
     try:
@@ -783,10 +1201,12 @@ def _real_bars(
             end=end,
             limit=limit,
             request_id=request_id,
+            parameters={"priceMode": "raw"} if v2_raw else {},
         )
         frame = gateway_result.data
         provider = gateway_result.provider
         fallback_used = gateway_result.fallback_used
+        fetched_at = _now_iso() if v2_raw else None
     except Exception as exc:  # noqa: BLE001 - gateway maps provider failures to diagnostics.
         _data_gateway_error(
             exc,
@@ -820,11 +1240,45 @@ def _real_bars(
                 "provider": provider,
                 "fallbackUsed": fallback_used,
             }
+        if fetched_at is not None:
+            item["fetchedAt"] = fetched_at
         if upstream_source:
             item["upstreamSource"] = upstream_source
         result.append(item)
     result.sort(key=lambda item: item["timestamp"])
     return result[-limit:]
+
+
+def _v2_session_close_available_at(occurred_at: str, fetched_at: str | None) -> str | None:
+    """Use CN cash-session close only after the fact is safely observable."""
+    occurred = datetime.fromisoformat(occurred_at.replace("Z", "+00:00"))
+    local_date = occurred.astimezone(ZoneInfo("Asia/Shanghai")).date()
+    session_close = datetime.combine(
+        local_date,
+        time(15, 0),
+        tzinfo=ZoneInfo("Asia/Shanghai"),
+    ).astimezone(timezone.utc)
+    fetched = datetime.fromisoformat(
+        _iso_timestamp(fetched_at or _now_iso()).replace("Z", "+00:00")
+    )
+    if occurred > fetched:
+        return None
+    if fetched < session_close:
+        # Do not expose a partial current-day bar to a backtest.
+        if fetched.astimezone(ZoneInfo("Asia/Shanghai")).date() == local_date:
+            return None
+    return session_close.isoformat()
+
+
+def _v2_session_open_at(occurred_at: str) -> str:
+    """Return the CN cash-session opening instant for a daily bar."""
+    occurred = datetime.fromisoformat(occurred_at.replace("Z", "+00:00"))
+    local_date = occurred.astimezone(ZoneInfo("Asia/Shanghai")).date()
+    return datetime.combine(
+        local_date,
+        time(9, 30),
+        tzinfo=ZoneInfo("Asia/Shanghai"),
+    ).astimezone(timezone.utc).isoformat()
 
 
 def _real_indicator(
@@ -1062,7 +1516,14 @@ def capabilities() -> dict[str, Any]:
             "catalog": {"snapshot": True, "delta": True},
         },
         "unsupported": ["bars:1m", "indicator:ATR", "chip:distribution"],
+        "backtestData": _backtest_capabilities(),
     }
+
+
+@router.get("/v2/capabilities", dependencies=[Depends(require_contract_token)])
+def backtest_capabilities() -> dict[str, Any]:
+    """V2 data facts/capability contract owned by DSA."""
+    return _backtest_capabilities()
 
 
 @router.get("/market/fx-rates", dependencies=[Depends(require_contract_token)])
@@ -1169,6 +1630,204 @@ def bars(
         return filtered[-limit:]
     request_id = request.headers.get("x-request-id") or _request_id_context.get()
     return _real_bars(symbol, start, end, limit, request_id=request_id)
+
+
+@router.get("/v2/market/bars", dependencies=[Depends(require_contract_token)])
+def backtest_bars(
+    request: Request,
+    symbol: str = Query(..., min_length=1),
+    timeframe: str = Query("1d"),
+    start: Optional[str] = Query(default=None),
+    end: Optional[str] = Query(default=None),
+    limit: int = Query(90, ge=1, le=10000),
+) -> list[dict[str, Any]]:
+    if timeframe not in {"1m", "1d"}:
+        _error("unsupported_capability", "DSA V2 基础 Bar 只支持 1m/1d", 422)
+    if _fixture_mode():
+        result = _fixture_minute_bars(symbol) if timeframe == "1m" else [
+            {
+                **item,
+                "market": _backtest_market_for_symbol(symbol),
+                "occurredAt": item["timestamp"],
+                "availableAt": item["timestamp"],
+                "openedAt": _v2_session_open_at(item["timestamp"]),
+                "openAvailableAt": _v2_session_open_at(item["timestamp"]),
+                "open": _decimal_string(item["open"], "open"),
+                "high": _decimal_string(item["high"], "high"),
+                "low": _decimal_string(item["low"], "low"),
+                "close": _decimal_string(item["close"], "close"),
+                "volume": _decimal_string(item["volume"], "volume"),
+                "amount": _decimal_string(item["amount"], "amount"),
+                "providerRevision": "dsa-backtest-v2-fixture-1",
+                "quality": "complete",
+                "completeness": "complete",
+            }
+            for item in _fixture_bars(symbol)
+        ]
+        return [
+            item
+            for item in result
+            if (not start or item["timestamp"] >= start)
+            and (not end or item["timestamp"] <= end)
+        ][-limit:]
+    if timeframe == "1d":
+        request_id = request.headers.get("x-request-id") or _request_id_context.get()
+        result = _real_bars(
+            symbol,
+            start,
+            end,
+            limit,
+            request_id=request_id,
+            v2_raw=True,
+        )
+        rows: list[dict[str, Any]] = []
+        for item in result:
+            available_at = _v2_session_close_available_at(
+                item["timestamp"], item.get("fetchedAt")
+            )
+            if available_at is None:
+                continue
+            rows.append(
+                {
+                    **item,
+                    "market": _backtest_market_for_symbol(symbol),
+                    "occurredAt": item["timestamp"],
+                    "availableAt": available_at,
+                    "openedAt": _v2_session_open_at(item["timestamp"]),
+                    "openAvailableAt": _v2_session_open_at(item["timestamp"]),
+                    "open": _decimal_string(item["open"], "open"),
+                    "high": _decimal_string(item["high"], "high"),
+                    "low": _decimal_string(item["low"], "low"),
+                    "close": _decimal_string(item["close"], "close"),
+                    "volume": _decimal_string(item["volume"], "volume"),
+                    "amount": _decimal_string(item["amount"], "amount"),
+                    "providerRevision": "dsa-backtest-v2-provider-raw-1",
+                    "quality": "complete",
+                    "completeness": "complete",
+                }
+            )
+        if not rows:
+            _error("upstream_unavailable", "没有已完成 CN 交易日收盘的原始日线", 503)
+        return rows
+    _error("upstream_unavailable", "Provider 当前没有可用的 1m Bar 数据", 503)
+
+
+@router.get("/v2/calendar", dependencies=[Depends(require_contract_token)])
+def v2_calendar(
+    start: str = Query(..., min_length=10, max_length=10),
+    end: str = Query(..., min_length=10, max_length=10),
+    dataAsOf: str = Query(..., min_length=20),
+    market: str = Query(..., min_length=2, max_length=2),
+) -> dict[str, Any]:
+    if market != "CN":
+        _error("unsupported_capability", "V2 当前仅支持 CN 市场交易日历", 422)
+    try:
+        data_as_of = parse_data_as_of(dataAsOf)
+        start_date, end_date = validate_range(start, end, data_as_of)
+    except V2DependencyError as exc:
+        _error(exc.code, str(exc), exc.status_code)
+    if _fixture_mode():
+        fact = fixture_calendar(start, end, data_as_of, _backtest_capabilities()["calendars"])
+    else:
+        fact = calendar_fact(start_date, end_date, data_as_of)
+    if fact is None:
+        return v2_response(
+            status="unavailable",
+            provider="exchange-calendars",
+            provider_revision="exchange-calendars-unavailable",
+            coverage={"start": start, "end": end, "complete": False},
+            facts=[],
+            reason="CN 交易日历 Provider 当前不可用或未确认覆盖",
+        )
+    return v2_response(
+        status="supported",
+        provider=str(fact["provider"]),
+        provider_revision=str(fact["providerRevision"]),
+        coverage={"start": start, "end": end, "complete": True},
+        facts=[fact],
+    )
+
+
+@router.get("/v2/instrument-facts", dependencies=[Depends(require_contract_token)])
+def v2_instrument_facts(
+    symbol: str = Query(..., min_length=1),
+    market: str = Query(..., min_length=2, max_length=2),
+    instrumentType: str = Query(..., min_length=1),
+    dataAsOf: str = Query(..., min_length=20),
+) -> dict[str, Any]:
+    try:
+        canonical = validate_cn_stock(symbol, market, instrumentType, _canonical_symbol)
+        data_as_of = parse_data_as_of(dataAsOf)
+    except V2DependencyError as exc:
+        _error(exc.code, str(exc), exc.status_code)
+    if _fixture_mode():
+        facts = [
+            {
+                **fact,
+                "symbol": canonical,
+                "availableAt": data_as_of.isoformat(),
+                "occurredAt": data_as_of.isoformat(),
+            }
+            for fact in _backtest_capabilities()["instrumentFacts"]
+            if fact["symbol"] == canonical
+        ]
+        if facts:
+            return v2_response(
+                status="supported",
+                provider=PROVIDER_ID,
+                provider_revision="instrument-v2-fixture-1",
+                coverage={"start": None, "end": None, "complete": True},
+                facts=facts,
+            )
+    return v2_response(
+        status="supported",
+        provider="dsa-market-rules",
+        provider_revision="cn-a-share-standard-lot-tick-v1",
+        coverage={"start": None, "end": None, "complete": True},
+        facts=[static_cn_instrument_fact(canonical, data_as_of)],
+    )
+
+
+@router.get("/v2/corporate-actions", dependencies=[Depends(require_contract_token)])
+def v2_corporate_actions(
+    symbol: str = Query(..., min_length=1),
+    market: str = Query(..., min_length=2, max_length=2),
+    instrumentType: str = Query(..., min_length=1),
+    start: str = Query(..., min_length=10, max_length=10),
+    end: str = Query(..., min_length=10, max_length=10),
+    dataAsOf: str = Query(..., min_length=20),
+) -> dict[str, Any]:
+    try:
+        canonical = validate_cn_stock(symbol, market, instrumentType, _canonical_symbol)
+        data_as_of = parse_data_as_of(dataAsOf)
+        start_date, end_date = validate_range(start, end, data_as_of)
+    except V2DependencyError as exc:
+        _error(exc.code, str(exc), exc.status_code)
+    if _fixture_mode():
+        fixture_facts = [
+            {
+                **fact,
+                "symbol": canonical,
+                "market": "CN",
+                "instrumentType": "STOCK",
+            }
+            for fact in _backtest_capabilities()["corporateActions"] ["facts"]
+            if fact.get("symbol") == canonical
+        ]
+        return v2_response(
+            status="supported" if fixture_facts else "unavailable",
+            provider=PROVIDER_ID,
+            provider_revision="corporate-action-v2-fixture-1",
+            coverage={"start": start, "end": end, "complete": bool(fixture_facts)},
+            facts=fixture_facts,
+            reason=None if fixture_facts else "fixture 未覆盖该标的的公司行动",
+        )
+    return real_corporate_actions(
+        canonical,
+        start_date.isoformat(),
+        end_date.isoformat(),
+        data_as_of,
+    )
 
 
 @router.get("/market/indicators/{name}", dependencies=[Depends(require_contract_token)])
