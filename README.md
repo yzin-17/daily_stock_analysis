@@ -64,7 +64,7 @@
 
 DSA 通过独立 Bearer Token 提供三个按依赖查询的 V2 事实接口：交易日历
 `GET /api/v1/thesis-ledger/v2/calendar`、交易规则事实
-`GET /api/v1/thesis-ledger/v2/instrument-facts` 和公司行动
+`GET /api/v1/thesis-ledger/v2/instrument-facts`（含冻结执行规则状态）和公司行动
 `GET /api/v1/thesis-ledger/v2/corporate-actions`。接口均返回
 `version/status/provider/providerRevision/coverage/facts/reason`；`dataAsOf` 是必填的带时区
 ISO 8601 时间，服务端拒绝未来事实、跨市场或不支持的标的类型。

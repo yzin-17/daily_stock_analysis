@@ -9,8 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] ThesisLedger V2 instrument-facts 要求显式传入事实 start/end 与 executionStart/executionEnd；静态 lot/tick 保留原始规则 unavailable，并返回历史可交易性缺失的字段、区间与 Provider 原因。旧版无区间请求返回 422，消费端须同步升级；尚未提供历史状态 Provider。
+
 - [新功能] ThesisLedger Contract V2 新增跨市场基础 Bar、交易日历、instrument、FX、公司行动与 NAV capability 契约，并将价格、数量、金额和汇率统一为规范十进制字符串。
 - [新功能] ThesisLedger V2 增加按依赖查询的 CN 股票交易日历、交易规则与现金分红接口；严格保留 `dataAsOf`、Provider revision 与覆盖完整性，未知覆盖不返回伪造空事实。
+- [修复] ThesisLedger V2 现金分红仅以除权除息日作为经济生效时间；只有公告日或登记日的记录不再生成伪公司行动，并将覆盖标记为不完整。
+- [修复] ThesisLedger V2 交易日历在请求超出 Provider 首末 session 覆盖时返回不可用，不再把未知工作日伪装成休市日。
+- [改进] ThesisLedger V2 Instrument Fact 显式返回冻结执行规则的 supported/unavailable 状态；缺少历史价格限制、法定收费或结算规则时不再由消费端按零费用或固定常量执行。
 - [修复] V2 CN 股票日线改用 Provider runtime 的显式不复权路径，以交易日 Asia/Shanghai 15:00 作为完整日线可知时间，并以 09:30 记录 `openedAt`/`openAvailableAt`；V1 日线前复权行为保持不变。
 - [改进] ThesisLedger Provider registry 中的 11 个市场数据源均可按能力参与主备路由；Provider runtime 补齐全部适配器映射，并从 DSA 环境判断凭证型数据源是否就绪。
 - [新功能] ThesisLedger Provider registry 新增腾讯财经独立数据源，支持股票与 ETF 日线主备路由；AKShare 内部切换腾讯通道时也会通过 `upstreamSource=tencent` 返回实际来源，便于行情详情展示与审计。

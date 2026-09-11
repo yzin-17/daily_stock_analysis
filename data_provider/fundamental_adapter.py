@@ -189,8 +189,9 @@ def normalize_corporate_actions_v2(
     The source table is considered complete only when it contains rows for the
     requested symbol.  An upstream exception is represented by the caller as
     ``complete=False``; this helper never turns an unknown result into an empty
-    fact set.  Events without a reliable announcement date are excluded and
-    make the coverage incomplete because their knowledge time cannot be proven.
+    fact set.  Events without a reliable announcement date or economic
+    effective date are excluded and make the coverage incomplete because their
+    knowledge or application time cannot be proven.
     """
     coverage = {"start": start_date, "end": end_date, "complete": False}
     if dividend_df is None or dividend_df.empty:
@@ -216,18 +217,19 @@ def normalize_corporate_actions_v2(
             complete = False
             continue
         ex_dt = _safe_datetime(_pick_by_keywords(row, _DIVIDEND_KEYWORD_MAP["ex_dividend_date"]))
-        record_dt = _safe_datetime(_pick_by_keywords(row, _DIVIDEND_KEYWORD_MAP["record_date"]))
         announce_dt = _safe_datetime(_pick_by_keywords(row, _DIVIDEND_KEYWORD_MAP["announce_date"]))
         per_share = _extract_cash_dividend_per_share(row)
         # Announcement date is the minimum auditable knowledge-time evidence.
         if announce_dt is None or per_share is None or per_share <= 0:
             complete = False
             continue
-        occurred_dt = ex_dt or record_dt or announce_dt
-        if occurred_dt is None:
+        # Only the ex-dividend date proves when the cash entitlement becomes
+        # economically effective.  Record/announcement dates are not safe
+        # substitutes for simulation accounting.
+        if ex_dt is None:
             complete = False
             continue
-        occurred_date = occurred_dt.date()
+        occurred_date = ex_dt.date()
         available_at = _as_utc_iso(announce_dt)
         available_dt = datetime.fromisoformat(available_at.replace("Z", "+00:00"))
         if available_dt > as_of or occurred_date < start or occurred_date > end:
@@ -244,7 +246,7 @@ def normalize_corporate_actions_v2(
                 "type": "CASH_DIVIDEND",
                 "cashAmount": f"{per_share:.6f}".rstrip("0").rstrip("."),
                 "currency": "CNY",
-                "occurredAt": _as_utc_iso(occurred_dt),
+                "occurredAt": _as_utc_iso(ex_dt),
                 "availableAt": available_at,
                 "provider": provider,
                 "providerRevision": provider_revision,

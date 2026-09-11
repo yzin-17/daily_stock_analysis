@@ -35,7 +35,7 @@ from src.services.thesis_ledger_v2_dependencies import (
     parse_data_as_of,
     real_corporate_actions,
     response as v2_response,
-    static_cn_instrument_fact,
+    instrument_facts_response,
     validate_cn_stock,
     validate_range,
 )
@@ -338,6 +338,33 @@ def _backtest_capabilities() -> dict[str, Any]:
             "range": calendar_ranges,
         },
     ]
+
+    def fixture_execution_rules(market: str) -> dict[str, Any]:
+        if not fixture_mode:
+            return {
+                "status": "unavailable",
+                "reason": "缺少覆盖历史区间的价格限制、法定收费与结算规则事实",
+            }
+        cn_market = market == "CN"
+        return {
+            "status": "supported",
+            "version": "market-rules-v1",
+            "range": daily_ranges,
+            "price": {
+                "reference": "previousClose",
+                "maxUpRatio": "0.1" if cn_market else None,
+                "maxDownRatio": "0.1" if cn_market else None,
+            },
+            "positionSettlement": {
+                "sellableAfterTradingDays": 1 if cn_market else 0,
+            },
+            "cashSettlement": {
+                "buyDebitAfterTradingDays": 0,
+                "sellCreditAfterTradingDays": 1 if cn_market else 0,
+            },
+            "statutoryCharges": [],
+        }
+
     instrument_facts = [
         {
             "symbol": "600519.SH",
@@ -347,6 +374,7 @@ def _backtest_capabilities() -> dict[str, Any]:
             "lotSize": "100",
             "tickSize": "0.01",
             "tradable": True,
+            "executionRules": fixture_execution_rules("CN"),
             "provider": PROVIDER_ID,
             "providerRevision": "instrument-v2-fixture-1",
             "occurredAt": generated_at,
@@ -360,6 +388,7 @@ def _backtest_capabilities() -> dict[str, Any]:
             "lotSize": "500",
             "tickSize": "0.01",
             "tradable": True,
+            "executionRules": fixture_execution_rules("HK"),
             "provider": PROVIDER_ID,
             "providerRevision": "instrument-v2-fixture-1",
             "occurredAt": generated_at,
@@ -373,6 +402,7 @@ def _backtest_capabilities() -> dict[str, Any]:
             "lotSize": "1",
             "tickSize": "0.01",
             "tradable": True,
+            "executionRules": fixture_execution_rules("US"),
             "provider": PROVIDER_ID,
             "providerRevision": "instrument-v2-fixture-1",
             "occurredAt": generated_at,
@@ -1754,38 +1784,23 @@ def v2_instrument_facts(
     market: str = Query(..., min_length=2, max_length=2),
     instrumentType: str = Query(..., min_length=1),
     dataAsOf: str = Query(..., min_length=20),
+    start: str = Query(..., min_length=10, max_length=10),
+    end: str = Query(..., min_length=10, max_length=10),
+    executionStart: str = Query(..., min_length=10, max_length=10),
+    executionEnd: str = Query(..., min_length=10, max_length=10),
 ) -> dict[str, Any]:
     try:
         canonical = validate_cn_stock(symbol, market, instrumentType, _canonical_symbol)
         data_as_of = parse_data_as_of(dataAsOf)
     except V2DependencyError as exc:
         _error(exc.code, str(exc), exc.status_code)
+    facts = []
     if _fixture_mode():
-        facts = [
-            {
-                **fact,
-                "symbol": canonical,
-                "availableAt": data_as_of.isoformat(),
-                "occurredAt": data_as_of.isoformat(),
-            }
-            for fact in _backtest_capabilities()["instrumentFacts"]
-            if fact["symbol"] == canonical
-        ]
-        if facts:
-            return v2_response(
-                status="supported",
-                provider=PROVIDER_ID,
-                provider_revision="instrument-v2-fixture-1",
-                coverage={"start": None, "end": None, "complete": True},
-                facts=facts,
-            )
-    return v2_response(
-        status="supported",
-        provider="dsa-market-rules",
-        provider_revision="cn-a-share-standard-lot-tick-v1",
-        coverage={"start": None, "end": None, "complete": True},
-        facts=[static_cn_instrument_fact(canonical, data_as_of)],
-    )
+        facts = [fact for fact in _backtest_capabilities()["instrumentFacts"] if fact["symbol"] == canonical]
+    try:
+        return instrument_facts_response(canonical, data_as_of, start, end, executionStart, executionEnd, facts)
+    except V2DependencyError as exc:
+        _error(exc.code, str(exc), exc.status_code)
 
 
 @router.get("/v2/corporate-actions", dependencies=[Depends(require_contract_token)])

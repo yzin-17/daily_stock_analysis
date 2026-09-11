@@ -99,6 +99,14 @@ def calendar_fact(start: date, end: date, data_as_of: datetime) -> dict[str, Any
         import exchange_calendars as xcals
 
         calendar = xcals.get_calendar("XSHG")
+        first_session = getattr(calendar, "first_session", None)
+        last_session = getattr(calendar, "last_session", None)
+        if first_session is None or last_session is None:
+            return None
+        coverage_start = first_session.date()
+        coverage_end = last_session.date()
+        if start < coverage_start or end > coverage_end:
+            return None
         schedule = calendar.schedule.loc[start.isoformat() : end.isoformat()]
         session_dates = {index.date() for index in schedule.index}
         holidays: list[str] = []
@@ -164,11 +172,49 @@ def static_cn_instrument_fact(symbol: str, data_as_of: datetime) -> dict[str, An
         "lotSize": "100",
         "tickSize": "0.01",
         "tradable": True,
+        "executionRules": {
+            "status": "unavailable",
+            "reason": "缺少覆盖请求历史区间的价格限制、法定收费与结算规则事实",
+        },
         "provider": "dsa-market-rules",
         "providerRevision": revision,
         "occurredAt": timestamp,
         "availableAt": timestamp,
     }
+
+
+def instrument_facts_response(
+    symbol: str, data_as_of: datetime, start: str, end: str,
+    execution_start: str, execution_end: str, fixture_facts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Keep static identity separate from unavailable historical applicability."""
+    start_date, end_date = validate_range(start, end, data_as_of)
+    execution_first, execution_last = validate_range(execution_start, execution_end, data_as_of)
+    if execution_first < start_date or execution_last > end_date:
+        raise V2DependencyError("invalid_request", "事实范围必须包含执行范围")
+    coverage = {"start": start, "end": end, "complete": bool(fixture_facts)}
+    if fixture_facts:
+        return response(
+            status="supported", provider="dsa-fixture",
+            provider_revision="instrument-v2-fixture-1", coverage=coverage, facts=fixture_facts,
+        )
+    fact = static_cn_instrument_fact(symbol, data_as_of)
+    missing = [
+        {"field": "historicalTradability", "category": "criticalFact",
+         "range": {"start": start, "end": end}, "provider": fact["provider"],
+         "reason": "静态 lot/tick 不证明请求区间内的上市、停牌及价格限制适用性"},
+        {"field": "executionRules", "category": "modelAssumption",
+         "range": {"start": execution_start, "end": execution_end}, "provider": fact["provider"],
+         "reason": fact["executionRules"]["reason"]},
+    ]
+    result = response(
+        status="unavailable", provider=fact["provider"],
+        provider_revision=fact["providerRevision"], coverage=coverage, facts=[fact],
+        reason=f"{symbol} {start}..{end}: historicalTradability: {missing[0]['reason']}; "
+               f"executionRules: {missing[1]['reason']}",
+    )
+    result["missingInputs"] = missing
+    return result
 
 
 def real_corporate_actions(symbol: str, start: str, end: str, data_as_of: datetime) -> dict[str, Any]:
