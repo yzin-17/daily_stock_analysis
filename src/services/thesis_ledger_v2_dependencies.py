@@ -7,6 +7,8 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable
 
+from src.services.thesis_ledger_v2_tradability import real_cn_tradability
+
 logger = logging.getLogger(__name__)
 
 
@@ -155,12 +157,11 @@ def fixture_calendar(start: str, end: str, data_as_of: datetime, calendars: Iter
 
 
 def static_cn_instrument_fact(symbol: str, data_as_of: datetime) -> dict[str, Any]:
-    """Return the versioned CN A-share market-rule fact.
+    """Return versioned CN A-share identity, lot/tick and raw execution-rule state.
 
-    This is deliberately a market-rule fact, not a listing/suspension check:
-    ``tradable`` means the standard lot/tick rule permits trading.  Current
-    listing status remains outside this endpoint until a PIT instrument
-    provider is available.
+    Historical listing/suspension applicability is resolved independently by
+    ``real_cn_tradability``.  The static rule fact must never be used as proof
+    that a symbol was tradable throughout a requested historical range.
     """
     revision = "cn-a-share-standard-lot-tick-v1"
     timestamp = "1990-12-18T16:00:00+00:00"
@@ -187,7 +188,7 @@ def instrument_facts_response(
     symbol: str, data_as_of: datetime, start: str, end: str,
     execution_start: str, execution_end: str, fixture_facts: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Keep static identity separate from unavailable historical applicability."""
+    """Resolve critical historical applicability separately from model assumptions."""
     start_date, end_date = validate_range(start, end, data_as_of)
     execution_first, execution_last = validate_range(execution_start, execution_end, data_as_of)
     if execution_first < start_date or execution_last > end_date:
@@ -198,20 +199,54 @@ def instrument_facts_response(
             status="supported", provider="dsa-fixture",
             provider_revision="instrument-v2-fixture-1", coverage=coverage, facts=fixture_facts,
         )
+
     fact = static_cn_instrument_fact(symbol, data_as_of)
-    missing = [
-        {"field": "historicalTradability", "category": "criticalFact",
-         "range": {"start": start, "end": end}, "provider": fact["provider"],
-         "reason": "静态 lot/tick 不证明请求区间内的上市、停牌及价格限制适用性"},
-        {"field": "executionRules", "category": "modelAssumption",
-         "range": {"start": execution_start, "end": execution_end}, "provider": fact["provider"],
-         "reason": fact["executionRules"]["reason"]},
-    ]
+    tradability = real_cn_tradability(symbol, start_date, end_date, data_as_of)
+    coverage["complete"] = bool(tradability["coverage"].get("complete"))
+    fact["tradable"] = bool(tradability.get("tradable")) if coverage["complete"] else False
+    provider = f"{tradability['provider']}+{fact['provider']}"
+    provider_revision = f"{tradability['providerRevision']}+{fact['providerRevision']}"
+    fact["provider"] = provider
+    fact["providerRevision"] = provider_revision
+    if coverage["complete"]:
+        fact["availableAt"] = tradability["availableAt"]
+
+    missing: list[dict[str, Any]] = []
+    if not coverage["complete"] or not fact["tradable"]:
+        missing.append(
+            {
+                "field": "historicalTradability",
+                "category": "criticalFact",
+                "range": {"start": start, "end": end},
+                "provider": tradability["provider"],
+                "reason": tradability.get("reason") or "Provider 未证明请求区间历史可交易性",
+            }
+        )
+    missing.append(
+        {
+            "field": "executionRules",
+            "category": "modelAssumption",
+            "range": {"start": execution_start, "end": execution_end},
+            "provider": fact["provider"],
+            "reason": fact["executionRules"]["reason"],
+        }
+    )
+
+    critical_missing = next(
+        (item for item in missing if item["category"] == "criticalFact"),
+        None,
+    )
     result = response(
-        status="unavailable", provider=fact["provider"],
-        provider_revision=fact["providerRevision"], coverage=coverage, facts=[fact],
-        reason=f"{symbol} {start}..{end}: historicalTradability: {missing[0]['reason']}; "
-               f"executionRules: {missing[1]['reason']}",
+        status="unavailable" if critical_missing else "supported",
+        provider=provider,
+        provider_revision=provider_revision,
+        coverage=coverage,
+        facts=[fact],
+        reason=(
+            f"{symbol} {start}..{end}: historicalTradability: {critical_missing['reason']}"
+            if critical_missing
+            else None
+        ),
     )
     result["missingInputs"] = missing
     return result
