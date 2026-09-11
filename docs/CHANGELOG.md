@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- [改进] ThesisLedger V2 instrument-facts 要求显式传入事实 start/end 与 executionStart/executionEnd；静态 lot/tick 保留原始规则 unavailable，并返回历史可交易性缺失的字段、区间与 Provider 原因。旧版无区间请求返回 422，消费端须同步升级；尚未提供历史状态 Provider。
+- [修复] ThesisLedger V2 instrument-facts 复用 BaoStock 的证券基础信息、交易日历与 `tradestatus` 核验 CN 股票历史上市/退市/停牌状态；缺失 Provider 行只会使覆盖不完整，不再被猜测为停牌。历史状态完整且区间内可交易时允许由已冻结研究模型补足独立的 executionRules 假设；已知停牌或覆盖缺失仍保持 critical fact 失败。
+- [改进] ThesisLedger V2 instrument-facts 要求显式传入事实 start/end 与 executionStart/executionEnd；静态 lot/tick 保留原始规则 unavailable，并返回历史可交易性缺失的字段、区间与 Provider 原因。旧版无区间请求返回 422，消费端须同步升级。
 
 - [新功能] ThesisLedger Contract V2 新增跨市场基础 Bar、交易日历、instrument、FX、公司行动与 NAV capability 契约，并将价格、数量、金额和汇率统一为规范十进制字符串。
 - [新功能] ThesisLedger V2 增加按依赖查询的 CN 股票交易日历、交易规则与现金分红接口；严格保留 `dataAsOf`、Provider revision 与覆盖完整性，未知覆盖不返回伪造空事实。
