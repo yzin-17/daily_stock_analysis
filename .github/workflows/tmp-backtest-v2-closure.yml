@@ -34,33 +34,33 @@ jobs:
           test_path = Path('tests/test_thesis_ledger_v2_dependencies.py')
           text = test_path.read_text(encoding='utf-8')
           old_import = 'from src.services.thesis_ledger_v2_dependencies import calendar_fact\n'
-          new_import = (
-              'from src.services import thesis_ledger_v2_dependencies as v2_dependencies\n'
-              'from src.services.thesis_ledger_v2_dependencies import calendar_fact\n'
-          )
+          new_import = 'from src.services import thesis_ledger_v2_dependencies as v2_dependencies\n' + old_import
           if new_import not in text:
               if old_import not in text:
                   raise SystemExit('dependency test import anchor not found')
               text = text.replace(old_import, new_import, 1)
           anchor = 'def test_v2_rejects_etf_and_never_leaks_fixture_facts(monkeypatch):\n    client = _client(monkeypatch, fixture=False)\n'
-          replacement = '''def test_v2_rejects_etf_and_never_leaks_fixture_facts(monkeypatch):
-    monkeypatch.setattr(
-        v2_dependencies,
-        "real_cn_tradability",
-        lambda *_args, **_kwargs: {
-            "provider": "baostock",
-            "providerRevision": "baostock-test",
-            "coverage": {"start": "2025-01-01", "end": "2025-01-10", "complete": False},
-            "tradable": False,
-            "suspendedDates": [],
-            "ipoDate": "2001-08-27",
-            "outDate": None,
-            "availableAt": "2025-01-10T16:00:00+00:00",
-            "reason": "Provider 未提供历史状态",
-        },
-    )
-    client = _client(monkeypatch, fixture=False)
-'''
+          replacement_lines = [
+              'def test_v2_rejects_etf_and_never_leaks_fixture_facts(monkeypatch):',
+              '    monkeypatch.setattr(',
+              '        v2_dependencies,',
+              '        "real_cn_tradability",',
+              '        lambda *_args, **_kwargs: {',
+              '            "provider": "baostock",',
+              '            "providerRevision": "baostock-test",',
+              '            "coverage": {"start": "2025-01-01", "end": "2025-01-10", "complete": False},',
+              '            "tradable": False,',
+              '            "suspendedDates": [],',
+              '            "ipoDate": "2001-08-27",',
+              '            "outDate": None,',
+              '            "availableAt": "2025-01-10T16:00:00+00:00",',
+              '            "reason": "Provider 未提供历史状态",',
+              '        },',
+              '    )',
+              '    client = _client(monkeypatch, fixture=False)',
+              '',
+          ]
+          replacement = '\n'.join(replacement_lines)
           if replacement not in text:
               if anchor not in text:
                   raise SystemExit('dependency test function anchor not found')
@@ -76,10 +76,7 @@ jobs:
           changelog = Path('docs/CHANGELOG.md')
           text = changelog.read_text(encoding='utf-8')
           old = '- [改进] ThesisLedger V2 instrument-facts 要求显式传入事实 start/end 与 executionStart/executionEnd；静态 lot/tick 保留原始规则 unavailable，并返回历史可交易性缺失的字段、区间与 Provider 原因。旧版无区间请求返回 422，消费端须同步升级；尚未提供历史状态 Provider。\n'
-          new = (
-              '- [修复] ThesisLedger V2 instrument-facts 复用 BaoStock 的证券基础信息、交易日历与 `tradestatus` 核验 CN 股票历史上市/退市/停牌状态；缺失 Provider 行只会使覆盖不完整，不再被猜测为停牌。历史状态完整且区间内可交易时允许由已冻结研究模型补足独立的 executionRules 假设；已知停牌或覆盖缺失仍保持 critical fact 失败。\n'
-              '- [改进] ThesisLedger V2 instrument-facts 要求显式传入事实 start/end 与 executionStart/executionEnd；静态 lot/tick 保留原始规则 unavailable，并返回历史可交易性缺失的字段、区间与 Provider 原因。旧版无区间请求返回 422，消费端须同步升级。\n'
-          )
+          new = '- [修复] ThesisLedger V2 instrument-facts 复用 BaoStock 的证券基础信息、交易日历与 `tradestatus` 核验 CN 股票历史上市/退市/停牌状态；缺失 Provider 行只会使覆盖不完整，不再被猜测为停牌。历史状态完整且区间内可交易时允许由已冻结研究模型补足独立的 executionRules 假设；已知停牌或覆盖缺失仍保持 critical fact 失败。\n' + '- [改进] ThesisLedger V2 instrument-facts 要求显式传入事实 start/end 与 executionStart/executionEnd；静态 lot/tick 保留原始规则 unavailable，并返回历史可交易性缺失的字段、区间与 Provider 原因。旧版无区间请求返回 422，消费端须同步升级。\n'
           if new not in text:
               if old not in text:
                   raise SystemExit('changelog anchor not found')
