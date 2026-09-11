@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from api.thesis_ledger import router
 from data_provider.fundamental_adapter import normalize_corporate_actions_v2
+from src.services import thesis_ledger_v2_dependencies as v2_dependencies
 from src.services.thesis_ledger_v2_dependencies import calendar_fact
 
 
@@ -102,6 +103,21 @@ def test_v2_dependency_routes_have_auditable_fixture_envelope(monkeypatch):
 
 
 def test_v2_rejects_etf_and_never_leaks_fixture_facts(monkeypatch):
+    monkeypatch.setattr(
+        v2_dependencies,
+        "real_cn_tradability",
+        lambda *_args, **_kwargs: {
+            "provider": "baostock",
+            "providerRevision": "baostock-test",
+            "coverage": {"start": "2025-01-01", "end": "2025-01-10", "complete": False},
+            "tradable": False,
+            "suspendedDates": [],
+            "ipoDate": "2001-08-27",
+            "outDate": None,
+            "availableAt": "2025-01-10T16:00:00+00:00",
+            "reason": "Provider 未提供历史状态",
+        },
+    )
     client = _client(monkeypatch, fixture=False)
     response = client.get(
         "/api/v1/thesis-ledger/v2/instrument-facts",
@@ -148,7 +164,7 @@ def test_v2_rejects_etf_and_never_leaks_fixture_facts(monkeypatch):
     assert instrument.json()["coverage"] == {"start": "2025-01-01", "end": "2025-01-10", "complete": False}
     assert instrument.json()["missingInputs"][0]["field"] == "historicalTradability"
     assert instrument.json()["missingInputs"][1]["range"]["start"] == "2025-01-02"
-    assert instrument.json()["providerRevision"] == "cn-a-share-standard-lot-tick-v1"
+    assert instrument.json()["providerRevision"] == "baostock-test+cn-a-share-standard-lot-tick-v1"
     assert instrument.json()["facts"][0]["availableAt"] < "2025-01-10T07:00:00Z"
     assert instrument.json()["facts"][0]["executionRules"] == {
         "status": "unavailable",
