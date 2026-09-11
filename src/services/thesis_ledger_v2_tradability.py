@@ -74,15 +74,16 @@ def normalize_baostock_tradability(
 ) -> dict[str, Any]:
     """Normalize BaoStock listing/suspension evidence without inferring missing rows."""
 
-    unavailable = lambda reason: _provider_result(
-        start=start,
-        end=end,
-        provider_revision=provider_revision,
-        available_at=available_at,
-        complete=False,
-        tradable=False,
-        reason=reason,
-    )
+    def unavailable(reason: str) -> dict[str, Any]:
+        return _provider_result(
+            start=start,
+            end=end,
+            provider_revision=provider_revision,
+            available_at=available_at,
+            complete=False,
+            tradable=False,
+            reason=reason,
+        )
 
     if len(basic.index) != 1:
         return unavailable("Provider 未返回唯一证券基础信息")
@@ -212,7 +213,8 @@ def real_cn_tradability(
         fetcher = BaostockFetcher()
         bs_code = fetcher._convert_stock_code(symbol)
         with fetcher._baostock_session() as bs:
-            revision = f"baostock-{str(getattr(bs, '__version__', 'unknown')).strip() or 'unknown'}-tradestatus-v1"
+            version = str(getattr(bs, "__version__", "unknown")).strip() or "unknown"
+            revision = f"baostock-{version}-tradestatus-v1"
             basic = _result_frame(bs.query_stock_basic(code=bs_code), "证券基础信息")
             trading_calendar = _result_frame(
                 bs.query_trade_dates(start_date=start.isoformat(), end_date=end.isoformat()),
