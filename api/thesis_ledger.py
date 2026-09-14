@@ -10,14 +10,14 @@ from __future__ import annotations
 import math
 import os
 import logging
-import uuid
 import hashlib
 import json
+import uuid
 import re
 from decimal import Decimal
 from contextvars import ContextVar
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
@@ -1245,6 +1245,8 @@ def _real_bars(
         )
     if frame is None or frame.empty:
         _error("upstream_unavailable", f"没有 {symbol} 的日线数据", 503)
+    from src.services.technical_indicator_series import row_input_fingerprint
+
     upstream_source = _upstream_source(getattr(frame, "attrs", {}).get("upstream_source"))
     result: list[dict[str, Any]] = []
     for _, row in frame.iterrows():
@@ -1269,6 +1271,7 @@ def _real_bars(
                 "amount": _number(row.get("amount"), "amount"),
                 "provider": provider,
                 "fallbackUsed": fallback_used,
+                "inputFingerprint": row_input_fingerprint(row, timestamp),
             }
         if fetched_at is not None:
             item["fetchedAt"] = fetched_at
@@ -1315,18 +1318,46 @@ def _real_indicator(
     symbol: str,
     name: str,
     request_id: str | None = None,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+    limit: int = 90,
+    requested_parameters: Mapping[str, Any] | None = None,
+    calculation_anchor: str | None = None,
 ) -> dict[str, Any]:
     normalized = name.upper()
     if normalized not in {"MA", "MACD", "RSI"}:
         _error("unsupported_capability", f"指标 {normalized} 在 Contract V1 不可用", 422)
+    from src.services.technical_indicator_series import (
+        build_indicator_points,
+        normalize_indicator_parameters,
+    )
+
+    try:
+        params = normalize_indicator_parameters(normalized, requested_parameters)
+    except ValueError as exc:
+        _error("invalid_request", str(exc), 422)
+    warmup = max(
+        params.get("period", 0),
+        params.get("long", 0),
+        params.get("slow", 0) + params.get("signal", 0),
+    )
+    if limit + warmup > 365:
+        _error(
+            "invalid_request",
+            "当前日线输入最多支持 365 条，指标可见窗口与预热窗口之和不能超过该上限",
+            422,
+        )
     request_id = request_id or _request_id_context.get()
     try:
         from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
 
+        fetch_limit = min(max(limit, 90) + warmup, 365)
         gateway_result = get_thesis_ledger_data_gateway().bars(
             symbol,
             timeframe="1d",
-            limit=90,
+            end=end,
+            limit=fetch_limit,
             request_id=request_id,
         )
         frame = gateway_result.data
@@ -1341,42 +1372,56 @@ def _real_indicator(
     if frame is None or frame.empty:
         _error("upstream_unavailable", f"没有 {symbol} 的指标输入数据", 503)
     try:
-        from src.stock_analyzer import StockTrendAnalyzer
-
-        analysis = StockTrendAnalyzer().analyze(frame, _canonical_symbol(symbol))
-        latest = frame.iloc[-1].get("date")
-        values = {
-            "MA": {
-                "ma5": analysis.ma5,
-                "ma10": analysis.ma10,
-                "ma20": analysis.ma20,
-                "ma60": analysis.ma60,
-            },
-            "MACD": {
-                "dif": analysis.macd_dif,
-                "dea": analysis.macd_dea,
-                "histogram": analysis.macd_bar,
-            },
-            "RSI": {
-                "rsi6": analysis.rsi_6,
-                "rsi12": analysis.rsi_12,
-                "rsi24": analysis.rsi_24,
-            },
-        }[normalized]
+        calculated, points, input_fingerprint, all_fingerprints = build_indicator_points(
+            frame,
+            normalized,
+            params,
+            _iso_timestamp,
+            start=start,
+            end=end,
+        )
+        points = points[-limit:]
+        if not points:
+            _error("upstream_unavailable", f"没有 {symbol} 的指标日期数据", 503)
+        latest = points[-1]["timestamp"]
+        values = points[-1]["values"]
+        input_start = _iso_timestamp(calculated.iloc[0].get("date"))
+        input_end = _iso_timestamp(calculated.iloc[-1].get("date"))
+        anchor = input_start
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001 - adapter boundary.
         _error("upstream_invalid_response", f"指标计算失败: {exc}", 502)
     return {
         "version": 1,
         "symbol": _canonical_symbol(symbol),
         "name": normalized,
-        "parameters": {"period": 14 if normalized == "RSI" else 5},
+        "parameters": params,
         "timeframe": "1d",
         "marketTime": _iso_timestamp(latest),
         "calculatedAt": _now_iso(),
-        "values": {key: _number(value, key) for key, value in values.items()},
+        "values": values,
         "provider": provider,
         "fallbackUsed": fallback_used,
         "engineVersion": ENGINE_VERSION,
+        "points": points,
+        "inputProvenance": {
+            "timeframe": "1d",
+            "provider": provider,
+            **({"upstreamSource": getattr(frame, "attrs", {}).get("upstream_source")} if getattr(frame, "attrs", {}).get("upstream_source") else {}),
+            "inputDateRange": {"start": input_start, "end": input_end},
+            "inputFingerprint": input_fingerprint,
+        },
+        "calculationAnchor": {
+            "timestamp": anchor,
+            "inputFingerprint": all_fingerprints[0],
+        },
+        "coverage": {
+            "start": points[0]["timestamp"],
+            "end": points[-1]["timestamp"],
+            "complete": not bool(start) or input_start[:10] <= start[:10],
+            "hasMoreBefore": bool(start and input_start[:10] < start[:10]),
+        },
     }
 
 
@@ -1851,14 +1896,37 @@ def indicator(
     request: Request,
     symbol: str = Query(..., min_length=1),
     timeframe: str = Query("1d"),
+    start: Optional[str] = Query(default=None),
+    end: Optional[str] = Query(default=None),
+    limit: int = Query(90, ge=1, le=365),
+    parameters: Optional[str] = Query(default=None),
+    calculationAnchor: Optional[str] = Query(default=None),
 ) -> dict[str, Any]:
     if timeframe != "1d":
         _error("unsupported_capability", "Contract V1 只支持 1d indicators", 422)
+    requested_parameters: Mapping[str, Any] | None = None
+    if parameters:
+        try:
+            parsed = json.loads(parameters)
+            if not isinstance(parsed, dict):
+                raise ValueError("parameters must be an object")
+            requested_parameters = parsed
+        except (TypeError, ValueError, json.JSONDecodeError):
+            _error("invalid_request", "parameters 必须是 JSON 对象", 422)
     request_id = request.headers.get("x-request-id") or _request_id_context.get()
     return (
         _fixture_indicator(symbol, name)
         if _fixture_mode()
-        else _real_indicator(symbol, name, request_id=request_id)
+        else _real_indicator(
+            symbol,
+            name,
+            request_id=request_id,
+            start=start,
+            end=end,
+            limit=limit,
+            requested_parameters=requested_parameters,
+            calculation_anchor=calculationAnchor,
+        )
     )
 
 

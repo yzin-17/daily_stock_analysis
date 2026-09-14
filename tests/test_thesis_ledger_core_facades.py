@@ -216,15 +216,15 @@ def test_indicator_and_chip_facades_use_gateway_without_native_manager(monkeypat
         rsi_12 = 54.0
         rsi_24 = 53.0
 
-    class _Analyzer:
-        """避免指标测试依赖原生 Provider，仅验证输入来自 gateway。"""
+    import src.stock_analyzer as stock_analyzer
+
+    class _Analyzer(stock_analyzer.StockTrendAnalyzer):
+        """保留既有计算方法，仅替换 scalar 分析断言。"""
 
         def analyze(self, frame, symbol):
             assert not frame.empty
             assert symbol == "600519.SH"
             return _Analysis()
-
-    import src.stock_analyzer as stock_analyzer
 
     monkeypatch.setattr(stock_analyzer, "StockTrendAnalyzer", _Analyzer)
 
@@ -250,12 +250,31 @@ def test_indicator_and_chip_facades_use_gateway_without_native_manager(monkeypat
     assert indicator.status_code == 200
     assert indicator.json()["provider"] == "efinance"
     assert indicator.json()["fallbackUsed"] is True
+    assert len(indicator.json()["points"]) == 2
+    assert indicator.json()["points"][0]["values"]["ma5"] is None
+    assert len(indicator.json()["points"][0]["inputFingerprint"]) == 24
+    assert indicator.json()["inputProvenance"]["inputFingerprint"]
     assert chip.status_code == 200
     assert chip.json()["provider"] == "efinance"
     assert chip.json()["fallbackUsed"] is True
     assert [call[0] for call in gateway.calls[-2:]] == ["bars", "chip_summary"]
     assert gateway.calls[-2][2]["request_id"] == "derived-request"
     assert gateway.calls[-1][2]["request_id"] == "derived-request"
+
+    bars = client.get(
+        "/api/v1/thesis-ledger/market/bars?symbol=600519.SH&limit=2",
+        headers=headers,
+    )
+    assert bars.status_code == 200
+    assert bars.json()[0]["inputFingerprint"] == indicator.json()["points"][0]["inputFingerprint"]
+
+    unsupported_window = client.get(
+        "/api/v1/thesis-ledger/market/indicators/MACD?symbol=600519.SH"
+        '&limit=90&parameters={"fast":100,"slow":200,"signal":200}',
+        headers=headers,
+    )
+    assert unsupported_window.status_code == 422
+    assert unsupported_window.json()["detail"]["code"] == "invalid_request"
 
 
 def test_core_facades_map_no_eligible_gateway_error_to_stable_contract_error(monkeypatch):
