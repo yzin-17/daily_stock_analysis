@@ -429,9 +429,23 @@ class LongbridgeFetcher(BaseFetcher):
 
     _CONNECTION_ERRORS = ("client is closed", "context closed", "connection closed")
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        app_key: Optional[str] = None,
+        app_secret: Optional[str] = None,
+        access_token: Optional[str] = None,
+        oauth_token: Any = None,
+    ):
         self._ctx = None
         self._config = None
+        self._explicit_credentials = any(
+            value is not None for value in (app_key, app_secret, access_token)
+        )
+        self._explicit_app_key = (app_key or "").strip()
+        self._explicit_app_secret = (app_secret or "").strip()
+        self._explicit_access_token = (access_token or "").strip()
+        self._explicit_oauth_token = oauth_token
         self._ctx_lock = threading.Lock()
         self._available = None
         self._cooldown_until = 0.0
@@ -442,6 +456,9 @@ class LongbridgeFetcher(BaseFetcher):
     def _is_connection_error(self, exc: Exception) -> bool:
         msg = str(exc).lower()
         return any(s in msg for s in self._CONNECTION_ERRORS)
+
+    def _uses_explicit_page_credentials(self) -> bool:
+        return self._explicit_credentials or self._explicit_oauth_token is not None
 
     def _invalidate_ctx(self):
         """Reset cached context so the next call rebuilds the connection."""
@@ -455,10 +472,11 @@ class LongbridgeFetcher(BaseFetcher):
         if cooldown_seconds <= 0:
             return
         self._cooldown_until = time.time() + cooldown_seconds
+        detail = "页面凭证请求失败" if self._uses_explicit_page_credentials() else str(exc)
         logger.warning(
             "[Longbridge] 检测到连接异常，进入 %ss 冷却期以避免频繁重连: %s",
             cooldown_seconds,
-            exc,
+            detail,
         )
 
     def is_available_for_request(self, capability: str = "") -> bool:
@@ -479,6 +497,18 @@ class LongbridgeFetcher(BaseFetcher):
     def _is_available(self) -> bool:
         """Check if Longbridge credentials are configured (OAuth or Legacy)."""
         if self._available is not None:
+            return self._available
+        if self._explicit_oauth_token is not None:
+            self._available = True
+            return self._available
+        if self._explicit_credentials:
+            self._available = _has_legacy_credentials(
+                {
+                    "app_key": self._explicit_app_key,
+                    "app_secret": self._explicit_app_secret,
+                    "access_token": self._explicit_access_token,
+                }
+            )
             return self._available
         try:
             from src.config import get_config
@@ -506,32 +536,50 @@ class LongbridgeFetcher(BaseFetcher):
             try:
                 from longbridge.openapi import QuoteContext, Config
 
+                if self._explicit_oauth_token is not None:
+                    from_oauth = getattr(Config, "from_oauth", None)
+                    if from_oauth is None:
+                        raise AttributeError("Config.from_oauth")
+                    self._config = from_oauth(self._explicit_oauth_token)
+                    self._ctx = QuoteContext(self._config)
+                    logger.info("[Longbridge] 页面 OAuth QuoteContext 初始化成功")
+                    return self._ctx
+
                 # ── 1. Clean up empty URL env vars & apply REGION mapping ──
                 _sanitize_longbridge_env()
 
-                # ── 2. Collect credentials and mirror Legacy values to env ──
-                try:
-                    from src.config import get_config
-                    app_config = get_config()
-                except Exception:
-                    app_config = None
+                # ── 2. Collect credentials, without mutating process env for explicit values ──
+                if self._explicit_credentials:
+                    creds = {
+                        "app_key": self._explicit_app_key,
+                        "app_secret": self._explicit_app_secret,
+                        "access_token": self._explicit_access_token,
+                        "oauth_client_id": None,
+                    }
+                else:
+                    try:
+                        from src.config import get_config
 
-                creds = _longbridge_credentials(app_config)
+                        app_config = get_config()
+                    except Exception:
+                        app_config = None
+                    creds = _longbridge_credentials(app_config)
                 app_key = creds["app_key"]
                 app_secret = creds["app_secret"]
                 access_token = creds["access_token"]
                 oauth_client_id = creds["oauth_client_id"]
                 has_legacy = _has_legacy_credentials(creds)
 
-                for k, v in {
-                    "LONGBRIDGE_APP_KEY": app_key,
-                    "LONGBRIDGE_APP_SECRET": app_secret,
-                    "LONGBRIDGE_ACCESS_TOKEN": access_token,
-                }.items():
-                    if v and not os.environ.get(k):
-                        os.environ[k] = v
-                if oauth_client_id and not os.environ.get("LONGBRIDGE_OAUTH_CLIENT_ID"):
-                    os.environ["LONGBRIDGE_OAUTH_CLIENT_ID"] = oauth_client_id
+                if not self._explicit_credentials:
+                    for k, v in {
+                        "LONGBRIDGE_APP_KEY": app_key,
+                        "LONGBRIDGE_APP_SECRET": app_secret,
+                        "LONGBRIDGE_ACCESS_TOKEN": access_token,
+                    }.items():
+                        if v and not os.environ.get(k):
+                            os.environ[k] = v
+                    if oauth_client_id and not os.environ.get("LONGBRIDGE_OAUTH_CLIENT_ID"):
+                        os.environ["LONGBRIDGE_OAUTH_CLIENT_ID"] = oauth_client_id
 
                 # ── 3. Build Config ──
                 extra_kw = _longbridge_config_kwargs()
@@ -587,8 +635,13 @@ class LongbridgeFetcher(BaseFetcher):
                             logger.info("[Longbridge] Config.%s() 成功", factory_name)
                             break
                         except Exception as e:
+                            detail = (
+                                "页面凭证初始化失败"
+                                if self._uses_explicit_page_credentials()
+                                else str(e)
+                            )
                             logger.debug(
-                                "[Longbridge] Config.%s() 失败: %s", factory_name, e
+                                "[Longbridge] Config.%s() 失败: %s", factory_name, detail
                             )
 
                 if lb_config is None and has_legacy:
@@ -623,7 +676,12 @@ class LongbridgeFetcher(BaseFetcher):
                 logger.info("[Longbridge] QuoteContext 初始化成功")
                 return self._ctx
             except Exception as e:
-                logger.warning("[Longbridge] QuoteContext 初始化失败: %s", e)
+                detail = (
+                    "页面凭证初始化失败"
+                    if self._uses_explicit_page_credentials()
+                    else str(e)
+                )
+                logger.warning("[Longbridge] QuoteContext 初始化失败: %s", detail)
                 self._available = False
                 return None
 
@@ -653,7 +711,12 @@ class LongbridgeFetcher(BaseFetcher):
                         self._static_cache[symbol] = (info, now)
                 return info
         except Exception as e:
-            logger.debug(f"[Longbridge] static_info({symbol}) 失败: {e}")
+            detail = (
+                "页面凭证请求失败"
+                if self._uses_explicit_page_credentials()
+                else str(e)
+            )
+            logger.debug(f"[Longbridge] static_info({symbol}) 失败: {detail}")
             if self._is_connection_error(e):
                 self._mark_connection_cooldown(e)
         return None
@@ -733,7 +796,12 @@ class LongbridgeFetcher(BaseFetcher):
 
             return round(today_volume / avg_vol, 2)
         except Exception as e:
-            logger.debug(f"[Longbridge] 计算量比失败({symbol}): {e}")
+            detail = (
+                "页面凭证请求失败"
+                if self._uses_explicit_page_credentials()
+                else str(e)
+            )
+            logger.debug(f"[Longbridge] 计算量比失败({symbol}): {detail}")
             return None
 
     # ------------------------------------------------------------------
@@ -760,7 +828,12 @@ class LongbridgeFetcher(BaseFetcher):
                 return None
             q = quotes[0]
         except Exception as e:
-            logger.info(f"[Longbridge] quote({symbol}) 失败: {e}")
+            detail = (
+                "页面凭证请求失败"
+                if self._uses_explicit_page_credentials()
+                else str(e)
+            )
+            logger.info(f"[Longbridge] quote({symbol}) 失败: {detail}")
             if self._is_connection_error(e):
                 self._mark_connection_cooldown(e)
             return None
@@ -896,6 +969,8 @@ class LongbridgeFetcher(BaseFetcher):
         except Exception as e:
             if self._is_connection_error(e):
                 self._mark_connection_cooldown(e)
+            if self._uses_explicit_page_credentials():
+                raise RuntimeError("Longbridge 页面凭证请求失败") from None
             raise
 
         if not candles:

@@ -152,7 +152,13 @@ class TushareFetcher(BaseFetcher):
     name = "TushareFetcher"
     priority = int(os.getenv("TUSHARE_PRIORITY", "2"))  # 默认优先级，会在 __init__ 中根据配置动态调整
 
-    def __init__(self, rate_limit_per_minute: int = 80):
+    def __init__(
+        self,
+        rate_limit_per_minute: int = 80,
+        *,
+        token: Optional[str] = None,
+        request_timeout: int = 30,
+    ):
         """
         初始化 TushareFetcher
 
@@ -163,6 +169,9 @@ class TushareFetcher(BaseFetcher):
         self._call_count = 0  # 当前分钟内的调用次数
         self._minute_start: Optional[float] = None  # 当前计数周期开始时间
         self._api: Optional[object] = None  # Tushare API 实例
+        self._explicit_token = token is not None
+        self._token = (token or "").strip() if self._explicit_token else None
+        self._request_timeout = int(request_timeout)
         self.date_list: Optional[List[str]] = None  # 交易日列表缓存（倒序，最新日期在前）
         self._date_list_end: Optional[str] = None  # 缓存对应的截止日期，用于跨日刷新
 
@@ -180,14 +189,16 @@ class TushareFetcher(BaseFetcher):
         这里直接使用内置 HTTP client，避免运行时强依赖 tushare SDK，
         从而减少 Docker / PyInstaller / 多虚拟环境场景下因缺包导致的初始化失败。
         """
-        config = get_config()
-
-        if not config.tushare_token:
+        token = self._token
+        if token is None:
+            token = (get_config().tushare_token or "").strip()
+        self._token = token
+        if not token:
             logger.warning("Tushare Token 未配置，此数据源不可用")
             return
 
         try:
-            self._api = self._build_api_client(config.tushare_token)
+            self._api = self._build_api_client(token)
             logger.info("Tushare API 初始化成功")
         except Exception as e:
             logger.error(f"Tushare API 初始化失败: {e}")
@@ -207,9 +218,13 @@ class TushareFetcher(BaseFetcher):
         api_url = _resolve_tushare_http_url()
         if api_url:
             logger.info("Tushare 使用自定义接入地址: %s", api_url)
-            client = _TushareHttpClient(token=token, api_url=api_url)
+            client = _TushareHttpClient(
+                token=token,
+                timeout=self._request_timeout,
+                api_url=api_url,
+            )
         else:
-            client = _TushareHttpClient(token=token)
+            client = _TushareHttpClient(token=token, timeout=self._request_timeout)
         logger.debug("Tushare API client configured for direct HTTP calls")
         return client
 
@@ -224,9 +239,7 @@ class TushareFetcher(BaseFetcher):
         Returns:
             优先级数字（0=最高，数字越大优先级越低）
         """
-        config = get_config()
-
-        if config.tushare_token and self._api is not None:
+        if self._token and self._api is not None:
             # Token 配置且 API 初始化成功，提升为最高优先级
             logger.info("✅ 检测到 TUSHARE_TOKEN 且 API 初始化成功，Tushare 数据源优先级提升为最高 (Priority -1)")
             return -1

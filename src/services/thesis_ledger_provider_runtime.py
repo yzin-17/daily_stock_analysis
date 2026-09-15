@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 import math
 import os
@@ -20,7 +21,13 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Callable, Mapping
 
-from src.services.thesis_ledger_control import ThesisLedgerControlStore
+from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
+from src.services.provider_oauth_contract import OAuthStateError
+from src.services.thesis_ledger_control import (
+    PROVIDER_MANIFESTS,
+    ControlContractError,
+    ThesisLedgerControlStore,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +45,84 @@ _PROVIDER_ADAPTER_IMPORTS = {
     "alphavantage": ("data_provider.alphavantage_fetcher", "AlphaVantageFetcher"),
 }
 
+# These adapters were checked in their current implementations: both request
+# exactly one symbol (`yf.Ticker(symbol)` / `ctx.quote([symbol])`).  New ETF
+# manifest entries must add an explicit single-symbol adapter or remain
+# unavailable on this boundary.
+ETF_SINGLE_SYMBOL_GENERIC_PROVIDERS = frozenset({"yfinance", "longbridge"})
+
+
+def _log_quote_event(
+    *,
+    stage: str,
+    request_id: str | None,
+    symbol: str,
+    instrument_type: str,
+    status: str,
+    duration_ms: int = 0,
+    provider: str | None = None,
+    provider_symbol: str | None = None,
+    error_code: str | None = None,
+    providers: list[str] | None = None,
+    attempt: int | None = None,
+) -> None:
+    """Emit bounded, request-correlated Quote evidence without raw payloads."""
+    event: dict[str, Any] = {
+        "event": "thesis_ledger.quote",
+        "stage": stage,
+        "requestId": request_id or "unknown",
+        "traceId": request_id or "unknown",
+        "symbol": symbol,
+        "instrumentType": instrument_type,
+        "status": status,
+        "durationMs": max(0, int(duration_ms)),
+    }
+    if provider is not None:
+        event["provider"] = provider
+    if provider_symbol is not None:
+        event["providerSymbol"] = provider_symbol
+    if error_code is not None:
+        event["errorCode"] = error_code
+    if providers is not None:
+        event["providers"] = providers
+    if attempt is not None:
+        event["attempt"] = attempt
+    logger.info(json.dumps(event, ensure_ascii=False, separators=(",", ":")))
+
+
+def classify_provider_exception(error: Exception) -> str:
+    """Map adapter failures to stable categories without returning raw details."""
+
+    status_code = getattr(error, "status_code", None)
+    if status_code is not None:
+        status_code = int(status_code)
+        if status_code == 429:
+            return "rate_limited"
+        if status_code == 401:
+            return "authentication_failed"
+        if status_code == 403:
+            return "permission_denied"
+        if status_code >= 500:
+            return "upstream_failure"
+    error_kind = str(getattr(error, "error_kind", "")).lower()
+    if error_kind in {"rate_limited", "authentication_failed", "permission_denied"}:
+        return error_kind
+    if error_kind == "timeout":
+        return "network_failure"
+
+    text = str(error).lower()
+    if "429" in text or "rate limit" in text or "too many request" in text or "quota" in text:
+        return "rate_limited"
+    if "401" in text or "unauthor" in text or "invalid api key" in text or "invalid token" in text:
+        return "authentication_failed"
+    if "403" in text or "forbidden" in text or "permission" in text or "access denied" in text:
+        return "permission_denied"
+    if isinstance(error, (TimeoutError, ConnectionError, OSError)):
+        return "network_failure"
+    if any(term in text for term in ("timeout", "timed out", "connection reset", "dns")):
+        return "network_failure"
+    return "upstream_failure"
+
 
 class ProviderCallError(Exception):
     """Stable, provider-safe error raised inside the ThesisLedger namespace."""
@@ -50,23 +135,28 @@ class ProviderCallError(Exception):
         retryable: bool = False,
         request_id: str | None = None,
         diagnostic_id: str | None = None,
+        diagnostics: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.retryable = retryable
         self.request_id = request_id
         self.diagnostic_id = diagnostic_id or request_id
+        self.diagnostics = dict(diagnostics or {})
 
     def detail(self, *, contract_version: int = 1) -> dict[str, Any]:
         """Return a stable error projection without exposing upstream details."""
         request_id = self.request_id or str(uuid.uuid4())
-        return {
+        detail = {
             "contractVersion": contract_version,
             "code": self.code,
             "message": str(self),
             "requestId": request_id,
             "diagnosticId": self.diagnostic_id or request_id,
         }
+        if self.diagnostics:
+            detail["diagnostics"] = self.diagnostics
+        return detail
 
 
 @dataclass(frozen=True)
@@ -154,6 +244,7 @@ class ThesisLedgerGatewayError(ProviderCallError):
         request: ThesisLedgerDataRequest,
         *,
         retryable: bool = False,
+        diagnostics: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__(
             code,
@@ -161,6 +252,7 @@ class ThesisLedgerGatewayError(ProviderCallError):
             retryable=retryable,
             request_id=request.request_id,
             diagnostic_id=request.request_id,
+            diagnostics=diagnostics,
         )
         self.request = request
 
@@ -310,36 +402,97 @@ class ThesisLedgerProviderRuntime:
     ) -> None:
         self.store = store or ThesisLedgerControlStore()
         self.adapters = adapters or {}
+        self._adapter_versions: dict[str, tuple[int, int, str]] = {}
+        self._adapter_cache_lock = threading.RLock()
         self.clock = clock or time.monotonic
         self.circuit = _ScopedCircuit()
 
-    def _adapter(self, provider_id: str) -> Any:
-        if provider_id in self.adapters:
-            return self.adapters[provider_id]
+    def _adapter(
+        self,
+        provider_id: str,
+        snapshot: ProviderCredentialSnapshot | None = None,
+        *,
+        cache: bool = True,
+        probe: bool = False,
+    ) -> Any:
+        with self._adapter_cache_lock:
+            if provider_id in self.adapters and provider_id not in self._adapter_versions:
+                return self.adapters[provider_id]
         try:
+            snapshot = snapshot or self.store.provider_credential_snapshot(provider_id)
+            version = (snapshot.config_version, snapshot.credential_version, snapshot.source)
+            with self._adapter_cache_lock:
+                if (
+                    cache
+                    and provider_id in self.adapters
+                    and self._adapter_versions.get(provider_id) == version
+                ):
+                    return self.adapters[provider_id]
             adapter_import = _PROVIDER_ADAPTER_IMPORTS.get(provider_id)
             if adapter_import is None:
                 raise ProviderCallError("UNKNOWN_PROVIDER", "未知 Provider")
             module_name, class_name = adapter_import
             adapter_class = getattr(importlib.import_module(module_name), class_name)
+            values = snapshot.values
+            manifest = PROVIDER_MANIFESTS.get(provider_id, {})
+            if manifest.get("requiresCredential") and not values and not (
+                provider_id == "longbridge" and snapshot.source == "environment"
+            ):
+                raise ProviderCallError("not_configured", "Provider 凭证未配置")
             if provider_id == "tickflow":
                 from src.config import get_config
 
                 config = get_config()
                 adapter = adapter_class(
-                    api_key=getattr(config, "tickflow_api_key", None),
+                    api_key=values.get("apiKey"),
+                    timeout=5 if probe else 30.0,
                     kline_adjust=getattr(config, "tickflow_kline_adjust", "none"),
                     batch_daily_enabled=getattr(config, "tickflow_batch_daily_enabled", True),
                     batch_size=getattr(config, "tickflow_batch_size", 100),
                     priority=getattr(config, "tickflow_priority", 2),
                 )
+            elif provider_id == "tushare":
+                adapter = adapter_class(
+                    token=values.get("token"),
+                    request_timeout=5 if probe else 30,
+                )
+            elif provider_id in {"finnhub", "alphavantage"}:
+                adapter = adapter_class(
+                    api_key=values.get("apiKey"),
+                    strict_errors=snapshot.source == "control",
+                )
+            elif provider_id == "longbridge" and snapshot.method == "oauth":
+                from src.services.provider_oauth_runtime import build_page_oauth
+
+                oauth_token = build_page_oauth(snapshot, self.store.database_path)
+                adapter = adapter_class(oauth_token=oauth_token)
+            elif provider_id == "longbridge" and values:
+                adapter = adapter_class(
+                    app_key=values.get("appKey"),
+                    app_secret=values.get("appSecret"),
+                    access_token=values.get("accessToken"),
+                )
             else:
                 adapter = adapter_class()
         except ProviderCallError:
             raise
+        except OAuthStateError as exc:
+            raise ProviderCallError(exc.code, "Longbridge OAuth 凭证不可用") from exc
+        except ControlContractError as exc:
+            raise ProviderCallError(exc.code, "Provider 页面凭证无法安全解析") from exc
         except Exception as exc:  # optional adapter dependency/configuration.
             raise ProviderCallError("not_configured", "Provider 适配器未就绪") from exc
-        self.adapters[provider_id] = adapter
+        if cache:
+            with self._adapter_cache_lock:
+                # Publish adapter and version together. In-flight callers may
+                # still hold the old adapter, so it must be released naturally.
+                if (
+                    provider_id in self.adapters
+                    and self._adapter_versions.get(provider_id) == version
+                ):
+                    return self.adapters[provider_id]
+                self.adapters[provider_id] = adapter
+                self._adapter_versions[provider_id] = version
         return adapter
 
     @staticmethod
@@ -352,10 +505,38 @@ class ThesisLedgerProviderRuntime:
         return adapter_result
 
     @staticmethod
-    def _realtime_quote(adapter: Any, provider_id: str, symbol: str) -> Any:
-        """为 AKShare 选择单标的轻量通道，其他 Provider 使用统一入口。"""
-        if provider_id == "akshare":
+    def _realtime_quote(
+        adapter: Any,
+        provider_id: str,
+        symbol: str,
+        instrument_type: str | None = None,
+    ) -> Any:
+        """在 ETF 边界选择已确认的单标适配器，未知实现保持 fail-closed。"""
+        if instrument_type == "ETF":
+            if provider_id == "akshare":
+                raise ProviderCallError(
+                    "unsupported",
+                    "AKShare 当前没有可执行的 ETF 单标的行情适配器",
+                )
+            single_symbol_method = getattr(adapter, "get_realtime_quote_single_symbol", None)
+            if callable(single_symbol_method):
+                value = single_symbol_method(symbol)
+            elif provider_id == "efinance":
+                raise ProviderCallError(
+                    "unsupported",
+                    "efinance 当前没有可执行的 ETF 单标的行情适配器",
+                )
+            elif provider_id not in ETF_SINGLE_SYMBOL_GENERIC_PROVIDERS:
+                raise ProviderCallError(
+                    "unsupported",
+                    f"{provider_id} 当前没有已确认的 ETF 单标的行情适配器",
+                )
+            else:
+                value = adapter.get_realtime_quote(symbol)
+        elif provider_id == "akshare":
             value = adapter.get_realtime_quote(symbol, source="sina")
+        elif provider_id in {"finnhub", "alphavantage"}:
+            value = adapter.get_realtime_quote(symbol, strict=True)
         else:
             value = adapter.get_realtime_quote(symbol)
         if isinstance(value, Mapping):
@@ -579,7 +760,14 @@ class ThesisLedgerProviderRuntime:
         capability: str,
         instrument_type: str,
         operation: Callable[[str, Any], Any],
+        *,
+        budget_symbol: str | None = None,
+        request_id: str | None = None,
+        symbol: str | None = None,
     ) -> ProviderExecution:
+        quote_request = capability.upper() == "REALTIME_QUOTE"
+        quote_started = time.monotonic()
+        logged_symbol = symbol or budget_symbol or "unknown"
         effective_policy = self.store.effective_policy()
         providers = self._providers_from_effective(
             effective_policy,
@@ -587,10 +775,26 @@ class ThesisLedgerProviderRuntime:
             instrument_type,
         )
         if not providers:
+            if quote_request:
+                _log_quote_event(
+                    stage="provider-selection",
+                    request_id=request_id,
+                    symbol=logged_symbol,
+                    instrument_type=instrument_type,
+                    status="rejected",
+                    duration_ms=(time.monotonic() - quote_started) * 1000,
+                    error_code="NO_ELIGIBLE_PROVIDER",
+                    providers=[],
+                )
             raise NoEligibleProviderError(capability, instrument_type)
         fallback_used = False
         attempted_providers: list[str] = []
         last_error: ProviderCallError | None = None
+        budgeted_quote = (
+            capability.upper() == "REALTIME_QUOTE"
+            and instrument_type.upper() == "ETF"
+            and bool(budget_symbol)
+        )
         for index, provider_id in enumerate(providers):
             if index > 0:
                 fallback_used = True
@@ -609,16 +813,90 @@ class ThesisLedgerProviderRuntime:
                     pass
             if not self.circuit.allow(key, now):
                 last_error = ProviderCallError("circuit_open", "Provider 熔断已打开")
+                if quote_request:
+                    _log_quote_event(
+                        stage="provider-qualification",
+                        request_id=request_id,
+                        symbol=logged_symbol,
+                        provider_symbol=budget_symbol,
+                        instrument_type=instrument_type,
+                        status="rejected",
+                        duration_ms=(time.monotonic() - quote_started) * 1000,
+                        provider=provider_id,
+                        error_code=last_error.code,
+                        providers=providers,
+                    )
                 continue
-            attempts = 2
+            if budgeted_quote:
+                budget = self.store.claim_provider_request_budget(
+                    provider_id,
+                    capability,
+                    instrument_type,
+                    str(budget_symbol),
+                    request_id=request_id,
+                )
+                if not budget["allowed"]:
+                    last_error = ProviderCallError(
+                        "request_budget_cooldown",
+                        "该 Provider 的 ETF 单标请求仍在冷却期",
+                        diagnostics={
+                            "provider": provider_id,
+                            "requestKey": budget["requestKey"],
+                            "remainingSeconds": budget["remainingSeconds"],
+                            "budgetSeconds": 600,
+                        },
+                    )
+                    if quote_request:
+                        _log_quote_event(
+                            stage="provider-qualification",
+                            request_id=request_id,
+                            symbol=logged_symbol,
+                            provider_symbol=budget_symbol,
+                            instrument_type=instrument_type,
+                            status="rejected",
+                            duration_ms=(time.monotonic() - quote_started) * 1000,
+                            provider=provider_id,
+                            error_code=last_error.code,
+                            providers=providers,
+                        )
+                    continue
+            # ETF request reservations are consumed before the first adapter
+            # call, so retrying would violate the persistent upstream budget.
+            attempts = 1 if budgeted_quote else 2
             for attempt in range(attempts):
                 started = self.clock()
+                quote_call_started = time.monotonic()
+                if quote_request:
+                    _log_quote_event(
+                        stage="provider-call",
+                        request_id=request_id,
+                        symbol=logged_symbol,
+                        provider_symbol=budget_symbol,
+                        instrument_type=instrument_type,
+                        status="started",
+                        provider=provider_id,
+                        providers=providers,
+                        attempt=attempt + 1,
+                    )
                 try:
                     if provider_id not in attempted_providers:
                         attempted_providers.append(provider_id)
                     result = operation(provider_id, self._adapter(provider_id))
                     if result is None:
                         raise ProviderCallError("not_covered", "Provider 未覆盖该标的")
+                    if quote_request:
+                        _log_quote_event(
+                            stage="provider-call",
+                            request_id=request_id,
+                            symbol=logged_symbol,
+                            provider_symbol=budget_symbol,
+                            instrument_type=instrument_type,
+                            status="success",
+                            duration_ms=(time.monotonic() - quote_call_started) * 1000,
+                            provider=provider_id,
+                            providers=providers,
+                            attempt=attempt + 1,
+                        )
                     elapsed_ms = max(0, int((self.clock() - started) * 1000))
                     self.circuit.success(key)
                     self.store.record_health(
@@ -642,18 +920,61 @@ class ThesisLedgerProviderRuntime:
                     )
                 except ProviderCallError as exc:
                     last_error = exc
+                    if quote_request:
+                        _log_quote_event(
+                            stage="provider-call",
+                            request_id=request_id,
+                            symbol=logged_symbol,
+                            provider_symbol=budget_symbol,
+                            instrument_type=instrument_type,
+                            status="failure",
+                            duration_ms=(time.monotonic() - quote_call_started) * 1000,
+                            provider=provider_id,
+                            error_code=exc.code,
+                            providers=providers,
+                            attempt=attempt + 1,
+                        )
                 except (TimeoutError, ConnectionError, OSError) as exc:
                     last_error = ProviderCallError(
                         "transient_failure", "Provider 暂时不可用", retryable=True
                     )
-                    logger.warning("ThesisLedger Provider transient failure: %s", exc)
+                    if quote_request:
+                        _log_quote_event(
+                            stage="provider-call",
+                            request_id=request_id,
+                            symbol=logged_symbol,
+                            provider_symbol=budget_symbol,
+                            instrument_type=instrument_type,
+                            status="failure",
+                            duration_ms=(time.monotonic() - quote_call_started) * 1000,
+                            provider=provider_id,
+                            error_code=last_error.code,
+                            providers=providers,
+                            attempt=attempt + 1,
+                        )
+                    logger.warning("ThesisLedger Provider transient failure")
                 except Exception as exc:  # adapter boundary; do not expose raw error.
-                    last_error = ProviderCallError("upstream_failure", "Provider 请求失败")
+                    code = classify_provider_exception(exc)
+                    last_error = ProviderCallError(code, "Provider 请求失败")
+                    if quote_request:
+                        _log_quote_event(
+                            stage="provider-call",
+                            request_id=request_id,
+                            symbol=logged_symbol,
+                            provider_symbol=budget_symbol,
+                            instrument_type=instrument_type,
+                            status="failure",
+                            duration_ms=(time.monotonic() - quote_call_started) * 1000,
+                            provider=provider_id,
+                            error_code=code,
+                            providers=providers,
+                            attempt=attempt + 1,
+                        )
                     logger.warning(
-                        "ThesisLedger Provider failure provider=%s capability=%s: %s",
+                        "ThesisLedger Provider failure provider=%s capability=%s code=%s",
                         provider_id,
                         capability,
-                        exc,
+                        code,
                     )
                 if not last_error.retryable or attempt + 1 >= attempts:
                     break
@@ -683,9 +1004,30 @@ class ThesisLedgerProviderRuntime:
             raise ProviderCallError("upstream_unavailable", "Provider 暂时不可用")
         if last_error.code == "circuit_open" and not attempted_providers:
             raise NoEligibleProviderError(capability, instrument_type)
+        if not budgeted_quote:
+            if last_error.code in {"not_covered", "unsupported", "circuit_open"}:
+                raise ProviderCallError(
+                    "upstream_unavailable",
+                    "没有 Provider 返回可用数据",
+                )
+            raise last_error
+        final_diagnostics = {
+            "route": list(providers),
+            "attemptedProviders": attempted_providers,
+            **last_error.diagnostics,
+        }
         if last_error.code in {"not_covered", "unsupported", "circuit_open"}:
-            raise ProviderCallError("upstream_unavailable", "没有 Provider 返回可用数据")
-        raise last_error
+            raise ProviderCallError(
+                "upstream_unavailable",
+                "没有 Provider 返回可用数据",
+                diagnostics=final_diagnostics,
+            )
+        raise ProviderCallError(
+            last_error.code,
+            str(last_error),
+            retryable=last_error.retryable,
+            diagnostics=final_diagnostics,
+        )
 
     def _execute(
         self,
@@ -745,7 +1087,9 @@ class ThesisLedgerProviderRuntime:
             provider_symbol = provider_symbol_for_contract(request.symbol)
 
             def operation(provider_id: str, adapter: Any) -> Any:
-                value = self._realtime_quote(adapter, provider_id, provider_symbol)
+                value = self._realtime_quote(
+                    adapter, provider_id, provider_symbol, instrument_type
+                )
                 if value is None:
                     raise ProviderCallError("not_covered", "Provider 未覆盖该标的")
                 return self._validate_quote(value)
@@ -755,6 +1099,8 @@ class ThesisLedgerProviderRuntime:
                 capability,
                 instrument_type,
                 operation,
+                budget_symbol=provider_symbol if instrument_type == "ETF" else None,
+                request_id=request.request_id,
             )
 
         if capability == "DAILY_BAR":
@@ -860,10 +1206,20 @@ class ThesisLedgerProviderRuntime:
         capability: str,
         instrument_type: str,
         operation: Callable[[str, Any], Any],
+        *,
+        budget_symbol: str | None = None,
+        request_id: str | None = None,
     ) -> ProviderExecution:
         """Attach request identity while preserving stable runtime error codes."""
         try:
-            return self._execute_with_metadata(capability, instrument_type, operation)
+            return self._execute_with_metadata(
+                capability,
+                instrument_type,
+                operation,
+                budget_symbol=budget_symbol,
+                request_id=request_id or request.request_id,
+                symbol=request.symbol,
+            )
         except ThesisLedgerGatewayError:
             raise
         except ProviderCallError as exc:
@@ -872,6 +1228,7 @@ class ThesisLedgerProviderRuntime:
                 str(exc),
                 request,
                 retryable=exc.retryable,
+                diagnostics=exc.diagnostics,
             ) from exc
 
     @staticmethod
@@ -893,7 +1250,14 @@ class ThesisLedgerProviderRuntime:
             raise ProviderCallError("unsupported", f"{provider_id} 不支持基金持仓披露")
         return method(symbol.removesuffix(".OF"))
 
-    def smoke(self, provider_id: str, capability: str) -> dict[str, Any]:
+    def smoke(
+        self,
+        provider_id: str,
+        capability: str,
+        *,
+        credential_snapshot: ProviderCredentialSnapshot | None = None,
+        draft_probe: bool | None = None,
+    ) -> dict[str, Any]:
         """Run one bounded, read-only representative call without changing policy."""
         normalized_capability = capability.strip().upper()
         instrument_type = (
@@ -902,9 +1266,18 @@ class ThesisLedgerProviderRuntime:
             else "STOCK"
         )
         started = self.clock()
+        if draft_probe is None:
+            draft_probe = credential_snapshot is not None
         circuit_key = f"thesis-ledger:{provider_id}:{normalized_capability}:{instrument_type}"
+        manifest = PROVIDER_MANIFESTS.get(provider_id, {})
+        sample_contract_symbol = (
+            "AAPL.US" if "US" in manifest.get("markets", ()) else "600519.SH"
+        )
+        sample_symbol = provider_symbol_for_contract(sample_contract_symbol)
 
         def record_failure(code: str) -> None:
+            if draft_probe:
+                return
             self.store.record_health(
                 provider_id,
                 normalized_capability,
@@ -915,21 +1288,26 @@ class ThesisLedgerProviderRuntime:
             )
 
         try:
-            adapter = self._adapter(provider_id)
+            adapter = self._adapter(
+                provider_id,
+                credential_snapshot,
+                cache=False,
+                probe=True,
+            )
             if normalized_capability == "REALTIME_QUOTE":
                 value = self._realtime_quote(
                     adapter,
                     provider_id,
-                    provider_symbol_for_contract("600519.SH"),
+                    sample_symbol,
                 )
                 if value is None or getattr(value, "price", None) is None:
                     raise ProviderCallError("not_covered", "Provider 未返回代表性行情")
             elif normalized_capability == "DAILY_BAR":
-                frame = self._daily_frame(
-                    adapter.get_daily_data(
-                        provider_symbol_for_contract("600519.SH"), days=5
-                    )
-                )
+                if provider_id in {"finnhub", "alphavantage"}:
+                    daily_data = adapter.get_daily_data(sample_symbol, days=5, strict=True)
+                else:
+                    daily_data = adapter.get_daily_data(sample_symbol, days=5)
+                frame = self._daily_frame(daily_data)
                 self._validate_bars(frame)
             elif normalized_capability == "FUND_NAV":
                 value = self._fund_nav_from_provider(provider_id, "000001.OF", adapter)
@@ -944,35 +1322,38 @@ class ThesisLedgerProviderRuntime:
                 method = getattr(adapter, "get_chip_distribution", None)
                 if method is None:
                     raise ProviderCallError("unsupported", "Provider 不支持筹码摘要")
-                self._validate_chip_summary(method("600519"))
+                self._validate_chip_summary(method(sample_symbol))
             else:
                 raise ProviderCallError("unsupported", "Provider 不支持该 Capability")
         except ProviderCallError as exc:
             record_failure(exc.code)
             raise
         except (TimeoutError, ConnectionError, OSError) as exc:
-            record_failure("transient_failure")
-            raise ProviderCallError("transient_failure", "Provider 暂时不可用", retryable=True) from exc
+            code = classify_provider_exception(exc)
+            record_failure(code)
+            raise ProviderCallError(code, "Provider 暂时不可用", retryable=True) from exc
         except Exception as exc:  # adapter boundary; never expose raw smoke errors.
+            code = classify_provider_exception(exc)
             logger.warning(
-                "ThesisLedger Provider smoke failure provider=%s capability=%s: %s",
+                "ThesisLedger Provider smoke failure provider=%s capability=%s code=%s",
                 provider_id,
                 normalized_capability,
-                exc,
+                code,
             )
-            record_failure("upstream_failure")
-            raise ProviderCallError("upstream_failure", "Provider smoke 调用失败") from exc
+            record_failure(code)
+            raise ProviderCallError(code, "Provider smoke 调用失败") from exc
         elapsed_ms = max(0, int((self.clock() - started) * 1000))
-        self.circuit.success(circuit_key)
-        self.store.record_health(
-            provider_id,
-            normalized_capability,
-            instrument_type,
-            state="healthy",
-            circuit="closed",
-            consecutive_failures=0,
-            latency_ms=elapsed_ms,
-        )
+        if not draft_probe:
+            self.circuit.success(circuit_key)
+            self.store.record_health(
+                provider_id,
+                normalized_capability,
+                instrument_type,
+                state="healthy",
+                circuit="closed",
+                consecutive_failures=0,
+                latency_ms=elapsed_ms,
+            )
         return {
             "status": "healthy",
             "attempted": True,

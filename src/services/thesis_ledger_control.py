@@ -18,10 +18,25 @@ import queue
 import secrets
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
+
+from src.services.provider_credentials import (
+    CredentialValue,
+    configured_fields,
+    credential_schema,
+    decode_credential_plaintext,
+    encode_credential_plaintext,
+    merge_credential_patch,
+    parse_credential_patch,
+    validate_config_patch_keys,
+    validate_stored_credential,
+)
+from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
+from src.services.provider_oauth_contract import OAuthStateError, validate_oauth_token
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +44,38 @@ CONTROL_CONTRACT_VERSION = 1
 CONSUMER_NAMESPACE = "thesis-ledger"
 CATALOG_JOB_LEASE_SECONDS = 300
 CATALOG_JOB_LEASE_EXPIRED_CODE = "CATALOG_JOB_LEASE_EXPIRED"
+PROVIDER_REQUEST_BUDGET_SECONDS = 600
+
+# The desired Provider Policy remains user-owned and is intentionally kept
+# unchanged.  This projection only describes what the current DSA adapter can
+# execute safely for the ThesisLedger single-symbol boundary.
+UNSAFE_SINGLE_SYMBOL_ROUTES = {
+    ("akshare", "REALTIME_QUOTE", "ETF"),
+}
+
+
+def _apply_runtime_capability_gates(effective: dict[str, Any]) -> dict[str, Any]:
+    """Re-project persisted Effective Policy after an additive runtime upgrade."""
+    projected = json.loads(json.dumps(effective))
+    route_status = projected.get("routeStatus", {})
+    for provider_id, capability, instrument_type in UNSAFE_SINGLE_SYMBOL_ROUTES:
+        status = route_status.get(capability, {}).get(instrument_type)
+        if not isinstance(status, dict):
+            continue
+        for entry in status.get("providers", []):
+            if entry.get("providerId") != provider_id:
+                continue
+            entry["available"] = False
+            entry["eligible"] = False
+            entry["reason"] = "single_symbol_adapter_unavailable"
+        status["eligibleProviderIds"] = [
+            provider
+            for provider in status.get("eligibleProviderIds", [])
+            if provider != provider_id
+        ]
+        if not status["eligibleProviderIds"]:
+            status["reason"] = "NO_ELIGIBLE_PROVIDER"
+    return projected
 
 CAPABILITIES = (
     "REALTIME_QUOTE",
@@ -76,6 +123,7 @@ def _manifest(
             "credential": {"writeOnly": True, "required": requires_credential},
             "settings": {},
         },
+        "credentialSchema": credential_schema(provider_id),
     }
 
 
@@ -208,29 +256,95 @@ def _provider_configured(
 ) -> bool:
     if not manifest.get("requiresCredential", False):
         return True
-    if manifest.get("configurationMode") == "dsa_environment":
+    _, _, configured, _ = _credential_state(manifest, config)
+    return configured
+
+
+def _environment_credential_values(provider_id: str) -> dict[str, str]:
+    try:
+        from src.config import get_config
+
+        runtime_config = get_config()
+        if provider_id == "longbridge":
+            from data_provider.longbridge_fetcher import _longbridge_credentials
+
+            credentials = _longbridge_credentials(runtime_config)
+            return {
+                field: str(value).strip()
+                for field, value in {
+                    "appKey": credentials.get("app_key"),
+                    "appSecret": credentials.get("app_secret"),
+                    "accessToken": credentials.get("access_token"),
+                    "oauthClientId": credentials.get("oauth_client_id"),
+                }.items()
+                if value
+            }
+        credential_fields = {
+            "tushare": {"token": "tushare_token"},
+            "tickflow": {"apiKey": "tickflow_api_key"},
+            "finnhub": {"apiKey": "finnhub_api_key"},
+            "alphavantage": {"apiKey": "alphavantage_api_key"},
+        }
+        return {
+            field: str(getattr(runtime_config, env_name, "") or "").strip()
+            for field, env_name in credential_fields.get(provider_id, {}).items()
+            if str(getattr(runtime_config, env_name, "") or "").strip()
+        }
+    except Exception:
+        return {}
+
+
+def _environment_credential_state(provider_id: str) -> tuple[dict[str, bool], bool]:
+    values = _environment_credential_values(provider_id)
+    if provider_id == "longbridge":
         try:
             from src.config import get_config
+            from data_provider.longbridge_fetcher import LongbridgeFetcher
 
-            runtime_config = get_config()
-            provider_id = str(manifest["providerId"])
-            credential_fields = {
-                "tushare": ("tushare_token",),
-                "tickflow": ("tickflow_api_key",),
-                "finnhub": ("finnhub_api_key",),
-                "alphavantage": ("alphavantage_api_key",),
-            }
-            if provider_id == "longbridge":
-                from data_provider.longbridge_fetcher import LongbridgeFetcher
-
-                return LongbridgeFetcher.has_configured_credentials(runtime_config)
-            return any(
-                bool(str(getattr(runtime_config, field, "") or "").strip())
-                for field in credential_fields.get(provider_id, ())
-            )
+            configured = LongbridgeFetcher.has_configured_credentials(get_config())
         except Exception:
-            return False
-    return bool(config and config["credential_ciphertext"])
+            configured = False
+        return {
+            "appKey": bool(values.get("appKey")),
+            "appSecret": bool(values.get("appSecret")),
+            "accessToken": bool(values.get("accessToken")),
+        }, configured
+    return {field: bool(value) for field, value in values.items()}, bool(values)
+
+
+def _credential_state(
+    manifest: dict[str, Any],
+    config: sqlite3.Row | None,
+) -> tuple[str, dict[str, bool], bool, str | None]:
+    if not manifest.get("requiresCredential", False):
+        return "built_in", {}, bool(config and config["credential_ciphertext"]), None
+    provider_id = str(manifest["providerId"])
+    if config and config["credential_ciphertext"]:
+        try:
+            plaintext = _decrypt_secret(
+                str(config["secret_key_version"] or ""),
+                str(config["credential_ciphertext"]),
+            )
+            credential = decode_credential_plaintext(plaintext)
+            validate_stored_credential(provider_id, credential)
+            if credential.method == "oauth":
+                validate_oauth_token(
+                    credential.values.get("clientId", ""),
+                    credential.values.get("tokenJson", ""),
+                )
+            if credential.legacy and manifest.get("configurationMode") == "dsa_environment":
+                _, environment_configured = _environment_credential_state(provider_id)
+                if environment_configured:
+                    return "environment", configured_fields(provider_id, None), True, None
+                return "none", configured_fields(provider_id, None), False, None
+            return "control", configured_fields(provider_id, credential), True, credential.method
+        except Exception:
+            # A present but unreadable page value blocks environment fallback.
+            return "control", configured_fields(provider_id, None), False, None
+    _, environment_configured = _environment_credential_state(provider_id)
+    if environment_configured:
+        return "environment", configured_fields(provider_id, None), True, None
+    return "none", configured_fields(provider_id, None), False, None
 
 # These are only the initial product policy defaults. They are seeded by the
 # ThesisLedger side as Desired revision 1; DSA never silently adds them to a
@@ -625,6 +739,8 @@ class ThesisLedgerControlStore:
                     settings_json TEXT NOT NULL DEFAULT '{}',
                     credential_ciphertext TEXT,
                     secret_key_version TEXT,
+                    config_version INTEGER NOT NULL DEFAULT 0,
+                    credential_version INTEGER NOT NULL DEFAULT 0,
                     updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS thesis_ledger_provider_tombstone (
@@ -646,6 +762,18 @@ class ThesisLedgerControlStore:
                     error_code TEXT,
                     checked_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS thesis_ledger_provider_request_budget (
+                    request_key TEXT PRIMARY KEY,
+                    provider_id TEXT NOT NULL,
+                    capability TEXT NOT NULL,
+                    instrument_type TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    request_id TEXT,
+                    attempted_at REAL NOT NULL,
+                    expires_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS thesis_ledger_provider_request_budget_expiry_idx
+                    ON thesis_ledger_provider_request_budget (expires_at);
                 CREATE TABLE IF NOT EXISTS thesis_ledger_catalog_generation (
                     generation INTEGER PRIMARY KEY,
                     checksum TEXT NOT NULL,
@@ -702,6 +830,22 @@ class ThesisLedgerControlStore:
                     WHERE updated_at IS NULL
                     """,
                     (_utc_now(),),
+                )
+            provider_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(thesis_ledger_provider_config)"
+                ).fetchall()
+            }
+            if "config_version" not in provider_columns:
+                connection.execute(
+                    "ALTER TABLE thesis_ledger_provider_config "
+                    "ADD COLUMN config_version INTEGER NOT NULL DEFAULT 0"
+                )
+            if "credential_version" not in provider_columns:
+                connection.execute(
+                    "ALTER TABLE thesis_ledger_provider_config "
+                    "ADD COLUMN credential_version INTEGER NOT NULL DEFAULT 0"
                 )
             connection.execute(
                 """
@@ -818,6 +962,9 @@ class ThesisLedgerControlStore:
                         reason = "provider_disabled"
                     elif circuit == "open":
                         reason = "circuit_open"
+                    elif (provider_id, capability, instrument_type) in UNSAFE_SINGLE_SYMBOL_ROUTES:
+                        available = False
+                        reason = "single_symbol_adapter_unavailable"
                     else:
                         eligible.append(provider_id)
                     entries.append(
@@ -998,7 +1145,9 @@ class ThesisLedgerControlStore:
                     "enabled": bool(current["enabled"]),
                     "routes": _json_load(current["routes_json"], {}),
                 },
-                "effective": _json_load(current["effective_json"], {}),
+                "effective": _apply_runtime_capability_gates(
+                    _json_load(current["effective_json"], {})
+                ),
                 "lastError": _json_load(current["last_error_json"], None),
                 "updatedAt": current["updated_at"],
             }
@@ -1040,6 +1189,84 @@ class ThesisLedgerControlStore:
             row = self._health(connection, provider_id, capability, instrument_type)
             return dict(row) if row else None
 
+    def claim_provider_request_budget(
+        self,
+        provider_id: str,
+        capability: str,
+        instrument_type: str,
+        symbol: str,
+        *,
+        request_id: str | None = None,
+        now: float | None = None,
+        budget_seconds: int = PROVIDER_REQUEST_BUDGET_SECONDS,
+    ) -> dict[str, Any]:
+        """Atomically reserve one upstream attempt for a durable request key.
+
+        The reservation is written before the caller invokes an adapter.  A
+        process crash therefore leaves the same key in cooldown after restart.
+        The minimum is deliberately enforced here rather than delegated to
+        environment configuration or callers.
+        """
+        normalized_provider = str(provider_id).strip().lower()
+        normalized_capability = str(capability).strip().upper()
+        normalized_type = str(instrument_type).strip().upper()
+        normalized_symbol = str(symbol).strip().upper()
+        if not all((normalized_provider, normalized_capability, normalized_type, normalized_symbol)):
+            raise ValueError("Provider request budget key fields must be non-empty")
+        current = time.time() if now is None else float(now)
+        duration = max(PROVIDER_REQUEST_BUDGET_SECONDS, int(budget_seconds))
+        expires_at = current + duration
+        request_key = ":".join(
+            (CONSUMER_NAMESPACE, normalized_provider, normalized_capability,
+             normalized_type, normalized_symbol)
+        )
+        with self._schema_lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT attempted_at, expires_at FROM thesis_ledger_provider_request_budget "
+                "WHERE request_key = ?",
+                (request_key,),
+            ).fetchone()
+            if existing is not None and float(existing["expires_at"]) > current:
+                connection.rollback()
+                return {
+                    "allowed": False,
+                    "requestKey": request_key,
+                    "attemptedAt": float(existing["attempted_at"]),
+                    "expiresAt": float(existing["expires_at"]),
+                    "remainingSeconds": max(0, int(float(existing["expires_at"]) - current)),
+                }
+            connection.execute(
+                """
+                INSERT INTO thesis_ledger_provider_request_budget
+                (request_key, provider_id, capability, instrument_type, symbol,
+                 request_id, attempted_at, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(request_key) DO UPDATE SET
+                  request_id=excluded.request_id,
+                  attempted_at=excluded.attempted_at,
+                  expires_at=excluded.expires_at
+                """,
+                (
+                    request_key,
+                    normalized_provider,
+                    normalized_capability,
+                    normalized_type,
+                    normalized_symbol,
+                    request_id,
+                    current,
+                    expires_at,
+                ),
+            )
+            connection.commit()
+        return {
+            "allowed": True,
+            "requestKey": request_key,
+            "attemptedAt": current,
+            "expiresAt": expires_at,
+            "remainingSeconds": duration,
+        }
+
     def provider_registry(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
             configurations = self._configuration(connection)
@@ -1068,20 +1295,29 @@ class ThesisLedgerControlStore:
             result = []
             for provider_id, manifest in PROVIDER_MANIFESTS.items():
                 config = configurations.get(provider_id)
+                credential_source, credential_fields, credential_configured, credential_method = _credential_state(
+                    manifest, config
+                )
                 tombstone = connection.execute(
                     "SELECT * FROM thesis_ledger_provider_tombstone WHERE provider_id = ?",
                     (provider_id,),
                 ).fetchone()
+                if tombstone:
+                    configured = False
+                elif not manifest.get("requiresCredential", False):
+                    configured = True
+                else:
+                    configured = credential_configured
                 result.append(
                     {
                         **manifest,
-                        "configured": False
-                        if tombstone
-                        else _provider_configured(manifest, config),
+                        "configured": configured,
                         "enabled": bool(config["enabled"]) if config else True,
-                        "credentialConfigured": bool(
-                            config and config["credential_ciphertext"]
-                        ),
+                        "credentialConfigured": credential_configured,
+                        "credentialSource": credential_source,
+                        "credentialFieldsConfigured": credential_fields,
+                        "credentialMethod": credential_method,
+                        "configVersion": int(config["config_version"]) if config else 0,
                         "updatedAt": config["updated_at"] if config else None,
                         "health": {"scopes": health_by_provider.get(provider_id, [])},
                         "tombstone":
@@ -1097,6 +1333,71 @@ class ThesisLedgerControlStore:
                 )
             return result
 
+    def provider_credential_snapshot(self, provider_id: str) -> ProviderCredentialSnapshot:
+        """Return an immutable runtime snapshot without exposing it in HTTP responses."""
+
+        normalized = _validate_provider_id(provider_id, "runtime-snapshot")
+        manifest = PROVIDER_MANIFESTS[normalized]
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM thesis_ledger_provider_config WHERE provider_id = ?",
+                (normalized,),
+            ).fetchone()
+            source, _, configured, method = _credential_state(manifest, row)
+            config_version = int(row["config_version"]) if row else 0
+            credential_version = int(row["credential_version"]) if row else 0
+            values: dict[str, str] = {}
+            if source == "control" and row and row["credential_ciphertext"]:
+                try:
+                    credential = decode_credential_plaintext(
+                        _decrypt_secret(
+                            str(row["secret_key_version"] or ""),
+                            str(row["credential_ciphertext"]),
+                        )
+                    )
+                    validate_stored_credential(normalized, credential)
+                    if credential.method == "oauth":
+                        validate_oauth_token(
+                            credential.values.get("clientId", ""),
+                            credential.values.get("tokenJson", ""),
+                        )
+                except (ControlContractError, ValueError, OAuthStateError) as exc:
+                    raise ControlContractError(
+                        "SECRET_CREDENTIAL_INVALID",
+                        "Provider 页面凭证无法安全解析",
+                    ) from exc
+                if credential.legacy:
+                    raise ControlContractError(
+                        "SECRET_CREDENTIAL_INVALID",
+                        "历史 Provider 凭证不能作为页面运行时凭证",
+                    )
+                values = dict(credential.values)
+            elif source == "environment":
+                values = _environment_credential_values(normalized)
+                if normalized == "longbridge" and (
+                    values.get("oauthClientId")
+                    or not {"appKey", "appSecret", "accessToken"}.issubset(values)
+                ):
+                    values = {}
+                if values:
+                    method = {
+                        "tushare": "token",
+                        "tickflow": "api_key",
+                        "finnhub": "api_key",
+                        "alphavantage": "api_key",
+                        "longbridge": "legacy",
+                    }.get(normalized)
+            if not configured and manifest.get("requiresCredential", False):
+                values = {}
+            return ProviderCredentialSnapshot.create(
+                normalized,
+                source,
+                method,
+                values,
+                config_version,
+                credential_version,
+            )
+
     def remove_provider(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         request_id = _request_id(payload.get("requestId"))
         provider_id = _validate_provider_id(provider_id, request_id)
@@ -1111,19 +1412,29 @@ class ThesisLedgerControlStore:
             )
         now = _utc_now()
         with self._schema_lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT config_version, credential_version, credential_ciphertext "
+                "FROM thesis_ledger_provider_config WHERE provider_id = ?",
+                (provider_id,),
+            ).fetchone()
+            config_version = (int(existing["config_version"]) if existing else 0) + 1
+            credential_version = (int(existing["credential_version"]) if existing else 0) + 1
             connection.execute(
                 """
                 INSERT INTO thesis_ledger_provider_config
                 (provider_id, enabled, settings_json, credential_ciphertext,
-                 secret_key_version, updated_at)
-                VALUES (?, 0, '{}', NULL, NULL, ?)
+                 secret_key_version, config_version, credential_version, updated_at)
+                VALUES (?, 0, '{}', NULL, NULL, ?, ?, ?)
                 ON CONFLICT(provider_id) DO UPDATE SET
                   enabled=0,
                   credential_ciphertext=NULL,
                   secret_key_version=NULL,
+                  config_version=excluded.config_version,
+                  credential_version=excluded.credential_version,
                   updated_at=excluded.updated_at
                 """,
-                (provider_id, now),
+                (provider_id, config_version, credential_version, now),
             )
             connection.execute(
                 """
@@ -1169,21 +1480,48 @@ class ThesisLedgerControlStore:
     def save_provider_config(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         request_id = _request_id(payload.get("requestId"))
         provider_id = _validate_provider_id(provider_id, request_id)
-        enabled = payload.get("enabled", True)
-        if not isinstance(enabled, bool):
+        try:
+            validate_config_patch_keys(payload)
+        except ValueError as exc:
+            raise ControlContractError(
+                "INVALID_PROVIDER_CONFIG",
+                str(exc),
+                request_id=request_id,
+            ) from exc
+        enabled_provided = "enabled" in payload
+        enabled_value = payload.get("enabled")
+        if enabled_provided and not isinstance(enabled_value, bool):
             raise ControlContractError(
                 "INVALID_PROVIDER_CONFIG",
                 "Provider enabled 必须是布尔值",
                 request_id=request_id,
             )
-        settings = payload.get("settings", {})
-        if not isinstance(settings, dict):
+        settings_provided = "settings" in payload
+        settings_value = payload.get("settings")
+        if settings_provided and not isinstance(settings_value, dict):
             raise ControlContractError(
                 "INVALID_PROVIDER_CONFIG",
                 "Provider settings 必须是对象",
                 request_id=request_id,
             )
         credential = payload.get("credential")
+        credentials_provided = "credentials" in payload
+        credential_patch = None
+        if credentials_provided:
+            try:
+                credential_patch = parse_credential_patch(provider_id, payload["credentials"])
+            except ValueError as exc:
+                raise ControlContractError(
+                    "INVALID_PROVIDER_CREDENTIALS",
+                    str(exc),
+                    request_id=request_id,
+                ) from exc
+            if "credential" in payload:
+                raise ControlContractError(
+                    "INVALID_PROVIDER_CREDENTIALS",
+                    "credential 与 credentials 不能同时提交",
+                    request_id=request_id,
+                )
         clear_credentials = payload.get("clearCredentials", False)
         if not isinstance(clear_credentials, bool):
             raise ControlContractError(
@@ -1191,73 +1529,166 @@ class ThesisLedgerControlStore:
                 "clearCredentials 必须是布尔值",
                 request_id=request_id,
             )
-        encrypted: str | None | object = object()
-        key_version: str | None | object = object()
-        if clear_credentials:
-            encrypted, key_version = None, None
-        elif credential is not None and str(credential).strip():
-            key_version, encrypted = _encrypt_secret(str(credential))
+        if clear_credentials and credentials_provided:
+            raise ControlContractError(
+                "INVALID_PROVIDER_CREDENTIALS",
+                "clearCredentials 不能与 credentials 同时提交",
+                request_id=request_id,
+            )
+        if clear_credentials and credential is not None and str(credential).strip():
+            raise ControlContractError(
+                "INVALID_PROVIDER_CREDENTIALS",
+                "clearCredentials 不能与 credential 同时提交",
+                request_id=request_id,
+            )
 
         with self._schema_lock, self._connect() as connection:
-            existing = connection.execute(
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                existing = connection.execute(
+                    "SELECT * FROM thesis_ledger_provider_config WHERE provider_id = ?",
+                    (provider_id,),
+                ).fetchone()
+                if enabled_provided:
+                    enabled = enabled_value
+                elif existing is not None:
+                    enabled = bool(existing["enabled"])
+                else:
+                    enabled = True
+                if settings_provided:
+                    settings = settings_value
+                elif existing is not None:
+                    settings = _json_load(existing["settings_json"], {})
+                else:
+                    settings = {}
+                existing_encrypted = existing["credential_ciphertext"] if existing else None
+                existing_key_version = existing["secret_key_version"] if existing else None
+                existing_credential: CredentialValue | None = None
+                credential_value_update = credentials_provided or (
+                    credential is not None and str(credential).strip()
+                )
+                if existing_encrypted and credential_value_update:
+                    try:
+                        decoded_credential = decode_credential_plaintext(
+                            _decrypt_secret(str(existing_key_version or ""), str(existing_encrypted))
+                        )
+                        validate_stored_credential(provider_id, decoded_credential)
+                        existing_credential = decoded_credential
+                    except (ControlContractError, ValueError) as exc:
+                        if not clear_credentials:
+                            if isinstance(exc, ControlContractError):
+                                raise
+                            raise ControlContractError(
+                                "SECRET_CREDENTIAL_INVALID",
+                                "Provider 凭证密文格式无效",
+                                request_id=request_id,
+                            ) from exc
+                encrypted = existing_encrypted
+                key_version = existing_key_version
+                credential_changed = False
+                if clear_credentials:
+                    encrypted, key_version = None, None
+                    credential_changed = True
+                elif credentials_provided and credential_patch is not None:
+                    try:
+                        merged = merge_credential_patch(
+                            provider_id,
+                            credential_patch,
+                            existing_credential,
+                        )
+                    except ValueError as exc:
+                        raise ControlContractError(
+                            "INVALID_PROVIDER_CREDENTIALS",
+                            str(exc),
+                            request_id=request_id,
+                        ) from exc
+                    credential_changed = existing_credential != merged
+                    if credential_changed:
+                        key_version, encrypted = _encrypt_secret(encode_credential_plaintext(merged))
+                elif credential is not None and str(credential).strip():
+                    legacy_value = str(credential).strip()
+                    credential_changed = not (
+                        existing_credential is not None
+                        and existing_credential.legacy
+                        and existing_credential.values == {}
+                        and _decrypt_secret(str(existing_key_version or ""), str(existing_encrypted))
+                        == legacy_value
+                    )
+                    if credential_changed:
+                        key_version, encrypted = _encrypt_secret(legacy_value)
+                current_config_version = int(existing["config_version"]) if existing else 0
+                current_credential_version = int(existing["credential_version"]) if existing else 0
+                config_version = current_config_version + 1
+                credential_version = current_credential_version + (1 if credential_changed else 0)
+                now = _utc_now()
+                connection.execute(
+                    """
+                    INSERT INTO thesis_ledger_provider_config
+                    (provider_id, enabled, settings_json, credential_ciphertext,
+                     secret_key_version, config_version, credential_version, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(provider_id) DO UPDATE SET
+                      enabled=excluded.enabled,
+                      settings_json=excluded.settings_json,
+                      credential_ciphertext=excluded.credential_ciphertext,
+                      secret_key_version=excluded.secret_key_version,
+                      config_version=excluded.config_version,
+                      credential_version=excluded.credential_version,
+                      updated_at=excluded.updated_at
+                    """,
+                    (
+                        provider_id,
+                        int(enabled),
+                        _json(settings),
+                        encrypted,
+                        key_version,
+                        config_version,
+                        credential_version,
+                        now,
+                    ),
+                )
+                connection.execute(
+                    "DELETE FROM thesis_ledger_provider_tombstone WHERE provider_id = ?",
+                    (provider_id,),
+                )
+                current = self._current_state(connection)
+                effective = _json_load(current["effective_json"], {}) if current else {}
+                if current:
+                    policy = {
+                        "revision": int(current["revision"]),
+                        "enabled": bool(current["enabled"]),
+                        "routes": _json_load(current["routes_json"], {}),
+                    }
+                    effective = self._effective(connection, policy)
+                    connection.execute(
+                        "UPDATE thesis_ledger_policy_state SET effective_json=?, updated_at=? WHERE consumer=?",
+                        (_json(effective), now, CONSUMER_NAMESPACE),
+                    )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+
+            saved_row = connection.execute(
                 "SELECT * FROM thesis_ledger_provider_config WHERE provider_id = ?",
                 (provider_id,),
             ).fetchone()
-            if encrypted.__class__ is object:
-                encrypted = existing["credential_ciphertext"] if existing else None
-                key_version = existing["secret_key_version"] if existing else None
-            now = _utc_now()
-            connection.execute(
-                """
-                INSERT INTO thesis_ledger_provider_config
-                (provider_id, enabled, settings_json, credential_ciphertext,
-                 secret_key_version, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(provider_id) DO UPDATE SET
-                  enabled=excluded.enabled,
-                  settings_json=excluded.settings_json,
-                  credential_ciphertext=excluded.credential_ciphertext,
-                  secret_key_version=excluded.secret_key_version,
-                  updated_at=excluded.updated_at
-                """,
-                (
-                    provider_id,
-                    int(enabled),
-                    _json(settings),
-                    encrypted,
-                    key_version,
-                    now,
-                ),
+            credential_source, credential_fields, credential_configured, credential_method = _credential_state(
+                PROVIDER_MANIFESTS[provider_id], saved_row
             )
-            connection.execute(
-                "DELETE FROM thesis_ledger_provider_tombstone WHERE provider_id = ?",
-                (provider_id,),
-            )
-            current = self._current_state(connection)
-            effective = _json_load(current["effective_json"], {}) if current else {}
-            if current:
-                policy = {
-                    "revision": int(current["revision"]),
-                    "enabled": bool(current["enabled"]),
-                    "routes": _json_load(current["routes_json"], {}),
-                }
-                effective = self._effective(connection, policy)
-                connection.execute(
-                    "UPDATE thesis_ledger_policy_state SET effective_json=?, updated_at=? WHERE consumer=?",
-                    (_json(effective), now, CONSUMER_NAMESPACE),
-                )
-            connection.commit()
             return {
                 "providerId": provider_id,
                 "enabled": enabled,
-                "configured": _provider_configured(
-                    PROVIDER_MANIFESTS[provider_id],
-                    connection.execute(
-                        "SELECT * FROM thesis_ledger_provider_config WHERE provider_id = ?",
-                        (provider_id,),
-                    ).fetchone(),
+                "configured": (
+                    True
+                    if not PROVIDER_MANIFESTS[provider_id].get("requiresCredential", False)
+                    else credential_configured
                 ),
-                "credentialConfigured": bool(encrypted),
+                "credentialConfigured": credential_configured,
+                "credentialSource": credential_source,
+                "credentialFieldsConfigured": credential_fields,
+                "credentialMethod": credential_method,
+                "configVersion": config_version,
                 "settings": settings,
                 "secretKeyVersion": key_version,
                 "updatedAt": now,

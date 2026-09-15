@@ -9,29 +9,45 @@ Markets: US only
 
 import logging
 import os
+from contextvars import ContextVar
 from datetime import datetime
 from typing import Optional
 
 import pandas as pd
 import requests
 
-from .base import BaseFetcher, DataFetchError, STANDARD_COLUMNS
+from .base import BaseFetcher, DataFetchError, ProviderHTTPError, STANDARD_COLUMNS
 from .realtime_types import UnifiedRealtimeQuote, RealtimeSource
 from .us_index_mapping import is_us_stock_code
 
 logger = logging.getLogger(__name__)
 
 _FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
+_STRICT_PROBE: ContextVar[bool] = ContextVar("finnhub_strict_probe", default=False)
+_STRICT_PROBE_TIMEOUT_SECONDS = 5
+
+
+def _strict_request_error(error: Exception) -> ProviderHTTPError:
+    response = getattr(error, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if status_code is not None:
+        return ProviderHTTPError("Finnhub", int(status_code))
+    reason = "timeout" if isinstance(error, requests.Timeout) else "network_failure"
+    return ProviderHTTPError("Finnhub", reason=reason)
 
 
 class FinnhubFetcher(BaseFetcher):
     name = "FinnhubFetcher"
     priority = 2
 
-    def __init__(self):
-        from src.config import get_config
-        config = get_config()
-        self._api_key = getattr(config, 'finnhub_api_key', None) or os.getenv('FINNHUB_API_KEY')
+    def __init__(self, api_key: Optional[str] = None, *, strict_errors: bool = False):
+        if api_key is None:
+            from src.config import get_config
+
+            config = get_config()
+            api_key = getattr(config, "finnhub_api_key", None) or os.getenv("FINNHUB_API_KEY")
+        self._api_key = (api_key or "").strip()
+        self._strict_errors = bool(strict_errors)
         if not self._api_key:
             logger.debug("[Finnhub] API key not configured, fetcher disabled")
 
@@ -59,10 +75,17 @@ class FinnhubFetcher(BaseFetcher):
 
         try:
             self.random_sleep(0.3, 0.8)
-            resp = requests.get(url, params=params, timeout=15)
+            timeout = _STRICT_PROBE_TIMEOUT_SECONDS if _STRICT_PROBE.get() else 15
+            resp = requests.get(url, params=params, timeout=timeout)
             resp.raise_for_status()
             data = resp.json()
+        except requests.RequestException as e:
+            if _STRICT_PROBE.get() or self._strict_errors:
+                raise _strict_request_error(e) from None
+            raise DataFetchError(f"[Finnhub] HTTP request failed for {symbol}: {e}") from e
         except Exception as e:
+            if _STRICT_PROBE.get() or self._strict_errors:
+                raise ProviderHTTPError("Finnhub", reason="invalid_response") from None
             raise DataFetchError(f"[Finnhub] HTTP request failed for {symbol}: {e}") from e
 
         if data.get('s') != 'ok' or not data.get('c'):
@@ -76,6 +99,21 @@ class FinnhubFetcher(BaseFetcher):
             't': data['t'],
             'v': data['v'],
         })
+
+    def get_daily_data(
+        self,
+        stock_code: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        days: int = 30,
+        *,
+        strict: bool = False,
+    ) -> pd.DataFrame:
+        token = _STRICT_PROBE.set(strict or self._strict_errors)
+        try:
+            return super().get_daily_data(stock_code, start_date, end_date, days)
+        finally:
+            _STRICT_PROBE.reset(token)
 
     def _normalize_data(self, df: pd.DataFrame, stock_code: str) -> pd.DataFrame:
         if df.empty:
@@ -96,7 +134,12 @@ class FinnhubFetcher(BaseFetcher):
         df = df[[col for col in keep if col in df.columns]]
         return df
 
-    def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
+    def get_realtime_quote(
+        self,
+        stock_code: str,
+        *,
+        strict: bool = False,
+    ) -> Optional[UnifiedRealtimeQuote]:
         if not self._api_key or not self._is_us_stock(stock_code):
             return None
 
@@ -106,11 +149,13 @@ class FinnhubFetcher(BaseFetcher):
             resp = requests.get(
                 f"{_FINNHUB_BASE_URL}/quote",
                 params={'symbol': symbol, 'token': self._api_key},
-                timeout=15,
+                timeout=5 if strict or self._strict_errors else 15,
             )
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
+            if strict or self._strict_errors:
+                raise _strict_request_error(e) from None
             logger.warning(f"[Finnhub] Realtime quote failed for {symbol}: {e}")
             return None
 

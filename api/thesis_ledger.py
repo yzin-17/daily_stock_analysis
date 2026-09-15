@@ -28,6 +28,8 @@ from src.services.thesis_ledger_control import (
     ControlContractError,
     ThesisLedgerControlStore,
 )
+from src.services.provider_credentials import CredentialValue, merge_credential_patch, parse_credential_patch
+from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
 from src.services.thesis_ledger_v2_dependencies import (
     V2DependencyError,
     calendar_fact,
@@ -2033,9 +2035,44 @@ def control_provider_test(
                 f"Provider {provider_id} 不存在",
                 request_id=str(value.get("requestId") or ""),
             )
-        ephemeral_configured = bool(str(value.get("credential") or "").strip())
+        store = _control_store()
+        draft_snapshot = store.provider_credential_snapshot(provider["providerId"])
+        if "credentials" in value:
+            try:
+                patch = parse_credential_patch(provider["providerId"], value["credentials"])
+                existing = None
+                if (
+                    draft_snapshot.source == "control"
+                    and draft_snapshot.method == patch.method
+                    and draft_snapshot.values
+                ):
+                    existing = CredentialValue(
+                        method=draft_snapshot.method,
+                        values=dict(draft_snapshot.values),
+                    )
+                merged = merge_credential_patch(provider["providerId"], patch, existing)
+            except ValueError as exc:
+                raise ControlContractError(
+                    "INVALID_PROVIDER_CREDENTIALS",
+                    str(exc),
+                    request_id=str(value.get("requestId") or ""),
+                ) from exc
+            draft_snapshot = ProviderCredentialSnapshot.create(
+                provider["providerId"],
+                "control",
+                merged.method,
+                merged.values,
+                draft_snapshot.config_version,
+                draft_snapshot.credential_version,
+            )
+        elif str(value.get("credential") or "").strip():
+            raise ControlContractError(
+                "INVALID_PROVIDER_CREDENTIALS",
+                "test API 仅接受结构化 credentials 草稿",
+                request_id=str(value.get("requestId") or ""),
+            )
         credential_configured = bool(
-            provider["credentialConfigured"] or ephemeral_configured
+            draft_snapshot.values or not provider["requiresCredential"]
         )
         configured = bool(provider["configured"] or credential_configured)
         if not configured:
@@ -2044,6 +2081,7 @@ def control_provider_test(
                     "status": "unconfigured",
                     "readOnly": True,
                     "attempted": False,
+                    "errorCode": "not_configured",
                 }
                 for capability in provider["capabilities"]
             }
@@ -2053,36 +2091,11 @@ def control_provider_test(
             for capability in provider["capabilities"]:
                 try:
                     if _fixture_mode():
-                        if capability == "REALTIME_QUOTE":
-                            _fixture_quote("600519.SH")
-                        elif capability == "DAILY_BAR":
-                            _fixture_bars("600519.SH")
-                        elif capability == "FUND_NAV":
-                            _fixture_fund_nav("000001.OF")
-                        elif capability == "FUND_NAV_HISTORY":
-                            from src.services.thesis_ledger_provider_runtime import (
-                                validate_fund_nav_history_rows,
-                            )
-
-                            history = _fixture_fund_nav_history("000001.OF", limit=5)
-                            validate_fund_nav_history_rows(
-                                [(row["navDate"], row["unitNav"]) for row in history]
-                            )
-                        elif capability == "FUND_HOLDINGS":
-                            _fixture_fund_holdings("000001.OF")
-                        elif capability == "CHIP_SUMMARY":
-                            _fixture_chip("600519.SH")
-                        else:
-                            raise ControlContractError(
-                                "UNSUPPORTED_CAPABILITY",
-                                f"Capability {capability} 不支持",
-                                request_id=str(value.get("requestId") or ""),
-                            )
                         capability_results[capability] = {
-                            "status": "healthy",
+                            "status": "unavailable",
                             "readOnly": True,
-                            "attempted": True,
-                            "source": "fixture",
+                            "attempted": False,
+                            "errorCode": "fixture_mode",
                         }
                     else:
                         from src.services.thesis_ledger_provider_runtime import (
@@ -2090,7 +2103,10 @@ def control_provider_test(
                         )
 
                         capability_results[capability] = get_thesis_ledger_runtime().smoke(
-                            provider["providerId"], capability
+                            provider["providerId"],
+                            capability,
+                            credential_snapshot=draft_snapshot,
+                            draft_probe="credentials" in value,
                         )
                 except ControlContractError:
                     raise

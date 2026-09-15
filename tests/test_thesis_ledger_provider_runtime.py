@@ -1,5 +1,7 @@
 """ThesisLedger Provider runtime 的 fallback 与序列来源回归。"""
 
+import json
+import logging
 from dataclasses import dataclass
 
 import pytest
@@ -87,6 +89,11 @@ def _quote_routes():
     return {"REALTIME_QUOTE": {"STOCK": ["akshare", "efinance"]}}
 
 
+def _etf_quote_routes():
+    """返回 ETF Quote 的期望策略 route（Effective Policy 会过滤不安全候选）。"""
+    return {"REALTIME_QUOTE": {"ETF": ["akshare", "efinance"]}}
+
+
 def _bar_routes():
     """返回 Daily Bar 测试用 route。"""
     return {"DAILY_BAR": {"STOCK": ["akshare", "efinance"]}}
@@ -100,6 +107,17 @@ def _chip_routes():
 def _fund_holdings_routes():
     """返回基金持仓披露测试用 route。"""
     return {"FUND_HOLDINGS": {"MUTUAL_FUND": ["akshare"]}}
+
+
+def _quote_log_events(caplog, request_id):
+    """读取指定请求的结构化 Quote 事件，不混入其他 runtime 日志。"""
+    return [
+        json.loads(record.getMessage())
+        for record in caplog.records
+        if record.name == "src.services.thesis_ledger_provider_runtime"
+        and record.getMessage().startswith('{"event":"thesis_ledger.quote"')
+        and json.loads(record.getMessage()).get("requestId") == request_id
+    ]
 
 
 def test_provider_registry_exposes_all_dsa_fetchers_for_routing(tmp_path):
@@ -365,6 +383,180 @@ def test_quote_retries_transient_primary_once_then_uses_one_complete_fallback(tm
     assert primary.calls == 2
     assert fallback.calls == 1
     assert fallback.symbols == ["600519"]
+
+
+def test_etf_effective_policy_excludes_akshare_but_preserves_desired_route(tmp_path):
+    """AkShare ETF 全市场能力保留在 Desired Policy，不能进入 Effective route。"""
+    store = _store(tmp_path, _etf_quote_routes())
+
+    effective = store.effective_policy()
+    status = effective["routeStatus"]["REALTIME_QUOTE"]["ETF"]
+
+    assert effective["routes"]["REALTIME_QUOTE"]["ETF"] == ["akshare", "efinance"]
+    assert status["eligibleProviderIds"] == ["efinance"]
+    akshare = next(item for item in status["providers"] if item["providerId"] == "akshare")
+    assert akshare["available"] is False
+    assert akshare["eligible"] is False
+    assert akshare["reason"] == "single_symbol_adapter_unavailable"
+
+
+def test_etf_quote_uses_single_adapter_once_and_persists_cooldown_after_reopen(tmp_path, caplog):
+    """ETF Quote 只调用单标 adapter，资格记录跨 store 重开仍生效。"""
+
+    class _SingleSymbolAdapter:
+        calls = 0
+        full_market_calls = 0
+
+        def get_realtime_quote_single_symbol(self, symbol):
+            self.calls += 1
+            assert symbol == "510300"
+            return _Quote()
+
+        def get_realtime_quote(self, _symbol):
+            self.full_market_calls += 1
+            raise AssertionError("ETF ThesisLedger 路径不得调用 generic/full-market adapter")
+
+    database_path = str(tmp_path / "stock_analysis.db")
+    adapter = _SingleSymbolAdapter()
+    first_runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, _etf_quote_routes()),
+        adapters={"efinance": adapter, "akshare": object()},
+    )
+    with caplog.at_level(logging.INFO, logger="src.services.thesis_ledger_provider_runtime"):
+        result = first_runtime.execute_request(
+            ThesisLedgerDataRequest("REALTIME_QUOTE", "510300.SH", request_id="etf-1")
+        )
+    assert result.provider == "efinance"
+    assert result.route == ("efinance",)
+    assert adapter.calls == 1
+    assert adapter.full_market_calls == 0
+    first_events = _quote_log_events(caplog, "etf-1")
+    assert [event["stage"] for event in first_events] == [
+        "provider-call",
+        "provider-call",
+    ]
+    assert first_events[0]["status"] == "started"
+    assert first_events[1]["status"] == "success"
+    assert first_events[1]["durationMs"] >= 0
+    assert first_events[1]["provider"] == "efinance"
+    assert first_events[1]["symbol"] == "510300.SH"
+
+    reopened = ThesisLedgerControlStore(database_path)
+    second_runtime = ThesisLedgerProviderRuntime(
+        reopened,
+        adapters={"efinance": adapter, "akshare": object()},
+    )
+    with caplog.at_level(logging.INFO, logger="src.services.thesis_ledger_provider_runtime"):
+        with pytest.raises(ThesisLedgerGatewayError) as raised:
+            second_runtime.execute_request(
+                ThesisLedgerDataRequest("REALTIME_QUOTE", "510300.SH", request_id="etf-2")
+            )
+
+    assert raised.value.code == "request_budget_cooldown"
+    assert raised.value.detail()["diagnostics"]["budgetSeconds"] == 600
+    assert raised.value.detail()["diagnostics"]["provider"] == "efinance"
+    assert adapter.calls == 1
+    assert adapter.full_market_calls == 0
+    cooldown_events = _quote_log_events(caplog, "etf-2")
+    assert cooldown_events[0]["stage"] == "provider-qualification"
+    assert cooldown_events[0]["status"] == "rejected"
+    assert cooldown_events[0]["errorCode"] == "request_budget_cooldown"
+    assert cooldown_events[0]["provider"] == "efinance"
+    assert cooldown_events[0]["durationMs"] >= 0
+
+
+def test_quote_no_eligible_provider_logs_request_and_does_not_call_adapter(tmp_path, caplog):
+    """Quote 无 eligible Provider 时记录 request identity 且不进入适配器。"""
+    runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, {"REALTIME_QUOTE": {"STOCK": []}}),
+        adapters={"akshare": object(), "efinance": object()},
+    )
+
+    with caplog.at_level(logging.INFO, logger="src.services.thesis_ledger_provider_runtime"):
+        with pytest.raises(ThesisLedgerGatewayError) as raised:
+            runtime.execute_request(
+                ThesisLedgerDataRequest("REALTIME_QUOTE", "600519.SH", request_id="quote-no-route")
+            )
+
+    assert raised.value.code == "NO_ELIGIBLE_PROVIDER"
+    assert _quote_log_events(caplog, "quote-no-route") == [
+        {
+            "durationMs": pytest.approx(0, abs=100),
+            "errorCode": "NO_ELIGIBLE_PROVIDER",
+            "event": "thesis_ledger.quote",
+            "instrumentType": "STOCK",
+            "providers": [],
+            "requestId": "quote-no-route",
+            "stage": "provider-selection",
+            "status": "rejected",
+            "symbol": "600519.SH",
+            "traceId": "quote-no-route",
+        }
+    ]
+
+
+def test_etf_quote_failure_has_no_retry_or_universe_fallback(tmp_path, caplog):
+    """ETF 单标失败时每个有效 Provider 最多一次，且 universe 调用恒为零。"""
+
+    class _FailingSingleAdapter:
+        single_calls = 0
+        full_market_calls = 0
+
+        def get_realtime_quote_single_symbol(self, _symbol):
+            self.single_calls += 1
+            raise TimeoutError("controlled timeout")
+
+        def get_realtime_quote(self, _symbol):
+            self.full_market_calls += 1
+            raise AssertionError("不得回退 generic/full-market ETF 请求")
+
+    adapter = _FailingSingleAdapter()
+    runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, _etf_quote_routes()),
+        adapters={"efinance": adapter, "akshare": object()},
+    )
+
+    with caplog.at_level(logging.INFO, logger="src.services.thesis_ledger_provider_runtime"):
+        with pytest.raises(ThesisLedgerGatewayError) as raised:
+            runtime.execute_request(
+                ThesisLedgerDataRequest("REALTIME_QUOTE", "510300.SH", request_id="etf-fail")
+            )
+
+    assert raised.value.code == "transient_failure"
+    assert adapter.single_calls == 1
+    assert adapter.full_market_calls == 0
+    failure_events = _quote_log_events(caplog, "etf-fail")
+    assert [event["status"] for event in failure_events] == ["started", "failure"]
+    assert failure_events[1]["errorCode"] == "transient_failure"
+    assert failure_events[1]["provider"] == "efinance"
+    assert failure_events[1]["durationMs"] >= 0
+
+
+def test_confirmed_generic_yfinance_etf_adapter_remains_single_symbol_allowlisted(tmp_path):
+    """已核对的 yfinance 实现可走 generic 单标方法。"""
+    provider_id = "yfinance"
+
+    class _SingleSymbolAdapter:
+        calls = []
+
+        def get_realtime_quote(self, symbol):
+            self.calls.append(symbol)
+            return _Quote()
+
+    adapter = _SingleSymbolAdapter()
+    runtime = ThesisLedgerProviderRuntime(
+        _store(tmp_path, {"REALTIME_QUOTE": {"ETF": [provider_id]}}),
+        adapters={provider_id: adapter},
+    )
+
+    result = runtime.execute_request(
+        ThesisLedgerDataRequest(
+            "REALTIME_QUOTE", "510300.SH", instrument_type="ETF", request_id=provider_id
+        )
+    )
+
+    assert result.provider == provider_id
+    assert adapter.calls == ["510300"]
 
 
 def test_quote_derives_missing_previous_close_from_change_amount(tmp_path):

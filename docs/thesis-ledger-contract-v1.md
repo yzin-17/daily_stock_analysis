@@ -46,7 +46,7 @@ Authorization: Bearer ${THESIS_LEDGER_CONTROL_TOKEN}
 - Provider registry 的 MVP 标识为 `akshare`、`efinance`，能力使用 `REALTIME_QUOTE`、`DAILY_BAR`、`FUND_NAV`、`FUND_NAV_HISTORY` 和 `CHIP_SUMMARY`；当前只有 `akshare` manifest 声明 `CHIP_SUMMARY + STOCK`，并按 `capability × instrumentType` 保存有序路由。
 - Provider 凭证写入 DSA SQLite 的加密字段；响应只返回 `configured`、`credentialConfigured`、健康和能力状态，不回显凭证。空凭证保存表示保留旧值，显式 `clearCredentials` 才会清除。
 - Provider test 是只读、逐 Capability 的有界 smoke：fixture 模式调用确定性 fixture，非 fixture 模式调用对应 Provider 适配器，并写入 scoped health；只返回每项状态和稳定错误码，不返回原始异常或临时凭证。
-- Policy Apply 要求单调递增 `revision`。同一 revision 的相同请求幂等，内容冲突或旧 revision 拒绝；DSA 先原子写入 Desired/Effective projection，再按当前配置计算每条路由的 eligible Provider。
+- Policy Apply 要求单调递增 `revision`。同一 revision 的相同请求幂等，内容冲突或旧 revision 拒绝；DSA 先原子写入 Desired/Effective projection，再按当前配置和实际单标适配能力计算每条路由的 eligible Provider。Desired Policy/Provider manifest 记录用户期望能力；Effective Policy 必须反映当前可执行能力，不能把不安全的全市场函数伪装成单标能力。
 - Provider fallback 只在同一 capability 的有序候选内发生。Quote/NAV 是 record-level，Bars/NAV history 是 sequence-level，`CHIP_SUMMARY` 是摘要级；响应保留实际 `provider` 和 `fallbackUsed`，不使用 `provider=CACHE`。Indicator 只能继承统一 gateway 的 `DAILY_BAR` 输入来源，不调用 DSA native `DataFetcherManager`。
 - Catalog 通过完整快照或带 cursor 的 delta 传输，使用 `generation`、`checksum`、`cursor` 和持久化 ACK。ThesisLedger 只有校验完整快照，或原子应用 delta 并重算完整 checksum 后，才切换本地目录状态；cursor 过期时回退到完整快照。
 - Catalog trigger 只创建或复用 `pending`/`running` Job 并快速返回；Provider 抓取由 DSA worker 异步执行。调用方通过受 Control Token 保护的 Job status 查询观察 `pending`、`running`、`succeeded`、`failed` 和 `timeout`，只有 `succeeded` 才允许 ACK 新 generation。
@@ -54,11 +54,12 @@ Authorization: Bearer ${THESIS_LEDGER_CONTROL_TOKEN}
 ## 运行时与持久化边界
 
 - DSA 原生分析继续使用既有 Provider 配置和 fallback；ThesisLedger consumer 只使用 Control Contract 的 Effective Policy，不读取原生默认优先级。
-- DSA 的 ThesisLedger Policy、ProviderConfig、健康与 Catalog generation 存在独立 SQLite 文件中，生产路径由 `DATABASE_PATH` 指定，并挂载独立持久化卷。
+- DSA 的 ThesisLedger Policy、ProviderConfig、健康、Catalog generation 与 Provider 请求资格存在独立 SQLite 文件中，生产路径由 `DATABASE_PATH` 指定，并挂载独立持久化卷。ETF `REALTIME_QUOTE` 资格键为 `provider + capability + instrumentType + symbol`，默认最短冷却 600 秒；资格在实际上游调用前原子登记，显式刷新不能绕过，进程重启后仍生效。
 - ThesisLedger PostgreSQL 保存 Desired Policy、目录 Instrument、Asset 关联和产品缓存；Desktop 的 `/market-data` 是完整配置入口，Mobile 不提供配置或写入入口。
 
 ## 能力边界
 
+- Quote V1 的 ETF 单标请求只能使用已确认的单标适配器：efinance 使用 `get_quote_snapshot(symbol)`；当前 AkShare ETF 全市场接口不属于 Effective Policy 的可执行能力，单标失败保持 unavailable，不回退全市场。yfinance 与 Longbridge 当前实现按单标调用，其他新增 ETF Provider 必须先声明并验证单标适配器。
 - Fund NAV V1 接受 .OF 场外基金代码，返回单位净值、净值日期、provider 和 delayed/stale/unavailable freshness；该净值只作为估值输入，不作为截图审核结果。
 - Bars V1 只支持 `1d`；`1m` 返回 `unsupported_capability`。
 - 指标支持 MA、MACD、RSI；ATR 返回 `unsupported_capability`。

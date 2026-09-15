@@ -765,12 +765,33 @@ class EfinanceFetcher(BaseFetcher):
             )
         return quote
     
+    def get_realtime_quote_single_symbol(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
+        """获取一只标的的实时行情，不得扩大为全市场请求。
+
+        ThesisLedger 的单标边界使用这个显式 adapter seam。快照接口缺失、
+        返回空值或抛错都由调用方按 unavailable 处理；这里绝不调用全市场
+        ``get_realtime_quotes``。
+        """
+        if not _is_etf_code(stock_code):
+            return self.get_realtime_quote(stock_code)
+        circuit_breaker = get_realtime_circuit_breaker()
+        try:
+            snapshot_quote = self._get_realtime_snapshot_quote(stock_code)
+        except Exception as exc:
+            logger.info("[API错误] efinance ETF 单标的实时行情失败: %s", exc)
+            circuit_breaker.record_failure("efinance_etf", str(exc))
+            return None
+        if snapshot_quote is not None:
+            circuit_breaker.record_success("efinance_etf")
+        return snapshot_quote
+
     def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
         """
         获取实时行情数据
         
-        数据来源：优先使用 efinance 单标的快照；失败后再使用全市场接口。
-        ETF 兜底数据源：ef.stock.get_realtime_quotes(['ETF'])
+        股票数据来源：优先使用 efinance 单标的快照；失败后再使用全市场接口。
+        ETF 仅返回单标的快照结果；全市场 ETF helper 只供非 ThesisLedger 批量
+        入口使用，不能从本方法的 ETF 路径到达。
         
         Args:
             stock_code: 股票代码
@@ -778,22 +799,10 @@ class EfinanceFetcher(BaseFetcher):
         Returns:
             UnifiedRealtimeQuote 对象，获取失败返回 None
         """
-        # efinance 0.5.9 的单标的快照接口也支持 A 股 ETF；优先走该接口，
-        # 避免每次进入 efinance fallback 都触发全量 ETF 快照。
+        # efinance 0.5.9 的单标的快照接口也支持 A 股 ETF。ETF 单标路径
+        # fail-closed，禁止通过全市场接口伪装成功。
         if _is_etf_code(stock_code):
-            circuit_breaker = get_realtime_circuit_breaker()
-            try:
-                snapshot_quote = self._get_realtime_snapshot_quote(stock_code)
-            except Exception as exc:
-                logger.info(
-                    "[API错误] efinance ETF 单标的实时行情失败，回退全量 ETF 接口: %s",
-                    exc,
-                )
-                snapshot_quote = None
-            if snapshot_quote is not None:
-                circuit_breaker.record_success("efinance_etf")
-                return snapshot_quote
-            return self._get_etf_realtime_quote(stock_code)
+            return self.get_realtime_quote_single_symbol(stock_code)
 
         import efinance as ef
         circuit_breaker = get_realtime_circuit_breaker()

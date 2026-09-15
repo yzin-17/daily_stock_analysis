@@ -317,6 +317,23 @@ class DataFetchError(Exception):
     pass
 
 
+class ProviderHTTPError(DataFetchError):
+    """保留可分类 HTTP 状态的安全上游异常，不携带 URL 或请求凭证。"""
+
+    def __init__(
+        self,
+        provider: str,
+        status_code: int | None = None,
+        *,
+        reason: str = "network_failure",
+    ) -> None:
+        self.provider = provider
+        self.status_code = status_code
+        self.error_kind = reason
+        detail = f"HTTP {status_code}" if status_code is not None else reason
+        super().__init__(f"[{provider}] {detail}")
+
+
 class RateLimitError(DataFetchError):
     """API 速率限制异常"""
     pass
@@ -520,6 +537,12 @@ class BaseFetcher(ABC):
             
         except Exception as e:
             elapsed = time.time() - request_start
+            if isinstance(e, ProviderHTTPError):
+                logger.error(
+                    f"[{self.name}] {stock_code} 获取失败: "
+                    f"error_type={type(e).__name__}, elapsed={elapsed:.2f}s, reason={e}"
+                )
+                raise
             error_type, error_reason = summarize_exception(e)
             logger.error(
                 f"[{self.name}] {stock_code} 获取失败: 范围={start_date} ~ {end_date}, "

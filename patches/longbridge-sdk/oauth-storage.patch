@@ -1,0 +1,910 @@
+diff --git a/python/pyproject.toml b/python/pyproject.toml
+index 1ad0765..148039e 100644
+--- a/python/pyproject.toml
++++ b/python/pyproject.toml
+@@ -1,6 +1,6 @@
+ [project]
+ name = "longbridge"
+-dynamic = ["version"]
++version = "4.5.0+thesisledger.1"
+ classifiers = [
+     "Development Status :: 3 - Alpha",
+     "Intended Audience :: Developers",
+diff --git a/python/pysrc/longbridge/openapi.pyi b/python/pysrc/longbridge/openapi.pyi
+index 31a9c1d..514f2c0 100644
+--- a/python/pysrc/longbridge/openapi.pyi
++++ b/python/pysrc/longbridge/openapi.pyi
+@@ -238,7 +238,12 @@ class OAuthBuilder:
+         asyncio.run(main())
+     """
+ 
+-    def __init__(self, client_id: str, callback_port: Optional[int] = None) -> None: ...
++    THESIS_LEDGER_STORAGE_VERSION: int
++    def __init__(self, client_id: str, callback_port: Optional[int] = None, *,
++                 token_json: Optional[str] = None,
++                 on_token_save: Optional[Callable[[str], None]] = None,
++                 callback_host: str = "127.0.0.1", allow_authorization: bool = True,
++                 authorization_timeout_secs: int = 300) -> None: ...
+     def build(self, on_open_url: Callable[[str], None]) -> OAuth:
+         """
+         Build an OAuth 2.0 client (blocking).
+diff --git a/python/src/oauth.rs b/python/src/oauth.rs
+index e00b4c7..9a505de 100644
+--- a/python/src/oauth.rs
++++ b/python/src/oauth.rs
+@@ -1,120 +1,190 @@
+-use longbridge::oauth::{OAuthBuilder as CoreOAuthBuilder, OAuthError};
+-use pyo3::prelude::*;
+-
+ use crate::error::ErrorNewType;
++use longbridge::oauth::{
++    OAuthBuilder as CoreOAuthBuilder, OAuthError, OAuthResult, StoredToken, TokenStorage,
++};
++use pyo3::{exceptions::PyValueError, prelude::*};
+ 
+ fn oauth_err(e: OAuthError) -> PyErr {
+     ErrorNewType(longbridge::Error::OAuth(e.to_string())).into()
+ }
+ 
+-/// OAuth 2.0 client handle for Longbridge OpenAPI
+-///
+-/// Obtain an instance via :meth:`OAuthBuilder.build` (blocking) or
+-/// :meth:`OAuthBuilder.build_async` (async).  Pass it to
+-/// :meth:`Config.from_oauth` or :meth:`HttpClient.from_oauth`.
++/// OAuth 2.0 client handle for Longbridge OpenAPI.
+ #[pyclass(name = "OAuth")]
+ pub(crate) struct OAuth(pub(crate) longbridge::oauth::OAuth);
+ 
+-/// Builder for the OAuth 2.0 authorization flow
+-///
+-/// Args:
+-///     client_id: OAuth 2.0 client ID from the Longbridge developer portal
+-///     callback_port: TCP port for the local callback server (default 60355).
+-///         Must match one of the redirect URIs registered for the client.
+-///
+-/// Example (blocking)::
+-///
+-///     from longbridge.openapi import OAuthBuilder, Config
+-///
+-///     oauth = OAuthBuilder("your-client-id").build(
+-///         lambda url: print("Open:", url)
+-///     )
+-///     config = Config.from_oauth(oauth)
+-///
+-/// Example (async)::
+-///
+-///     import asyncio
+-///     from longbridge.openapi import OAuthBuilder, Config
+-///
+-///     async def main():
+-///         oauth = await OAuthBuilder("your-client-id").build_async(
+-///             lambda url: print("Open:", url)
+-///         )
+-///         config = Config.from_oauth(oauth)
+-///
+-///     asyncio.run(main())
++struct PythonTokenStorage {
++    initial: Option<StoredToken>,
++    save: Py<PyAny>,
++}
++
++impl TokenStorage for PythonTokenStorage {
++    fn load(&self, client_id: &str) -> Option<StoredToken> {
++        self.initial
++            .clone()
++            .filter(|token| token.client_id == client_id)
++    }
++
++    fn save(&self, token: &StoredToken) -> OAuthResult<()> {
++        let value = serde_json::json!({
++            "client_id": token.client_id,
++            "access_token": token.access_token,
++            "refresh_token": token.refresh_token,
++            "expires_at": token.expires_at,
++        })
++        .to_string();
++        Python::attach(|py| {
++            self.save
++                .call1(py, (value,))
++                .map(|_| ())
++                .map_err(|_| OAuthError::Other("OAuth credential persistence failed".to_string()))
++        })
++    }
++}
++
++fn parse_token(client_id: &str, raw: &str) -> PyResult<StoredToken> {
++    let invalid = || PyValueError::new_err("Invalid OAuth token payload");
++    let value: serde_json::Value = serde_json::from_str(raw).map_err(|_| invalid())?;
++    let id = value
++        .get("client_id")
++        .and_then(|v| v.as_str())
++        .ok_or_else(invalid)?;
++    let access = value
++        .get("access_token")
++        .and_then(|v| v.as_str())
++        .ok_or_else(invalid)?;
++    let expires = value
++        .get("expires_at")
++        .and_then(|v| v.as_u64())
++        .ok_or_else(invalid)?;
++    let refresh = match value.get("refresh_token") {
++        None | Some(serde_json::Value::Null) => None,
++        Some(serde_json::Value::String(value)) if !value.is_empty() => Some(value.clone()),
++        _ => return Err(invalid()),
++    };
++    if id != client_id || access.is_empty() {
++        return Err(invalid());
++    }
++    Ok(StoredToken {
++        client_id: id.to_string(),
++        access_token: access.to_string(),
++        refresh_token: refresh,
++        expires_at: expires,
++    })
++}
++
++/// OAuth builder with optional application-owned token persistence.
++/// Supplying on_token_save completely replaces the SDK file cache.
++/// token_json is an optional pre-decrypted snapshot. Persistence failures abort.
+ #[pyclass(name = "OAuthBuilder")]
+ pub(crate) struct OAuthBuilder {
+     client_id: String,
+     callback_port: Option<u16>,
++    callback_host: String,
++    allow_authorization: bool,
++    authorization_timeout_secs: u64,
++    initial_token: Option<StoredToken>,
++    on_token_save: Option<Py<PyAny>>,
++}
++
++impl OAuthBuilder {
++    fn core(&self, py: Python<'_>) -> CoreOAuthBuilder {
++        let mut builder = CoreOAuthBuilder::new(self.client_id.clone())
++            .callback_host(self.callback_host.clone())
++            .allow_authorization(self.allow_authorization)
++            .authorization_timeout_secs(self.authorization_timeout_secs);
++        if let Some(port) = self.callback_port {
++            builder = builder.callback_port(port);
++        }
++        if let Some(save) = &self.on_token_save {
++            builder = builder.token_storage(PythonTokenStorage {
++                initial: self.initial_token.clone(),
++                save: save.clone_ref(py),
++            });
++        }
++        builder
++    }
+ }
+ 
+ #[pymethods]
+ impl OAuthBuilder {
++    #[classattr]
++    const THESIS_LEDGER_STORAGE_VERSION: u8 = 1;
++
+     #[new]
+-    #[pyo3(signature = (client_id, callback_port = None))]
+-    fn py_new(client_id: String, callback_port: Option<u16>) -> Self {
+-        Self {
++    #[pyo3(signature = (client_id, callback_port = None, *, token_json = None,
++        on_token_save = None, callback_host = "127.0.0.1", allow_authorization = true,
++        authorization_timeout_secs = 300))]
++    fn py_new(
++        py: Python<'_>,
++        client_id: String,
++        callback_port: Option<u16>,
++        token_json: Option<&str>,
++        on_token_save: Option<Py<PyAny>>,
++        callback_host: &str,
++        allow_authorization: bool,
++        authorization_timeout_secs: u64,
++    ) -> PyResult<Self> {
++        if !["127.0.0.1", "0.0.0.0"].contains(&callback_host)
++            || !(1..=600).contains(&authorization_timeout_secs)
++        {
++            return Err(PyValueError::new_err(
++                "Invalid OAuth listener configuration",
++            ));
++        }
++        if token_json.is_some() && on_token_save.is_none() {
++            return Err(PyValueError::new_err(
++                "Token snapshot requires a persistence callback",
++            ));
++        }
++        if on_token_save
++            .as_ref()
++            .is_some_and(|callback| !callback.bind(py).is_callable())
++        {
++            return Err(PyValueError::new_err(
++                "OAuth persistence callback must be callable",
++            ));
++        }
++        let initial_token = token_json
++            .map(|raw| parse_token(&client_id, raw))
++            .transpose()?;
++        Ok(Self {
+             client_id,
+             callback_port,
+-        }
++            callback_host: callback_host.to_string(),
++            allow_authorization,
++            authorization_timeout_secs,
++            initial_token,
++            on_token_save,
++        })
+     }
+ 
+-    /// Build an OAuth 2.0 client (blocking).
+-    ///
+-    /// If a valid token is already cached on disk
+-    /// (``~/.longbridge/openapi/tokens/<client_id>``) it is reused;
+-    /// otherwise the browser authorization flow is started and
+-    /// ``on_open_url`` is called with the authorization URL.
+-    ///
+-    /// Args:
+-    ///     on_open_url: Callable that receives the authorization URL as a
+-    ///         string.
+-    ///
+-    /// Returns:
+-    ///     :class:`OAuth` handle
+-    fn build(&self, on_open_url: Py<PyAny>) -> PyResult<OAuth> {
+-        let mut builder = CoreOAuthBuilder::new(self.client_id.clone());
+-        if let Some(port) = self.callback_port {
+-            builder = builder.callback_port(port);
+-        }
+-        tokio::runtime::Runtime::new()
+-            .unwrap()
+-            .block_on(async move {
+-                builder
+-                    .build(move |url| {
+-                        Python::attach(|py| {
+-                            let _ = on_open_url.call1(py, (url,));
+-                        });
+-                    })
+-                    .await
+-                    .map(OAuth)
+-                    .map_err(oauth_err)
+-            })
++    /// Build synchronously; unattended requests set allow_authorization=False.
++    fn build(&self, py: Python<'_>, on_open_url: Py<PyAny>) -> PyResult<OAuth> {
++        let builder = self.core(py);
++        py.detach(move || {
++            tokio::runtime::Runtime::new()
++                .map_err(|_| PyValueError::new_err("OAuth runtime unavailable"))?
++                .block_on(async move {
++                    builder
++                        .build(move |url| {
++                            Python::attach(|py| {
++                                let _ = on_open_url.call1(py, (url,));
++                            });
++                        })
++                        .await
++                        .map(OAuth)
++                        .map_err(oauth_err)
++                })
++        })
+     }
+ 
+-    /// Build an OAuth 2.0 client (async).
+-    ///
+-    /// If a valid token is already cached on disk
+-    /// (``~/.longbridge/openapi/tokens/<client_id>``) it is reused;
+-    /// otherwise the browser authorization flow is started and
+-    /// ``on_open_url`` is called with the authorization URL.
+-    ///
+-    /// Args:
+-    ///     on_open_url: Callable that receives the authorization URL as a
+-    ///         string.
+-    ///
+-    /// Returns:
+-    ///     Awaitable resolving to an :class:`OAuth` handle
++    /// Build asynchronously with cancellation of the local callback listener.
+     fn build_async<'py>(
+         &self,
+         py: Python<'py>,
+         on_open_url: Py<PyAny>,
+     ) -> PyResult<Bound<'py, PyAny>> {
+-        let mut builder = CoreOAuthBuilder::new(self.client_id.clone());
+-        if let Some(port) = self.callback_port {
+-            builder = builder.callback_port(port);
+-        }
++        let builder = self.core(py);
+         pyo3_async_runtimes::tokio::future_into_py(py, async move {
+             builder
+                 .build(move |url| {
+diff --git a/rust/crates/oauth/Cargo.toml b/rust/crates/oauth/Cargo.toml
+index 288dc19..667ef3b 100644
+--- a/rust/crates/oauth/Cargo.toml
++++ b/rust/crates/oauth/Cargo.toml
+@@ -21,4 +21,5 @@ tokio = { workspace = true, features = ["rt", "time", "sync", "net"] }
+ tracing.workspace = true
+ 
+ [dev-dependencies]
++reqwest.workspace = true
+ tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+diff --git a/rust/crates/oauth/src/builder.rs b/rust/crates/oauth/src/builder.rs
+index e59eb92..c0e3863 100644
+--- a/rust/crates/oauth/src/builder.rs
++++ b/rust/crates/oauth/src/builder.rs
+@@ -17,6 +17,9 @@ pub struct OAuthBuilder {
+     pub(crate) client_id: String,
+     /// Local port for the callback server
+     pub(crate) callback_port: u16,
++    pub(crate) callback_host: String,
++    pub(crate) allow_authorization: bool,
++    pub(crate) authorization_timeout_secs: u64,
+     /// Token persistence backend
+     pub(crate) storage: Arc<dyn TokenStorage>,
+ }
+@@ -27,6 +30,9 @@ impl OAuthBuilder {
+         Self {
+             client_id: client_id.into(),
+             callback_port: DEFAULT_CALLBACK_PORT,
++            callback_host: "127.0.0.1".to_string(),
++            allow_authorization: true,
++            authorization_timeout_secs: 300,
+             storage: default_storage(),
+         }
+     }
+@@ -38,6 +44,24 @@ impl OAuthBuilder {
+         self
+     }
+ 
++    /// Set the local listener address without changing the localhost redirect URI.
++    pub fn callback_host(mut self, host: impl Into<String>) -> Self {
++        self.callback_host = host.into();
++        self
++    }
++
++    /// Disable interactive authorization for unattended data requests.
++    pub fn allow_authorization(mut self, allow: bool) -> Self {
++        self.allow_authorization = allow;
++        self
++    }
++
++    /// Set the bounded interactive authorization timeout.
++    pub fn authorization_timeout_secs(mut self, seconds: u64) -> Self {
++        self.authorization_timeout_secs = seconds.clamp(1, 600);
++        self
++    }
++
+     /// Override the token storage backend.
+     ///
+     /// The default is [`FileTokenStorage`](crate::FileTokenStorage), which
+@@ -108,6 +132,9 @@ impl OAuthBuilder {
+         let inner = Arc::new(OAuthInner {
+             client_id: self.client_id.clone(),
+             callback_port: self.callback_port,
++            callback_host: self.callback_host,
++            allow_authorization: self.allow_authorization,
++            authorization_timeout_secs: self.authorization_timeout_secs,
+             storage: Arc::clone(&storage),
+             token: tokio::sync::Mutex::new(None),
+         });
+@@ -132,8 +159,8 @@ impl OAuthBuilder {
+                         storage.save(&refreshed.clone().into())?;
+                         refreshed
+                     }
+-                    Err(e) => {
+-                        tracing::warn!(error = %e, "token refresh failed, falling back to authorization flow");
++                    Err(_e) => {
++                        tracing::warn!("token refresh failed, authorization required");
+                         let new_token = oauth.authorize_inner(open_url).await?;
+                         storage.save(&new_token.clone().into())?;
+                         new_token
+diff --git a/rust/crates/oauth/src/callback.rs b/rust/crates/oauth/src/callback.rs
+index 81e3ada..6f60e4a 100644
+--- a/rust/crates/oauth/src/callback.rs
++++ b/rust/crates/oauth/src/callback.rs
+@@ -8,15 +8,14 @@ use tokio::{sync::oneshot, time::timeout};
+ 
+ use crate::error::{OAuthError, OAuthResult};
+ 
+-/// Time to wait for the user to complete the browser authorization flow.
+-const AUTH_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
+-
+ type CallbackTx =
+     Arc<tokio::sync::Mutex<Option<oneshot::Sender<std::result::Result<(String, String), String>>>>>;
+ 
+ /// Runs the local HTTP server until the OAuth redirect is received or timeout.
+ pub(crate) async fn wait_for_callback(
+     acceptor: poem::listener::TcpAcceptor,
++    timeout_secs: u64,
++    expected_state: String,
+ ) -> OAuthResult<(String, String)> {
+     #[derive(Deserialize)]
+     struct CallbackParams {
+@@ -37,9 +36,21 @@ pub(crate) async fn wait_for_callback(
+     async fn callback_handler(
+         Query(params): Query<CallbackParams>,
+         tx: poem::web::Data<&CallbackTx>,
++        expected_state: poem::web::Data<&String>,
+     ) -> poem::Response {
++        if params.state.as_deref() != Some(expected_state.as_str()) {
++            return poem::Response::builder()
++                .status(poem::http::StatusCode::BAD_REQUEST)
++                .header("Cache-Control", "no-store")
++                .body("Invalid authorization state");
++        }
+         let result = if let Some(err) = params.error {
+-            Err(err)
++            let message = if err == "access_denied" {
++                "access_denied"
++            } else {
++                "authorization_failed"
++            };
++            Err(message.to_string())
+         } else if let (Some(code), Some(state)) = (params.code, params.state) {
+             Ok((code, state))
+         } else {
+@@ -50,15 +61,15 @@ pub(crate) async fn wait_for_callback(
+             Ok(_) => (
+                 poem::http::StatusCode::OK,
+                 format!(
+-                    "<html><body>{STYLE}<h1>✓ Authorization Successful!</h1>\
+-                     <p>You can close this window and return to the terminal.</p></body></html>"
++                    "<html><body>{STYLE}<h1>授权回调已收到</h1>\
++                     <p>请返回应用查看授权结果。</p></body></html>"
+                 ),
+             ),
+-            Err(err) => (
++            Err(_) => (
+                 poem::http::StatusCode::BAD_REQUEST,
+                 format!(
+-                    "<html><body>{STYLE}<h1>Authorization Failed</h1>\
+-                     <p>Error: {err}</p></body></html>"
++                    "<html><body>{STYLE}<h1>授权未完成</h1>\
++                     <p>请返回应用查看错误信息。</p></body></html>"
+                 ),
+             ),
+         };
+@@ -70,12 +81,15 @@ pub(crate) async fn wait_for_callback(
+         poem::Response::builder()
+             .status(status)
+             .content_type("text/html; charset=utf-8")
++            .header("Cache-Control", "no-store")
++            .header("Referrer-Policy", "no-referrer")
+             .body(body)
+     }
+ 
+     let app = Route::new()
+         .at("/callback", poem::get(callback_handler))
+-        .data(tx);
++        .data(tx)
++        .data(expected_state);
+ 
+     let server_task = tokio::spawn(
+         Server::new_with_acceptor(acceptor).run_with_graceful_shutdown(
+@@ -87,11 +101,13 @@ pub(crate) async fn wait_for_callback(
+         ),
+     );
+ 
++    let auth_timeout = Duration::from_secs(timeout_secs);
++    let _abort_on_drop = ServerTaskGuard(server_task.abort_handle());
+     tracing::debug!(
+         "waiting for OAuth callback (timeout: {}s)",
+-        AUTH_TIMEOUT.as_secs()
++        auth_timeout.as_secs()
+     );
+-    let result = match timeout(AUTH_TIMEOUT, rx).await {
++    let result = match timeout(auth_timeout, rx).await {
+         Ok(Ok(r)) => r.map_err(|e| {
+             tracing::warn!(error = %e, "OAuth authorization failed at callback");
+             OAuthError::AuthorizationFailed {
+@@ -104,7 +120,7 @@ pub(crate) async fn wait_for_callback(
+         }
+         Err(_) => {
+             tracing::warn!(
+-                timeout_secs = AUTH_TIMEOUT.as_secs(),
++                timeout_secs = auth_timeout.as_secs(),
+                 "OAuth authorization timed out waiting for callback"
+             );
+             Err(OAuthError::AuthorizationTimeout)
+@@ -114,3 +130,11 @@ pub(crate) async fn wait_for_callback(
+     server_task.abort();
+     result
+ }
++
++struct ServerTaskGuard(tokio::task::AbortHandle);
++
++impl Drop for ServerTaskGuard {
++    fn drop(&mut self) {
++        self.0.abort();
++    }
++}
+diff --git a/rust/crates/oauth/src/client.rs b/rust/crates/oauth/src/client.rs
+index 1872ecf..f5649ca 100644
+--- a/rust/crates/oauth/src/client.rs
++++ b/rust/crates/oauth/src/client.rs
+@@ -2,8 +2,8 @@ use std::{fmt, sync::Arc};
+ 
+ use longbridge_geo::is_cn;
+ use oauth2::{
+-    AuthUrl, AuthorizationCode, ClientId, CsrfToken, RedirectUrl, RefreshToken, RevocationUrl,
+-    Scope, TokenUrl, basic::BasicClient, reqwest::async_http_client,
++    AuthUrl, AuthorizationCode, ClientId, CsrfToken, PkceCodeChallenge, RedirectUrl, RefreshToken,
++    RevocationUrl, Scope, TokenUrl, basic::BasicClient, reqwest::async_http_client,
+ };
+ use poem::listener::{Acceptor, Listener, TcpListener};
+ 
+@@ -18,7 +18,14 @@ const OAUTH_BASE_URL: &str = "https://openapi.longbridge.com/oauth2";
+ const OAUTH_BASE_URL_CN: &str = "https://openapi.longbridge.cn/oauth2";
+ const OAUTH_BASE_URL_TEST: &str = "https://openapi-global.longbridge.xyz/oauth2";
+ 
++#[cfg(test)]
++tokio::task_local! { pub(crate) static TEST_OAUTH_BASE: &'static str; }
++
+ async fn oauth_base_url() -> &'static str {
++    #[cfg(test)]
++    if let Ok(base) = TEST_OAUTH_BASE.try_with(|base| *base) {
++        return base;
++    }
+     if std::env::var("LONGBRIDGE_ENV")
+         .map(|v| v == "staging")
+         .unwrap_or(false)
+@@ -38,6 +45,9 @@ pub(crate) const DEFAULT_CALLBACK_PORT: u16 = 60355;
+ pub(crate) struct OAuthInner {
+     pub(crate) client_id: String,
+     pub(crate) callback_port: u16,
++    pub(crate) callback_host: String,
++    pub(crate) allow_authorization: bool,
++    pub(crate) authorization_timeout_secs: u64,
+     pub(crate) storage: Arc<dyn TokenStorage>,
+     pub(crate) token: tokio::sync::Mutex<Option<OAuthToken>>,
+ }
+@@ -70,6 +80,9 @@ impl OAuth {
+         Self(Arc::new(OAuthInner {
+             client_id: String::new(),
+             callback_port: DEFAULT_CALLBACK_PORT,
++            callback_host: "127.0.0.1".to_string(),
++            allow_authorization: false,
++            authorization_timeout_secs: 300,
+             storage: crate::storage::default_storage(),
+             token: tokio::sync::Mutex::new(Some(OAuthToken {
+                 client_id: String::new(),
+@@ -122,13 +135,19 @@ impl OAuth {
+ 
+     /// Run the browser authorization flow and return a new token.
+     pub(crate) async fn authorize_inner(&self, open_url: impl Fn(&str)) -> OAuthResult<OAuthToken> {
+-        let acceptor = TcpListener::bind(format!("127.0.0.1:{}", self.0.callback_port))
+-            .into_acceptor()
+-            .await
+-            .map_err(|e| OAuthError::BindCallbackFailed {
+-                port: self.0.callback_port,
+-                message: e.to_string(),
+-            })?;
++        if !self.0.allow_authorization {
++            return Err(OAuthError::Other(
++                "OAuth reauthorization required".to_string(),
++            ));
++        }
++        let acceptor =
++            TcpListener::bind(format!("{}:{}", self.0.callback_host, self.0.callback_port))
++                .into_acceptor()
++                .await
++                .map_err(|e| OAuthError::BindCallbackFailed {
++                    port: self.0.callback_port,
++                    message: e.to_string(),
++                })?;
+         let port = acceptor
+             .local_addr()
+             .into_iter()
+@@ -144,15 +163,22 @@ impl OAuth {
+         )
+         .await;
+ 
++        let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
+         let (auth_url, csrf_token) = client
+             .authorize_url(CsrfToken::new_random)
++            .set_pkce_challenge(challenge)
+             .add_scope(Scope::new(String::new()))
+             .url();
+ 
+         tracing::info!("starting OAuth authorization flow");
+         open_url(auth_url.as_str());
+ 
+-        let (code, state) = wait_for_callback(acceptor).await?;
++        let (code, state) = wait_for_callback(
++            acceptor,
++            self.0.authorization_timeout_secs,
++            csrf_token.secret().clone(),
++        )
++        .await?;
+ 
+         tracing::debug!(client_id = %self.0.client_id, "received OAuth callback, verifying CSRF token");
+         if state != *csrf_token.secret() {
+@@ -163,10 +189,11 @@ impl OAuth {
+         tracing::debug!(client_id = %self.0.client_id, "exchanging authorization code for token");
+         let token_response = client
+             .exchange_code(AuthorizationCode::new(code))
++            .set_pkce_verifier(verifier)
+             .request_async(async_http_client)
+             .await
+             .map_err(|e| {
+-                tracing::error!(client_id = %self.0.client_id, error = %e, "failed to exchange authorization code for token");
++                tracing::error!(client_id = %self.0.client_id, "failed to exchange authorization code for token");
+                 OAuthError::ExchangeCodeFailed {
+                     message: e.to_string(),
+                 }
+@@ -196,7 +223,7 @@ impl OAuth {
+             .request_async(async_http_client)
+             .await
+             .map_err(|e| {
+-                tracing::error!(client_id = %self.0.client_id, error = %e, "failed to refresh token");
++                tracing::error!(client_id = %self.0.client_id, "failed to refresh token");
+                 OAuthError::RefreshTokenFailed {
+                     message: e.to_string(),
+                 }
+diff --git a/rust/crates/oauth/src/lib.rs b/rust/crates/oauth/src/lib.rs
+index e7c5320..2d28136 100644
+--- a/rust/crates/oauth/src/lib.rs
++++ b/rust/crates/oauth/src/lib.rs
+@@ -35,6 +35,9 @@ mod error;
+ mod storage;
+ mod token;
+ 
++#[cfg(test)]
++mod thesis_ledger_tests;
++
+ pub use builder::OAuthBuilder;
+ pub use client::OAuth;
+ pub use error::{OAuthError, OAuthResult};
+@@ -176,6 +179,9 @@ mod tests {
+         let inner = Arc::new(OAuthInner {
+             client_id: "test-client".to_string(),
+             callback_port: DEFAULT_CALLBACK_PORT,
++            callback_host: "127.0.0.1".to_string(),
++            allow_authorization: false,
++            authorization_timeout_secs: 300,
+             storage: default_storage(),
+             token: tokio::sync::Mutex::new(Some(make_token(now_secs() + 7200))),
+         });
+@@ -189,6 +195,9 @@ mod tests {
+         let inner = Arc::new(OAuthInner {
+             client_id: "my-client".to_string(),
+             callback_port: DEFAULT_CALLBACK_PORT,
++            callback_host: "127.0.0.1".to_string(),
++            allow_authorization: false,
++            authorization_timeout_secs: 300,
+             storage: default_storage(),
+             token: tokio::sync::Mutex::new(None),
+         });
+@@ -201,6 +210,9 @@ mod tests {
+         let inner = Arc::new(OAuthInner {
+             client_id: "shared-client".to_string(),
+             callback_port: DEFAULT_CALLBACK_PORT,
++            callback_host: "127.0.0.1".to_string(),
++            allow_authorization: false,
++            authorization_timeout_secs: 300,
+             storage: default_storage(),
+             token: tokio::sync::Mutex::new(None),
+         });
+diff --git a/rust/crates/oauth/src/thesis_ledger_tests.rs b/rust/crates/oauth/src/thesis_ledger_tests.rs
+new file mode 100644
+index 0000000..bef0503
+--- /dev/null
++++ b/rust/crates/oauth/src/thesis_ledger_tests.rs
+@@ -0,0 +1,224 @@
++use crate::{OAuthBuilder, OAuthError, OAuthResult, StoredToken, TokenStorage};
++use oauth2::{PkceCodeChallenge, PkceCodeVerifier};
++use poem::{
++    EndpointExt, Route, Server, handler,
++    listener::{Listener, TcpListener},
++    web::{Data, Form, Json},
++};
++use std::{
++    collections::HashMap,
++    sync::{Arc, Mutex},
++    time::Duration,
++};
++
++#[derive(Clone)]
++struct Storage {
++    saved: Arc<Mutex<Vec<StoredToken>>>,
++    fail: bool,
++}
++impl TokenStorage for Storage {
++    fn load(&self, _: &str) -> Option<StoredToken> {
++        None
++    }
++    fn save(&self, value: &StoredToken) -> OAuthResult<()> {
++        if self.fail {
++            return Err(OAuthError::Other("store unavailable".into()));
++        }
++        self.saved.lock().unwrap().push(value.clone());
++        Ok(())
++    }
++}
++
++#[handler]
++async fn token_endpoint(
++    Form(form): Form<HashMap<String, String>>,
++    expected: Data<&Arc<Mutex<String>>>,
++) -> Json<serde_json::Value> {
++    if form.get("grant_type").map(String::as_str) == Some("authorization_code") {
++        let verifier =
++            PkceCodeVerifier::new(form.get("code_verifier").expect("PKCE verifier").clone());
++        let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
++        assert_eq!(challenge.as_str(), expected.lock().unwrap().as_str());
++        Json(
++            serde_json::json!({"access_token":"initial", "refresh_token":"refresh",
++            "token_type":"Bearer", "expires_in":1}),
++        )
++    } else {
++        assert_eq!(
++            form.get("refresh_token").map(String::as_str),
++            Some("refresh")
++        );
++        Json(
++            serde_json::json!({"access_token":"renewed", "token_type":"Bearer", "expires_in":3600}),
++        )
++    }
++}
++
++async fn authorize(fail_storage: bool) {
++    use poem::listener::Acceptor;
++    let listener = TcpListener::bind("127.0.0.1:0")
++        .into_acceptor()
++        .await
++        .unwrap();
++    let address = listener.local_addr()[0]
++        .as_socket_addr()
++        .unwrap()
++        .to_string();
++    let expected = Arc::new(Mutex::new(String::new()));
++    let server = tokio::spawn(
++        Server::new_with_acceptor(listener).run(
++            Route::new()
++                .at("/token", poem::post(token_endpoint))
++                .data(expected.clone()),
++        ),
++    );
++    let base: &'static str = Box::leak(format!("http://{address}").into_boxed_str());
++    let saved = Arc::new(Mutex::new(Vec::new()));
++    crate::client::TEST_OAUTH_BASE
++        .scope(base, async {
++            let (tx, rx) = tokio::sync::oneshot::channel::<String>();
++            let tx = Mutex::new(Some(tx));
++            let builder = OAuthBuilder::new("test-client")
++                .callback_port(0)
++                .authorization_timeout_secs(5)
++                .token_storage(Storage {
++                    saved: saved.clone(),
++                    fail: fail_storage,
++                });
++            let build = builder.build(|url| {
++                let _ = tx.lock().unwrap().take().unwrap().send(url.to_string());
++            });
++            let callback = async {
++                let url = oauth2::url::Url::parse(&rx.await.unwrap()).unwrap();
++                let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
++                assert_eq!(
++                    query.get("code_challenge_method").map(String::as_str),
++                    Some("S256")
++                );
++                *expected.lock().unwrap() = query["code_challenge"].clone();
++                let response = reqwest::Client::new()
++                    .get(&query["redirect_uri"])
++                    .query(&[("code", "fixture-code"), ("state", query["state"].as_str())])
++                    .send()
++                    .await
++                    .unwrap();
++                assert_eq!(response.headers()["cache-control"], "no-store");
++                assert!(
++                    response
++                        .text()
++                        .await
++                        .unwrap()
++                        .contains("请返回应用查看授权结果")
++                );
++            };
++            let (result, ()) = tokio::join!(build, callback);
++            if fail_storage {
++                assert!(result.is_err());
++                assert!(saved.lock().unwrap().is_empty());
++            } else {
++                let oauth = result.unwrap();
++                assert_eq!(oauth.access_token().await.unwrap(), "renewed");
++                let tokens = saved.lock().unwrap();
++                assert_eq!(tokens.len(), 2);
++                assert_eq!(tokens[0].access_token, "initial");
++                assert_eq!(tokens[1].access_token, "renewed");
++                assert_eq!(tokens[1].refresh_token.as_deref(), Some("refresh"));
++            }
++        })
++        .await;
++    server.abort();
++}
++
++#[tokio::test]
++async fn thesis_ledger_pkce_and_refresh_persist_through_custom_storage() {
++    tokio::time::timeout(Duration::from_secs(10), authorize(false))
++        .await
++        .unwrap();
++}
++
++#[tokio::test]
++async fn thesis_ledger_storage_failure_aborts_authorization() {
++    tokio::time::timeout(Duration::from_secs(10), authorize(true))
++        .await
++        .unwrap();
++}
++
++#[tokio::test]
++async fn thesis_ledger_unattended_request_never_opens_authorization() {
++    let result = OAuthBuilder::new("test-client")
++        .allow_authorization(false)
++        .token_storage(Storage {
++            saved: Arc::new(Mutex::new(Vec::new())),
++            fail: false,
++        })
++        .build(|_| panic!("must not open browser"))
++        .await;
++    assert!(result.is_err());
++}
++
++#[tokio::test]
++async fn thesis_ledger_cancel_releases_callback_listener() {
++    use poem::listener::Acceptor;
++    let listener = TcpListener::bind("127.0.0.1:0")
++        .into_acceptor()
++        .await
++        .unwrap();
++    let address = listener.local_addr()[0]
++        .as_socket_addr()
++        .unwrap()
++        .to_string();
++    let task = tokio::spawn(crate::callback::wait_for_callback(
++        listener,
++        600,
++        "expected".into(),
++    ));
++    tokio::task::yield_now().await;
++    task.abort();
++    let _ = task.await;
++    tokio::time::timeout(Duration::from_secs(1), async {
++        loop {
++            if let Ok(listener) = tokio::net::TcpListener::bind(&address).await {
++                drop(listener);
++                break;
++            }
++            tokio::task::yield_now().await;
++        }
++    })
++    .await
++    .unwrap();
++}
++
++#[tokio::test]
++async fn thesis_ledger_invalid_state_cannot_consume_callback() {
++    use poem::listener::Acceptor;
++    let listener = TcpListener::bind("127.0.0.1:0")
++        .into_acceptor()
++        .await
++        .unwrap();
++    let address = listener.local_addr()[0]
++        .as_socket_addr()
++        .unwrap()
++        .to_string();
++    let task = tokio::spawn(crate::callback::wait_for_callback(
++        listener,
++        5,
++        "expected".into(),
++    ));
++    let client = reqwest::Client::new();
++    let url = format!("http://{address}/callback");
++    let response = client
++        .get(&url)
++        .query(&[("code", "bad"), ("state", "wrong")])
++        .send()
++        .await
++        .unwrap();
++    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
++    assert!(!task.is_finished());
++    let _ = client
++        .get(&url)
++        .query(&[("error", "access_denied"), ("state", "expected")])
++        .send()
++        .await;
++    let error = task.await.unwrap().err().unwrap().to_string();
++    assert!(error.contains("access_denied"));
++}

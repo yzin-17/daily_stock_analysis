@@ -189,18 +189,37 @@ def test_etf_prefers_single_symbol_snapshot_over_full_market(monkeypatch) -> Non
     assert quote is snapshot_quote
 
 
-def test_etf_falls_back_to_full_market_when_snapshot_unavailable(monkeypatch) -> None:
-    """单标的快照不可用时，ETF 仍保留全量接口兜底。"""
+def test_etf_does_not_fall_back_to_full_market_when_snapshot_unavailable(monkeypatch) -> None:
+    """单标的快照不可用时，ETF 必须 fail-closed。"""
     fetcher = _fetcher()
-    fallback_quote = UnifiedRealtimeQuote(
-        code="159516",
-        name="半导体设备ETF国泰",
-        source=RealtimeSource.EFINANCE,
-        price=0.729,
-    )
     monkeypatch.setattr(fetcher, "_get_realtime_snapshot_quote", lambda _symbol: None)
-    monkeypatch.setattr(fetcher, "_get_etf_realtime_quote", lambda _symbol: fallback_quote)
+    monkeypatch.setattr(
+        fetcher,
+        "_get_etf_realtime_quote",
+        lambda _symbol: (_ for _ in ()).throw(
+            AssertionError("ETF 单标快照失败时不得调用全市场接口")
+        ),
+    )
 
-    quote = fetcher.get_realtime_quote("159516")
+    quote = fetcher.get_realtime_quote_single_symbol("159516")
 
-    assert quote is fallback_quote
+    assert quote is None
+
+
+def test_etf_snapshot_exception_does_not_call_full_market(monkeypatch) -> None:
+    """单标快照抛错时仍不得触发 ETF 全市场请求。"""
+    fetcher = _fetcher()
+
+    def fail_snapshot(_symbol):
+        raise TimeoutError("controlled snapshot failure")
+
+    monkeypatch.setattr(fetcher, "_get_realtime_snapshot_quote", fail_snapshot)
+    monkeypatch.setattr(
+        fetcher,
+        "_get_etf_realtime_quote",
+        lambda _symbol: (_ for _ in ()).throw(
+            AssertionError("单标快照异常时不得调用全市场接口")
+        ),
+    )
+
+    assert fetcher.get_realtime_quote_single_symbol("159516") is None

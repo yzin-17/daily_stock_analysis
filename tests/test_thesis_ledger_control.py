@@ -260,6 +260,74 @@ def test_policy_apply_is_latest_wins_idempotent_and_atomic(monkeypatch, tmp_path
     assert effective.json()["projection"]["desired"]["revision"] == 1
 
 
+def test_provider_config_patch_preserves_omitted_fields_and_defaults_new_rows(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    headers = {"authorization": "Bearer control-token"}
+
+    initial = client.post(
+        "/api/v1/thesis-ledger/control/providers/akshare/config",
+        headers=headers,
+        json=_envelope(
+            enabled=False,
+            settings={"source": "custom"},
+            credential="stored-secret",
+        ),
+    )
+    assert initial.status_code == 200
+
+    patch = client.post(
+        "/api/v1/thesis-ledger/control/providers/akshare/config",
+        headers=headers,
+        json=_envelope(enabled=True),
+    )
+    assert patch.status_code == 200
+    assert patch.json()["enabled"] is True
+    assert patch.json()["settings"] == {"source": "custom"}
+    assert patch.json()["credentialConfigured"] is True
+    assert "stored-secret" not in patch.text
+
+    new_row = client.post(
+        "/api/v1/thesis-ledger/control/providers/efinance/config",
+        headers=headers,
+        json=_envelope(),
+    )
+    assert new_row.status_code == 200
+    assert new_row.json()["enabled"] is True
+    assert new_row.json()["settings"] == {}
+
+
+def test_provider_config_credential_and_empty_patches_preserve_disabled_state(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    headers = {"authorization": "Bearer control-token"}
+
+    initial = client.post(
+        "/api/v1/thesis-ledger/control/providers/akshare/config",
+        headers=headers,
+        json=_envelope(enabled=False, settings={"source": "custom"}),
+    )
+    assert initial.status_code == 200
+
+    credential_patch = client.post(
+        "/api/v1/thesis-ledger/control/providers/akshare/config",
+        headers=headers,
+        json=_envelope(credential="stored-secret"),
+    )
+    assert credential_patch.status_code == 200
+    assert credential_patch.json()["enabled"] is False
+    assert credential_patch.json()["settings"] == {"source": "custom"}
+
+    empty_patch = client.post(
+        "/api/v1/thesis-ledger/control/providers/akshare/config",
+        headers=headers,
+        json=_envelope(),
+    )
+    assert empty_patch.status_code == 200
+    assert empty_patch.json()["enabled"] is False
+    assert empty_patch.json()["settings"] == {"source": "custom"}
+    assert empty_patch.json()["credentialConfigured"] is True
+    assert "stored-secret" not in empty_patch.text
+
+
 def test_policy_apply_serializes_cross_connection_revision_writes(tmp_path):
     results, projection = _run_cross_connection_apply_race(
         tmp_path,
@@ -402,19 +470,81 @@ def test_capability_smoke_does_not_change_policy(monkeypatch, tmp_path):
     response = client.post(
         "/api/v1/thesis-ledger/control/providers/akshare/test",
         headers=headers,
-        json=_envelope(credential="ephemeral-only", capabilities=["REALTIME_QUOTE"]),
+        json=_envelope(capabilities=["REALTIME_QUOTE"]),
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+    assert response.json()["capabilityResults"]["REALTIME_QUOTE"]["attempted"] is False
+    assert response.json()["capabilityResults"]["REALTIME_QUOTE"]["errorCode"] == "fixture_mode"
+    assert response.json()["capabilityResults"]["FUND_NAV_HISTORY"]["status"] == "unavailable"
+    assert response.json()["capabilityResults"]["FUND_NAV_HISTORY"]["attempted"] is False
+    assert response.json()["capabilityResults"]["FUND_HOLDINGS"]["status"] == "unavailable"
+    assert response.json()["capabilityResults"]["FUND_HOLDINGS"]["attempted"] is False
+    assert response.json()["capabilityResults"]["CHIP_SUMMARY"]["status"] == "unavailable"
+    assert response.json()["capabilityResults"]["CHIP_SUMMARY"]["attempted"] is False
+    registry = client.get("/api/v1/thesis-ledger/control/providers", headers=headers)
+    assert registry.json()["providers"][0]["credentialConfigured"] is False
+
+
+def test_provider_test_uses_in_memory_structured_draft_without_persisting(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    monkeypatch.delenv("THESIS_LEDGER_FIXTURE_MODE", raising=False)
+    headers = {"authorization": "Bearer control-token"}
+    saved = client.post(
+        "/api/v1/thesis-ledger/control/providers/tushare/config",
+        headers=headers,
+        json=_envelope(credentials={"method": "token", "values": {"token": "page-token"}}),
+    )
+    assert saved.status_code == 200
+    calls = []
+
+    class _Runtime:
+        def smoke(self, provider_id, capability, *, credential_snapshot, draft_probe):
+            calls.append((provider_id, capability, credential_snapshot, draft_probe))
+            return {"status": "healthy", "readOnly": True, "attempted": True}
+
+    monkeypatch.setattr(
+        "src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime",
+        lambda: _Runtime(),
+    )
+    response = client.post(
+        "/api/v1/thesis-ledger/control/providers/tushare/test",
+        headers=headers,
+        json=_envelope(credentials={"method": "token", "values": {"token": ""}}),
     )
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
     assert response.json()["capabilityResults"]["REALTIME_QUOTE"]["attempted"] is True
-    assert response.json()["capabilityResults"]["FUND_NAV_HISTORY"]["status"] == "healthy"
-    assert response.json()["capabilityResults"]["FUND_NAV_HISTORY"]["attempted"] is True
-    assert response.json()["capabilityResults"]["FUND_HOLDINGS"]["status"] == "healthy"
-    assert response.json()["capabilityResults"]["FUND_HOLDINGS"]["attempted"] is True
-    assert response.json()["capabilityResults"]["CHIP_SUMMARY"]["status"] == "healthy"
-    assert response.json()["capabilityResults"]["CHIP_SUMMARY"]["attempted"] is True
-    registry = client.get("/api/v1/thesis-ledger/control/providers", headers=headers)
-    assert registry.json()["providers"][0]["credentialConfigured"] is False
+    assert calls
+    assert all(snapshot.values["token"] == "page-token" for _, _, snapshot, _ in calls)
+    assert all(draft_probe is True for _, _, _, draft_probe in calls)
+
+    calls.clear()
+    saved_response = client.post(
+        "/api/v1/thesis-ledger/control/providers/tushare/test",
+        headers=headers,
+        json=_envelope(),
+    )
+    assert saved_response.status_code == 200
+    assert calls
+    assert all(draft_probe is False for _, _, _, draft_probe in calls)
+    assert client.get("/api/v1/thesis-ledger/control/providers", headers=headers).json()["providers"]
+
+
+def test_provider_test_draft_does_not_merge_environment_credentials(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "src.config.get_config",
+        lambda: type("EnvironmentConfig", (), {"tushare_token": "environment-token"})(),
+    )
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/v1/thesis-ledger/control/providers/tushare/test",
+        headers={"authorization": "Bearer control-token"},
+        json=_envelope(credentials={"method": "token", "values": {"token": ""}}),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "INVALID_PROVIDER_CREDENTIALS"
 
 
 def test_provider_removal_clears_runtime_config_but_keeps_tombstone(monkeypatch, tmp_path):

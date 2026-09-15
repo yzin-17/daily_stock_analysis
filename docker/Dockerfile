@@ -17,6 +17,22 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 COPY apps/dsa-web/ ./
 RUN DSA_WEB_VERSION="${DSA_WEB_VERSION}" DSA_WEB_REVISION="${DSA_WEB_REVISION}" npm run build
 
+# 在目标 glibc/Python 上构建 SDK，避免发行 wheel 的 glibc 版本要求高于运行镜像。
+FROM rust:1.94.1-slim-bookworm AS sdk-rust
+FROM python:3.11-slim-bookworm AS sdk-builder
+COPY --from=sdk-rust /usr/local/cargo /usr/local/cargo
+COPY --from=sdk-rust /usr/local/rustup /usr/local/rustup
+ENV PATH="/usr/local/cargo/bin:${PATH}" RUSTUP_HOME=/usr/local/rustup
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends git gcc g++ pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /sdk-build
+COPY patches/longbridge-sdk/ ./patches/longbridge-sdk/
+COPY scripts/build_thesis_ledger_longbridge_sdk.py scripts/verify_longbridge_native_storage.py ./scripts/
+RUN --mount=type=cache,target=/sdk-cache \
+    CARGO_HOME=/sdk-cache/cargo CARGO_TARGET_DIR=/sdk-cache/target PIP_CACHE_DIR=/sdk-cache/pip \
+    python scripts/build_thesis_ledger_longbridge_sdk.py --output /wheels
+
 # Pin to bookworm: wkhtmltopdf was removed from Debian testing (2025)
 FROM python:3.11-slim-bookworm
 
@@ -52,6 +68,11 @@ COPY requirements.txt .
 
 # 安装 Python 依赖
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
+
+COPY --from=sdk-builder /wheels/*.whl /tmp/longbridge-wheels/
+RUN pip install --no-deps --force-reinstall /tmp/longbridge-wheels/*.whl && \
+    python -c "from longbridge.openapi import OAuthBuilder; assert OAuthBuilder.THESIS_LEDGER_STORAGE_VERSION == 1" && \
+    rm -rf /tmp/longbridge-wheels
 
 # 复制应用代码
 COPY *.py ./
