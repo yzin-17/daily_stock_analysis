@@ -144,6 +144,31 @@ def test_v2_non_fixture_declares_only_registry_confirmed_cn_daily_bars(monkeypat
             assert item["status"] == expected
 
 
+def test_real_daily_bar_route_reads_v2_effective_policy(monkeypatch):
+    import api.thesis_ledger as thesis_ledger_api
+
+    class Store:
+        def effective_policy_v2(self):
+            return {
+                "routeStatus": {
+                    "DAILY_BAR": {
+                        "STOCK": {
+                            "eligibleTargets": [
+                                {"providerId": "akshare"},
+                                {"providerId": "efinance"},
+                            ]
+                        }
+                    }
+                }
+            }
+
+        def route(self, *_args, **_kwargs):
+            raise AssertionError("legacy policy route must not be used")
+
+    monkeypatch.setattr(thesis_ledger_api, "_control_store", lambda: Store())
+    assert thesis_ledger_api._real_daily_bar_provider_route() == ("akshare", "efinance")
+
+
 def test_v2_fixture_exposes_deterministic_minute_bars(monkeypatch):
     client = _client(monkeypatch)
     response = client.get(

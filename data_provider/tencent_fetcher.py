@@ -39,7 +39,14 @@ class TencentFetcher(BaseFetcher):
     def __init__(self) -> None:
         self.priority = _read_tencent_priority()
 
-    def _fetch_raw_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def _fetch_raw_data(
+        self,
+        stock_code: str,
+        start_date: str,
+        end_date: str,
+        *,
+        timeout_seconds: Optional[float] = None,
+    ) -> pd.DataFrame:
         code = normalize_stock_code(stock_code)
         symbol = _to_tencent_symbol(code)
         if not symbol:
@@ -57,7 +64,7 @@ class TencentFetcher(BaseFetcher):
             self._KLINE_ENDPOINT,
             params={"param": f"{symbol},day,{explicit_window},{lookback},qfq"},
             headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json,text/plain,*/*"},
-            timeout=self._HTTP_TIMEOUT_SECONDS,
+            timeout=timeout_seconds or self._HTTP_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
         payload = response.json()
@@ -92,6 +99,55 @@ class TencentFetcher(BaseFetcher):
             )
             return _empty_daily_frame()
         return df
+
+    def get_daily_data_for_source(
+        self,
+        stock_code: str,
+        upstream_source: str,
+        *,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        days: int = 30,
+        adjustment: Optional[str] = None,
+        timeout_seconds: float = 4.5,
+    ) -> pd.DataFrame:
+        """Fetch the exact Tencent qfq source for the ThesisLedger route target."""
+        if str(upstream_source or "").strip().lower() != "tencent":
+            raise DataFetchError(f"TencentFetcher unsupported source: {upstream_source}")
+        if adjustment not in (None, "qfq"):
+            raise DataFetchError(f"TencentFetcher unsupported adjustment: {adjustment}")
+        capped_history = start_date is None and days > _MAX_KLINE_BARS
+        if end_date is None:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+        if start_date is None:
+            calendar_days = int(min(days, _MAX_KLINE_BARS) * 1.45) + 30
+            start_date = (datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=calendar_days)).strftime("%Y-%m-%d")
+        raw = self._fetch_raw_data(
+            stock_code,
+            start_date,
+            end_date,
+            timeout_seconds=timeout_seconds,
+        )
+        if raw is None or raw.empty:
+            raise DataFetchError(f"TencentFetcher returned no data for {stock_code}")
+        normalized = self._normalize_data(raw, stock_code)
+        missing_amount = normalized["amount"].isna()
+        if missing_amount.any():
+            # Tencent's qfqday payload exposes OHLCV but omits historical
+            # turnover.  The ThesisLedger BarSeries contract requires a
+            # finite amount, so use the same deterministic close * volume
+            # normalization already used by the other volume-only adapters.
+            normalized.loc[missing_amount, "amount"] = (
+                normalized.loc[missing_amount, "close"]
+                * normalized.loc[missing_amount, "volume"]
+            )
+        frame = self._calculate_indicators(self._clean_data(normalized))
+        frame.attrs["upstream_source"] = "tencent"
+        frame.attrs["has_more_before"] = capped_history
+        frame.attrs["amount_normalization"] = (
+            "close_times_volume" if missing_amount.any() else "provider"
+        )
+        return frame
 
     def _normalize_data(self, df: pd.DataFrame, stock_code: str) -> pd.DataFrame:
         normalized = df.copy()

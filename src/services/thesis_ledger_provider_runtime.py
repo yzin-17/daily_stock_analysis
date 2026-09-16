@@ -50,6 +50,7 @@ _PROVIDER_ADAPTER_IMPORTS = {
 # manifest entries must add an explicit single-symbol adapter or remain
 # unavailable on this boundary.
 ETF_SINGLE_SYMBOL_GENERIC_PROVIDERS = frozenset({"yfinance", "longbridge"})
+DAILY_BAR_TARGET_TIMEOUT_SECONDS = 4.5
 
 
 def _log_quote_event(
@@ -176,6 +177,7 @@ class ThesisLedgerDataRequest:
     end: str | None = None
     limit: int | None = None
     instrument_type: str | None = None
+    adjustment: str | None = None
     parameters: Mapping[str, Any] = field(default_factory=dict)
     request_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
@@ -196,12 +198,28 @@ class ThesisLedgerDataRequest:
         object.__setattr__(self, "symbol", symbol)
         object.__setattr__(self, "timeframe", self.timeframe.strip().lower() if self.timeframe else None)
         object.__setattr__(self, "instrument_type", self.instrument_type.upper() if self.instrument_type else None)
+        normalized_adjustment = self.adjustment.strip().lower() if self.adjustment else None
+        if normalized_adjustment is not None and normalized_adjustment not in {"none", "qfq", "hfq"}:
+            raise ProviderCallError("invalid_request", "adjustment 必须是 none、qfq 或 hfq")
+        object.__setattr__(self, "adjustment", normalized_adjustment)
         object.__setattr__(self, "parameters", dict(self.parameters))
         object.__setattr__(
             self,
             "request_id",
             str(self.request_id or uuid.uuid4()).strip() or str(uuid.uuid4()),
         )
+
+
+@dataclass(frozen=True)
+class RouteTarget:
+    """One explicit adapter/source pair from the Effective Policy."""
+
+    provider_id: str
+    upstream_source: str | None
+
+    @property
+    def key(self) -> str:
+        return f"{self.provider_id}:{self.upstream_source or '-'}"
 
 
 @dataclass(frozen=True)
@@ -216,6 +234,11 @@ class ProviderExecution:
     effective_policy: Mapping[str, Any] | None
     route: tuple[str, ...]
     attempted_providers: tuple[str, ...]
+    upstream_source: str | None = None
+    route_index: int = 0
+    provider_revision: str = "unknown"
+    route_targets: tuple[RouteTarget, ...] = ()
+    attempted_targets: tuple[RouteTarget, ...] = ()
 
     @property
     def effective_revision(self) -> int | None:
@@ -232,6 +255,21 @@ class ProviderExecution:
             return None
         revision = self.effective_policy.get("sourceDesiredRevision")
         return int(revision) if isinstance(revision, int) else None
+
+    @property
+    def provenance(self) -> dict[str, Any]:
+        """Return source-pinned metadata without exposing provider payloads."""
+        return {
+            "providerId": self.provider,
+            "upstreamSource": self.upstream_source,
+            "routeIndex": self.route_index,
+            "effectivePolicyRevision": self.effective_revision,
+            "providerRevision": self.provider_revision,
+            "route": [
+                {"providerId": target.provider_id, "upstreamSource": target.upstream_source}
+                for target in self.route_targets
+            ],
+        }
 
 
 class ThesisLedgerGatewayError(ProviderCallError):
@@ -510,6 +548,7 @@ class ThesisLedgerProviderRuntime:
         provider_id: str,
         symbol: str,
         instrument_type: str | None = None,
+        upstream_source: str | None = None,
     ) -> Any:
         """在 ETF 边界选择已确认的单标适配器，未知实现保持 fail-closed。"""
         if instrument_type == "ETF":
@@ -533,8 +572,10 @@ class ThesisLedgerProviderRuntime:
                 )
             else:
                 value = adapter.get_realtime_quote(symbol)
+        elif upstream_source == provider_id:
+            value = adapter.get_realtime_quote(symbol)
         elif provider_id == "akshare":
-            value = adapter.get_realtime_quote(symbol, source="sina")
+            value = adapter.get_realtime_quote(symbol, source=upstream_source or "sina")
         elif provider_id in {"finnhub", "alphavantage"}:
             value = adapter.get_realtime_quote(symbol, strict=True)
         else:
@@ -736,6 +777,47 @@ class ThesisLedgerProviderRuntime:
         return value
 
     @staticmethod
+    def _route_targets_from_effective(
+        effective_policy: Mapping[str, Any] | None,
+        capability: str,
+        instrument_type: str,
+    ) -> list[RouteTarget]:
+        """Read explicit V2 targets, with a read-only view of legacy routes."""
+        if not effective_policy or not effective_policy.get("enabled"):
+            return []
+        status = (
+            effective_policy.get("routeStatus", {})
+            .get(capability.upper(), {})
+            .get(instrument_type.upper(), {})
+        )
+        targets: list[RouteTarget] = []
+        entries = status.get("targets") if isinstance(status, Mapping) else None
+        if isinstance(entries, list):
+            for entry in entries:
+                if not isinstance(entry, Mapping) or not entry.get("eligible"):
+                    continue
+                provider_id = str(entry.get("providerId") or "").strip().lower()
+                upstream_source = str(entry.get("upstreamSource") or "").strip().lower()
+                if provider_id and upstream_source:
+                    targets.append(RouteTarget(provider_id, upstream_source))
+            return targets
+        providers = (
+            status.get("providers", [])
+            if isinstance(status, Mapping)
+            else []
+        )
+        for entry in providers:
+            if isinstance(entry, Mapping):
+                if not entry.get("eligible"):
+                    continue
+                provider_id = str(entry.get("providerId") or "").strip().lower()
+            else:
+                provider_id = str(entry).strip().lower()
+            if provider_id:
+                targets.append(RouteTarget(provider_id, None))
+        return targets
+
+    @staticmethod
     def _providers_from_effective(
         effective_policy: Mapping[str, Any] | None,
         capability: str,
@@ -749,17 +831,24 @@ class ThesisLedgerProviderRuntime:
             .get(capability.upper(), {})
             .get(instrument_type.upper(), {})
         )
+        entries = status.get("targets") if isinstance(status, Mapping) else None
+        if isinstance(entries, list):
+            return [
+                str(entry["providerId"])
+                for entry in entries
+                if isinstance(entry, Mapping) and entry.get("eligible")
+            ]
         return [
             str(entry["providerId"])
             for entry in status.get("providers", [])
-            if entry.get("eligible")
+            if isinstance(entry, Mapping) and entry.get("eligible")
         ]
 
     def _execute_with_metadata(
         self,
         capability: str,
         instrument_type: str,
-        operation: Callable[[str, Any], Any],
+        operation: Callable[[str, Any, str | None], Any],
         *,
         budget_symbol: str | None = None,
         request_id: str | None = None,
@@ -769,11 +858,12 @@ class ThesisLedgerProviderRuntime:
         quote_started = time.monotonic()
         logged_symbol = symbol or budget_symbol or "unknown"
         effective_policy = self.store.effective_policy()
-        providers = self._providers_from_effective(
+        route_targets = self._route_targets_from_effective(
             effective_policy,
             capability,
             instrument_type,
         )
+        providers = [target.provider_id for target in route_targets]
         if not providers:
             if quote_request:
                 _log_quote_event(
@@ -789,18 +879,26 @@ class ThesisLedgerProviderRuntime:
             raise NoEligibleProviderError(capability, instrument_type)
         fallback_used = False
         attempted_providers: list[str] = []
+        attempted_targets: list[RouteTarget] = []
         last_error: ProviderCallError | None = None
         budgeted_quote = (
             capability.upper() == "REALTIME_QUOTE"
             and instrument_type.upper() == "ETF"
             and bool(budget_symbol)
         )
-        for index, provider_id in enumerate(providers):
+        for index, target in enumerate(route_targets):
+            provider_id = target.provider_id
+            upstream_source = target.upstream_source
             if index > 0:
                 fallback_used = True
-            key = f"thesis-ledger:{provider_id}:{capability}:{instrument_type}"
+            key = f"thesis-ledger:{provider_id}:{capability}:{instrument_type}:{upstream_source}"
             now = self.clock()
-            persisted_health = self.store.health(provider_id, capability, instrument_type)
+            persisted_health = self.store.health(
+                provider_id,
+                capability,
+                instrument_type,
+                upstream_source=upstream_source,
+            )
             if persisted_health and persisted_health.get("circuit") == "open":
                 try:
                     checked_at = datetime.fromisoformat(
@@ -833,6 +931,7 @@ class ThesisLedgerProviderRuntime:
                     capability,
                     instrument_type,
                     str(budget_symbol),
+                    upstream_source=upstream_source,
                     request_id=request_id,
                 )
                 if not budget["allowed"]:
@@ -862,7 +961,8 @@ class ThesisLedgerProviderRuntime:
                     continue
             # ETF request reservations are consumed before the first adapter
             # call, so retrying would violate the persistent upstream budget.
-            attempts = 1 if budgeted_quote else 2
+            source_pinned_route = effective_policy.get("contractVersion") == 2
+            attempts = 1 if budgeted_quote or source_pinned_route else 2
             for attempt in range(attempts):
                 started = self.clock()
                 quote_call_started = time.monotonic()
@@ -881,7 +981,8 @@ class ThesisLedgerProviderRuntime:
                 try:
                     if provider_id not in attempted_providers:
                         attempted_providers.append(provider_id)
-                    result = operation(provider_id, self._adapter(provider_id))
+                    attempted_targets.append(target)
+                    result = operation(provider_id, self._adapter(provider_id), upstream_source)
                     if result is None:
                         raise ProviderCallError("not_covered", "Provider 未覆盖该标的")
                     if quote_request:
@@ -907,7 +1008,16 @@ class ThesisLedgerProviderRuntime:
                         circuit="closed",
                         consecutive_failures=0,
                         latency_ms=elapsed_ms,
+                        upstream_source=upstream_source,
                     )
+                    manifest = getattr(self.store, "provider_registry", lambda: [])()
+                    provider_revision = "unknown"
+                    for item in manifest:
+                        if item.get("providerId") == provider_id:
+                            provider_revision = (
+                                f"{provider_id}:manifest:{item.get('version', 1)}:config:{item.get('configVersion', 0)}"
+                            )
+                            break
                     return ProviderExecution(
                         value=result,
                         capability=capability,
@@ -917,6 +1027,11 @@ class ThesisLedgerProviderRuntime:
                         effective_policy=effective_policy,
                         route=tuple(providers),
                         attempted_providers=tuple(attempted_providers),
+                        upstream_source=upstream_source,
+                        route_index=index,
+                        provider_revision=provider_revision,
+                        route_targets=tuple(route_targets),
+                        attempted_targets=tuple(attempted_targets),
                     )
                 except ProviderCallError as exc:
                     last_error = exc
@@ -988,6 +1103,7 @@ class ThesisLedgerProviderRuntime:
                     circuit=circuit_state,
                     consecutive_failures=failures,
                     error_code=last_error.code,
+                    upstream_source=upstream_source,
                 )
             elif last_error:
                 self.circuit.success(key)
@@ -999,6 +1115,7 @@ class ThesisLedgerProviderRuntime:
                     circuit="closed",
                     consecutive_failures=0,
                     error_code=last_error.code,
+                    upstream_source=upstream_source,
                 )
         if last_error is None:
             raise ProviderCallError("upstream_unavailable", "Provider 暂时不可用")
@@ -1014,6 +1131,13 @@ class ThesisLedgerProviderRuntime:
         final_diagnostics = {
             "route": list(providers),
             "attemptedProviders": attempted_providers,
+            "attemptedTargets": [
+                {
+                    "providerId": target.provider_id,
+                    "upstreamSource": target.upstream_source,
+                }
+                for target in attempted_targets
+            ],
             **last_error.diagnostics,
         }
         if last_error.code in {"not_covered", "unsupported", "circuit_open"}:
@@ -1033,7 +1157,7 @@ class ThesisLedgerProviderRuntime:
         self,
         capability: str,
         instrument_type: str,
-        operation: Callable[[str, Any], Any],
+        operation: Callable[[str, Any, str | None], Any],
     ) -> tuple[Any, str, bool]:
         """Keep the tuple return shape used by the existing Data Contract facade."""
         execution = self._execute_with_metadata(capability, instrument_type, operation)
@@ -1086,9 +1210,9 @@ class ThesisLedgerProviderRuntime:
         if capability == "REALTIME_QUOTE":
             provider_symbol = provider_symbol_for_contract(request.symbol)
 
-            def operation(provider_id: str, adapter: Any) -> Any:
+            def operation(provider_id: str, adapter: Any, upstream_source: str | None = None) -> Any:
                 value = self._realtime_quote(
-                    adapter, provider_id, provider_symbol, instrument_type
+                    adapter, provider_id, provider_symbol, instrument_type, upstream_source
                 )
                 if value is None:
                     raise ProviderCallError("not_covered", "Provider 未覆盖该标的")
@@ -1112,19 +1236,54 @@ class ThesisLedgerProviderRuntime:
                 )
             provider_symbol = provider_symbol_for_contract(request.symbol)
             days = request.limit or 90
-            raw_mode = str(request.parameters.get("priceMode") or "").strip().lower() == "raw"
+            adjustment = request.adjustment
 
-            def operation(provider_id: str, adapter: Any) -> Any:
+            def operation(provider_id: str, adapter: Any, upstream_source: str | None = None) -> Any:
                 options: dict[str, Any] = {"days": days}
+                if adjustment is not None:
+                    options["adjustment"] = adjustment
                 if request.start is not None:
                     options["start_date"] = request.start
                 if request.end is not None:
                     options["end_date"] = request.end
-                if raw_mode:
+                source_method = getattr(adapter, "get_daily_data_for_source", None)
+                unsupported_adjustment = adjustment is not None and provider_id not in {
+                    "akshare",
+                    "tencent",
+                }
+                if provider_id == "tencent" and adjustment not in (None, "qfq"):
+                    unsupported_adjustment = True
+                if unsupported_adjustment:
+                    raise ProviderCallError(
+                        "unsupported_adjustment",
+                        f"{provider_id}/{upstream_source or provider_id} 未证明支持 adjustment={adjustment}",
+                    )
+                if callable(source_method) and upstream_source:
+                    frame = self._daily_frame(
+                        source_method(
+                            provider_symbol,
+                            upstream_source,
+                            **options,
+                            timeout_seconds=DAILY_BAR_TARGET_TIMEOUT_SECONDS,
+                        )
+                    )
+                elif provider_id == "tencent" and upstream_source == "tencent":
+                    frame = self._daily_frame(adapter.get_daily_data(provider_symbol, **options))
+                elif provider_id == "efinance" and upstream_source == "eastmoney":
+                    frame = self._daily_frame(adapter.get_daily_data(provider_symbol, **options))
+                elif upstream_source == provider_id:
+                    frame = self._daily_frame(adapter.get_daily_data(provider_symbol, **options))
+                elif upstream_source:
+                    raise ProviderCallError(
+                        "unsupported_source",
+                        f"{provider_id} 未提供 source={upstream_source} 的显式适配器",
+                    )
+                elif adjustment == "none":
                     raw_method = getattr(adapter, "get_daily_data_v2_raw", None)
                     if not callable(raw_method):
                         raise ProviderCallError("unsupported", "Provider 不支持 V2 不复权日线")
-                    frame = self._daily_frame(raw_method(provider_symbol, **options))
+                    raw_options = {key: value for key, value in options.items() if key != "adjustment"}
+                    frame = self._daily_frame(raw_method(provider_symbol, **raw_options))
                 else:
                     frame = self._daily_frame(adapter.get_daily_data(provider_symbol, **options))
                 attrs = getattr(frame, "attrs", None)
@@ -1147,7 +1306,7 @@ class ThesisLedgerProviderRuntime:
                 request,
                 capability,
                 "MUTUAL_FUND",
-                lambda provider_id, adapter: self._validate_fund_nav(
+                lambda provider_id, adapter, _upstream_source=None: self._validate_fund_nav(
                     self._fund_nav_from_provider(provider_id, request.symbol, adapter)
                 ),
             )
@@ -1157,7 +1316,7 @@ class ThesisLedgerProviderRuntime:
                 request,
                 capability,
                 "MUTUAL_FUND",
-                lambda provider_id, adapter: self._validate_fund_nav_history(
+                lambda provider_id, adapter, _upstream_source=None: self._validate_fund_nav_history(
                     self._fund_nav_from_provider(provider_id, request.symbol, adapter)
                 ),
             )
@@ -1167,7 +1326,7 @@ class ThesisLedgerProviderRuntime:
                 request,
                 capability,
                 "MUTUAL_FUND",
-                lambda provider_id, adapter: self._validate_fund_holdings(
+                lambda provider_id, adapter, _upstream_source=None: self._validate_fund_holdings(
                     self._fund_holdings_from_provider(provider_id, request.symbol, adapter)
                 ),
             )
@@ -1181,7 +1340,7 @@ class ThesisLedgerProviderRuntime:
                 )
             provider_symbol = provider_symbol_for_contract(request.symbol)
 
-            def operation(_provider_id: str, adapter: Any) -> Any:
+            def operation(_provider_id: str, adapter: Any, _upstream_source: str | None = None) -> Any:
                 method = getattr(adapter, "get_chip_distribution", None)
                 if method is None:
                     raise ProviderCallError("unsupported", "Provider 不支持筹码摘要")
@@ -1374,6 +1533,10 @@ class ThesisLedgerDataResult:
     route: tuple[str, ...]
     attempted_providers: tuple[str, ...]
     served_from_cache: bool = False
+    upstream_source: str | None = None
+    route_index: int = 0
+    provider_revision: str = "unknown"
+    route_targets: tuple[RouteTarget, ...] = ()
 
     @property
     def value(self) -> Any:
@@ -1414,7 +1577,7 @@ class ThesisLedgerDataResult:
     @property
     def provenance(self) -> dict[str, Any]:
         """Return provider, fallback and policy provenance metadata."""
-        return {
+        result = {
             "provider": self.provider,
             "servedFromCache": self.served_from_cache,
             "fallbackUsed": self.fallback_used,
@@ -1422,6 +1585,21 @@ class ThesisLedgerDataResult:
             "effectiveRevision": self.effective_revision,
             "sourceDesiredRevision": self.source_desired_revision,
         }
+        if self.effective_policy and self.effective_policy.get("contractVersion") == 2:
+            result.update(
+                {
+                    "providerId": self.provider,
+                    "upstreamSource": self.upstream_source,
+                    "routeIndex": self.route_index,
+                    "effectivePolicyRevision": self.effective_revision,
+                    "providerRevision": self.provider_revision,
+                    "route": [
+                        {"providerId": target.provider_id, "upstreamSource": target.upstream_source}
+                        for target in self.route_targets
+                    ],
+                }
+            )
+        return result
 
     def as_dict(self) -> dict[str, Any]:
         """Return a transport-neutral result projection for future facades."""
@@ -1510,6 +1688,10 @@ class ThesisLedgerDataGateway:
             effective_policy=execution.effective_policy,
             route=execution.route,
             attempted_providers=execution.attempted_providers,
+            upstream_source=execution.upstream_source,
+            route_index=execution.route_index,
+            provider_revision=execution.provider_revision,
+            route_targets=execution.route_targets,
         )
 
     def fetch(

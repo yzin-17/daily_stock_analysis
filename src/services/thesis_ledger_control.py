@@ -41,6 +41,7 @@ from src.services.provider_oauth_contract import OAuthStateError, validate_oauth
 logger = logging.getLogger(__name__)
 
 CONTROL_CONTRACT_VERSION = 1
+CONTROL_CONTRACT_V2_VERSION = 2
 CONSUMER_NAMESPACE = "thesis-ledger"
 CATALOG_JOB_LEASE_SECONDS = 300
 CATALOG_JOB_LEASE_EXPIRED_CODE = "CATALOG_JOB_LEASE_EXPIRED"
@@ -62,19 +63,34 @@ def _apply_runtime_capability_gates(effective: dict[str, Any]) -> dict[str, Any]
         status = route_status.get(capability, {}).get(instrument_type)
         if not isinstance(status, dict):
             continue
-        for entry in status.get("providers", []):
-            if entry.get("providerId") != provider_id:
-                continue
-            entry["available"] = False
-            entry["eligible"] = False
-            entry["reason"] = "single_symbol_adapter_unavailable"
-        status["eligibleProviderIds"] = [
-            provider
-            for provider in status.get("eligibleProviderIds", [])
-            if provider != provider_id
-        ]
-        if not status["eligibleProviderIds"]:
-            status["reason"] = "NO_ELIGIBLE_PROVIDER"
+        if "targets" in status:
+            for entry in status.get("targets", []):
+                if entry.get("providerId") != provider_id:
+                    continue
+                entry["available"] = False
+                entry["eligible"] = False
+                entry["reason"] = "single_symbol_adapter_unavailable"
+            status["eligibleTargets"] = [
+                entry
+                for entry in status.get("eligibleTargets", [])
+                if entry.get("providerId") != provider_id
+            ]
+            if not status["eligibleTargets"] and status.get("targets"):
+                status["reason"] = "NO_ELIGIBLE_PROVIDER"
+        else:
+            for entry in status.get("providers", []):
+                if entry.get("providerId") != provider_id:
+                    continue
+                entry["available"] = False
+                entry["eligible"] = False
+                entry["reason"] = "single_symbol_adapter_unavailable"
+            status["eligibleProviderIds"] = [
+                provider
+                for provider in status.get("eligibleProviderIds", [])
+                if provider != provider_id
+            ]
+            if not status["eligibleProviderIds"]:
+                status["reason"] = "NO_ELIGIBLE_PROVIDER"
     return projected
 
 CAPABILITIES = (
@@ -106,6 +122,21 @@ def _manifest(
     markets: Iterable[str] = ("CN",),
     configuration_mode: str = "control",
 ) -> dict[str, Any]:
+    declared_sources = tuple(upstream_sources) or ((provider_id, display_name),)
+    source_capabilities = {}
+    for source_id, _ in declared_sources:
+        # 非 direct source 目前只有 DAILY_BAR 有显式 source dispatch；其余
+        # capability 不得借用 provider-wide 声明冒充 source 可执行能力。
+        declared_capabilities = capabilities if source_id == provider_id else {
+            "DAILY_BAR": capabilities.get("DAILY_BAR", ())
+        }
+        source_capabilities[source_id] = {
+            capability: sorted(
+                set(instrument_types)
+                - ({"ETF"} if provider_id == "akshare" and source_id == "sina" and capability == "DAILY_BAR" else set())
+            )
+            for capability, instrument_types in declared_capabilities.items()
+        }
     return {
         "providerId": provider_id,
         "displayName": display_name,
@@ -114,8 +145,8 @@ def _manifest(
         "markets": sorted(set(markets)),
         "configurationMode": configuration_mode,
         "upstreamSources": [
-            {"sourceId": source_id, "displayName": source_name}
-            for source_id, source_name in upstream_sources
+            {"sourceId": source_id, "displayName": source_name, "capabilities": source_capabilities[source_id]}
+            for source_id, source_name in declared_sources
         ],
         "capabilities": {key: sorted(set(value)) for key, value in capabilities.items()},
         "requiresCredential": requires_credential,
@@ -140,6 +171,7 @@ PROVIDER_MANIFESTS: dict[str, dict[str, Any]] = {
             "CHIP_SUMMARY": ("STOCK",),
         },
         upstream_sources=(
+            ("akshare", "AKShare"),
             ("eastmoney", "东方财富"),
             ("sina", "新浪财经"),
             ("tencent", "腾讯财经"),
@@ -154,7 +186,10 @@ PROVIDER_MANIFESTS: dict[str, dict[str, Any]] = {
             "FUND_NAV": ("MUTUAL_FUND",),
             "FUND_NAV_HISTORY": ("MUTUAL_FUND",),
         },
-        upstream_sources=(("eastmoney", "东方财富"),),
+        upstream_sources=(
+            ("efinance", "efinance"),
+            ("eastmoney", "东方财富"),
+        ),
     ),
     "tencent": _manifest(
         "tencent",
@@ -460,6 +495,7 @@ class ControlContractError(Exception):
         status_code: int = 422,
         request_id: str | None = None,
         details: dict[str, Any] | None = None,
+        contract_version: int = CONTROL_CONTRACT_VERSION,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -467,10 +503,11 @@ class ControlContractError(Exception):
         self.status_code = status_code
         self.request_id = request_id or str(uuid.uuid4())
         self.details = details or {}
+        self.contract_version = contract_version
 
     def detail(self) -> dict[str, Any]:
         return {
-            "contractVersion": CONTROL_CONTRACT_VERSION,
+            "contractVersion": self.contract_version,
             "code": self.code,
             "message": self.message,
             "requestId": self.request_id,
@@ -643,6 +680,107 @@ def _normalize_routes(routes: Any, request_id: str) -> dict[str, dict[str, list[
     return normalized
 
 
+def _normalize_route_targets(
+    routes: Any,
+    request_id: str,
+) -> dict[str, dict[str, list[dict[str, str]]]]:
+    """Normalize V2 routes and validate the adapter/source pair as one target."""
+    if not isinstance(routes, dict):
+        raise ControlContractError(
+            "INVALID_POLICY_SCHEMA",
+            "routes 必须是 Capability 到 InstrumentType 的对象",
+            request_id=request_id,
+        )
+    normalized: dict[str, dict[str, list[dict[str, str]]]] = {}
+    for raw_capability, raw_types in routes.items():
+        capability = str(raw_capability).strip().upper()
+        if capability not in CAPABILITIES:
+            raise ControlContractError(
+                "UNSUPPORTED_CAPABILITY",
+                f"Capability {raw_capability!s} 不支持",
+                request_id=request_id,
+            )
+        if not isinstance(raw_types, dict):
+            raise ControlContractError(
+                "INVALID_POLICY_SCHEMA",
+                f"routes.{capability} 必须是 InstrumentType 对象",
+                request_id=request_id,
+            )
+        normalized_types: dict[str, list[dict[str, str]]] = {}
+        for raw_type, raw_targets in raw_types.items():
+            instrument_type = str(raw_type).strip().upper()
+            if instrument_type not in INSTRUMENT_TYPES:
+                raise ControlContractError(
+                    "UNSUPPORTED_INSTRUMENT_TYPE",
+                    f"InstrumentType {raw_type!s} 不支持",
+                    request_id=request_id,
+                )
+            if not isinstance(raw_targets, list) or len(raw_targets) > 2:
+                raise ControlContractError(
+                    "INVALID_ROUTE_TARGETS",
+                    f"routes.{capability}.{instrument_type} 必须是最多两个 RouteTarget 的数组",
+                    request_id=request_id,
+                )
+            targets: list[dict[str, str]] = []
+            seen: set[tuple[str, str]] = set()
+            for raw_target in raw_targets:
+                if not isinstance(raw_target, dict):
+                    raise ControlContractError(
+                        "INVALID_ROUTE_TARGET",
+                        "RouteTarget 必须是对象",
+                        request_id=request_id,
+                    )
+                provider_id = _validate_provider_id(raw_target.get("providerId"), request_id)
+                upstream_source = str(raw_target.get("upstreamSource") or "").strip().lower()
+                if not upstream_source:
+                    raise ControlContractError(
+                        "INVALID_ROUTE_TARGET",
+                        "RouteTarget upstreamSource 不能为空",
+                        request_id=request_id,
+                    )
+                manifest = PROVIDER_MANIFESTS[provider_id]
+                if instrument_type not in manifest.get("capabilities", {}).get(capability, []):
+                    raise ControlContractError(
+                        "UNSUPPORTED_ROUTE",
+                        f"Provider {provider_id} 不支持 {capability}/{instrument_type}",
+                        request_id=request_id,
+                    )
+                manifest_sources = {
+                    str(source.get("sourceId") or "").strip().lower()
+                    for source in manifest.get("upstreamSources", [])
+                    if isinstance(source, dict)
+                }
+                if upstream_source not in manifest_sources:
+                    raise ControlContractError(
+                        "UNSUPPORTED_SOURCE",
+                        f"Provider {provider_id} 未声明上游 source {upstream_source}",
+                        request_id=request_id,
+                    )
+                source_manifest = next(
+                    source
+                    for source in manifest.get("upstreamSources", [])
+                    if str(source.get("sourceId") or "").strip().lower() == upstream_source
+                )
+                if instrument_type not in source_manifest.get("capabilities", {}).get(capability, []):
+                    raise ControlContractError(
+                        "UNSUPPORTED_SOURCE",
+                        f"Provider {provider_id} 的 source {upstream_source} 不支持 {capability}/{instrument_type}",
+                        request_id=request_id,
+                    )
+                key = (provider_id, upstream_source)
+                if key in seen:
+                    raise ControlContractError(
+                        "DUPLICATE_ROUTE_TARGET",
+                        f"route {capability}/{instrument_type} 中 RouteTarget 重复",
+                        request_id=request_id,
+                    )
+                seen.add(key)
+                targets.append({"providerId": provider_id, "upstreamSource": upstream_source})
+            normalized_types[instrument_type] = targets
+        normalized[capability] = normalized_types
+    return normalized
+
+
 def normalize_policy(payload: dict[str, Any]) -> dict[str, Any]:
     request_id = _request_id(payload.get("requestId"))
     if payload.get("contractVersion") != CONTROL_CONTRACT_VERSION:
@@ -677,6 +815,44 @@ def normalize_policy(payload: dict[str, Any]) -> dict[str, Any]:
         "revision": revision,
         "enabled": enabled,
         "routes": _normalize_routes(payload.get("routes", {}), request_id),
+        "requestId": request_id,
+    }
+
+
+def normalize_policy_v2(payload: dict[str, Any]) -> dict[str, Any]:
+    request_id = _request_id(payload.get("requestId"))
+    if payload.get("contractVersion") != CONTROL_CONTRACT_V2_VERSION:
+        raise ControlContractError(
+            "CONTROL_CONTRACT_UNSUPPORTED",
+            "Control Contract V2 版本不兼容",
+            request_id=request_id,
+        )
+    if payload.get("consumer") != CONSUMER_NAMESPACE:
+        raise ControlContractError(
+            "INVALID_CONSUMER",
+            "Control Contract consumer namespace 不正确",
+            request_id=request_id,
+        )
+    revision = payload.get("revision")
+    if not isinstance(revision, int) or isinstance(revision, bool) or revision <= 0:
+        raise ControlContractError(
+            "INVALID_REVISION",
+            "Policy revision 必须是正整数",
+            request_id=request_id,
+        )
+    enabled = payload.get("enabled")
+    if not isinstance(enabled, bool):
+        raise ControlContractError(
+            "INVALID_POLICY_SCHEMA",
+            "Policy enabled 必须是布尔值",
+            request_id=request_id,
+        )
+    return {
+        "contractVersion": CONTROL_CONTRACT_V2_VERSION,
+        "consumer": CONSUMER_NAMESPACE,
+        "revision": revision,
+        "enabled": enabled,
+        "routes": _normalize_route_targets(payload.get("routes", {}), request_id),
         "requestId": request_id,
     }
 
@@ -926,13 +1102,18 @@ class ThesisLedgerControlStore:
         provider_id: str,
         capability: str,
         instrument_type: str,
+        *,
+        upstream_source: str | None = None,
     ) -> sqlite3.Row | None:
+        scope_key = f"{CONSUMER_NAMESPACE}:{provider_id}:{capability}:{instrument_type}"
+        if upstream_source:
+            scope_key = f"{scope_key}:{upstream_source}"
         return connection.execute(
             """
             SELECT * FROM thesis_ledger_provider_health
             WHERE scope_key = ?
             """,
-            (f"{CONSUMER_NAMESPACE}:{provider_id}:{capability}:{instrument_type}",),
+            (scope_key,),
         ).fetchone()
 
     def _effective(
@@ -995,11 +1176,107 @@ class ThesisLedgerControlStore:
             "appliedAt": _utc_now(),
         }
 
+    def _effective_v2(
+        self,
+        connection: sqlite3.Connection,
+        policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Build an Effective Policy with source-pinned, target-level status."""
+        configurations = self._configuration(connection)
+        route_status: dict[str, dict[str, Any]] = {}
+        for capability, type_routes in policy["routes"].items():
+            route_status[capability] = {}
+            for instrument_type, targets in type_routes.items():
+                entries: list[dict[str, Any]] = []
+                eligible: list[dict[str, Any]] = []
+                for route_index, target in enumerate(targets):
+                    provider_id = target["providerId"]
+                    upstream_source = target["upstreamSource"]
+                    config = configurations.get(provider_id)
+                    health = self._health(
+                        connection,
+                        provider_id,
+                        capability,
+                        instrument_type,
+                        upstream_source=upstream_source,
+                    )
+                    configured = _provider_configured(PROVIDER_MANIFESTS[provider_id], config)
+                    enabled = config is None or bool(config["enabled"])
+                    state = str(health["state"] if health else "unknown")
+                    circuit = str(health["circuit"] if health else "closed")
+                    available = configured and enabled and circuit != "open"
+                    reason = None
+                    if not configured:
+                        reason = "provider_not_configured"
+                    elif not enabled:
+                        reason = "provider_disabled"
+                    elif circuit == "open":
+                        reason = "circuit_open"
+                    else:
+                        eligible.append({**target, "routeIndex": route_index})
+                    entry = {
+                        **target,
+                        "routeIndex": route_index,
+                        "configured": configured,
+                        "enabled": enabled,
+                        "available": available,
+                        "eligible": available,
+                        "health": state,
+                        "circuit": circuit,
+                        "reason": reason,
+                    }
+                    entries.append(entry)
+                route_status[capability][instrument_type] = {
+                    "targets": entries,
+                    "eligibleTargets": eligible,
+                    "reason": None if eligible else "NO_ELIGIBLE_ROUTE_TARGET",
+                }
+        return {
+            "contractVersion": CONTROL_CONTRACT_V2_VERSION,
+            "consumer": CONSUMER_NAMESPACE,
+            "requestId": policy["requestId"],
+            "revision": policy["revision"],
+            "sourceDesiredRevision": policy["revision"],
+            "enabled": policy["enabled"],
+            "routes": policy["routes"],
+            "routeStatus": route_status,
+            "appliedAt": _utc_now(),
+        }
+
     def _current_state(self, connection: sqlite3.Connection) -> sqlite3.Row | None:
         return connection.execute(
             "SELECT * FROM thesis_ledger_policy_state WHERE consumer = ?",
             (CONSUMER_NAMESPACE,),
         ).fetchone()
+
+    @staticmethod
+    def _policy_from_state(current: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "revision": int(current["revision"]),
+            "enabled": bool(current["enabled"]),
+            "routes": _json_load(current["routes_json"], {}),
+            "requestId": str(current["request_id"]),
+        }
+
+    def _effective_for_policy(
+        self,
+        connection: sqlite3.Connection,
+        policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        routes = policy["routes"]
+        is_v2 = any(
+            isinstance(target, dict)
+            for type_routes in routes.values()
+            if isinstance(type_routes, dict)
+            for targets in type_routes.values()
+            if isinstance(targets, list)
+            for target in targets
+        )
+        return (
+            self._effective_v2(connection, policy)
+            if is_v2
+            else self._effective(connection, policy)
+        )
 
     def apply_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
         policy = normalize_policy(payload)
@@ -1046,7 +1323,7 @@ class ThesisLedgerControlStore:
                             "requestId": request_id,
                         }
 
-                effective = self._effective(connection, policy)
+                effective = self._effective_for_policy(connection, policy)
                 now = _utc_now()
                 desired_json = _json(policy["routes"])
                 effective_json = _json(effective)
@@ -1152,6 +1429,140 @@ class ThesisLedgerControlStore:
                 "updatedAt": current["updated_at"],
             }
 
+    def apply_policy_v2(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Apply a V2 source-pinned policy into the same durable projection."""
+        policy = normalize_policy_v2(payload)
+        request_id = policy["requestId"]
+        with self._schema_lock, self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                current = self._current_state(connection)
+                if current is not None:
+                    current_revision = int(current["revision"])
+                    current_routes = _json_load(current["routes_json"], {})
+                    if policy["revision"] < current_revision:
+                        raise ControlContractError(
+                            "STALE_REVISION",
+                            f"Policy revision {policy['revision']} 早于当前 revision {current_revision}",
+                            request_id=request_id,
+                        )
+                    if policy["revision"] == current_revision:
+                        if bool(current["enabled"]) != policy["enabled"] or current_routes != policy["routes"]:
+                            raise ControlContractError(
+                                "REVISION_CONFLICT",
+                                "相同 revision 的 Policy 内容不同",
+                                request_id=request_id,
+                            )
+                        connection.commit()
+                        projection = self.policy_projection_v2()
+                        return {
+                            "status": current["status"],
+                            "idempotent": True,
+                            "desired": {
+                                **policy,
+                                "revision": current_revision,
+                                "enabled": bool(current["enabled"]),
+                                "routes": current_routes,
+                            },
+                            "effective": projection["effective"] if projection else None,
+                            "requestId": request_id,
+                        }
+                effective = self._effective_v2(connection, policy)
+                now = _utc_now()
+                desired_json = _json(policy["routes"])
+                effective_json = _json(effective)
+                connection.execute(
+                    """
+                    INSERT INTO thesis_ledger_policy_state
+                    (consumer, revision, enabled, routes_json, status, effective_json,
+                     last_error_json, request_id, updated_at)
+                    VALUES (?, ?, ?, ?, 'applied', ?, NULL, ?, ?)
+                    ON CONFLICT(consumer) DO UPDATE SET
+                      revision=excluded.revision,
+                      enabled=excluded.enabled,
+                      routes_json=excluded.routes_json,
+                      status=excluded.status,
+                      effective_json=excluded.effective_json,
+                      last_error_json=NULL,
+                      request_id=excluded.request_id,
+                      updated_at=excluded.updated_at
+                    """,
+                    (CONSUMER_NAMESPACE, policy["revision"], int(policy["enabled"]), desired_json, effective_json, request_id, now),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO thesis_ledger_policy_history
+                    (consumer, revision, enabled, routes_json, status, effective_json,
+                     last_error_json, request_id, created_at)
+                    VALUES (?, ?, ?, ?, 'applied', ?, NULL, ?, ?)
+                    """,
+                    (CONSUMER_NAMESPACE, policy["revision"], int(policy["enabled"]), desired_json, effective_json, request_id, now),
+                )
+                connection.commit()
+            except ControlContractError:
+                connection.rollback()
+                raise
+            except sqlite3.IntegrityError as error:
+                connection.rollback()
+                raise ControlContractError(
+                    "REVISION_CONFLICT",
+                    "Policy revision 竞争冲突，请重试",
+                    request_id=request_id,
+                ) from error
+            except sqlite3.OperationalError as error:
+                connection.rollback()
+                if "locked" in str(error).lower():
+                    raise ControlContractError(
+                        "POLICY_APPLY_CONFLICT",
+                        "Policy Apply 正在竞争，请重试",
+                        status_code=409,
+                        request_id=request_id,
+                    ) from error
+                raise
+        return {
+            "status": "applied",
+            "idempotent": False,
+            "desired": policy,
+            "effective": effective,
+            "requestId": request_id,
+        }
+
+    def policy_projection_v2(self) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            current = self._current_state(connection)
+            if current is None:
+                return None
+            routes = _json_load(current["routes_json"], {})
+            policy = self._policy_from_state(current)
+            effective = _json_load(current["effective_json"], {})
+            if any(
+                isinstance(target, dict)
+                for type_routes in routes.values()
+                if isinstance(type_routes, dict)
+                for targets in type_routes.values()
+                if isinstance(targets, list)
+                for target in targets
+            ):
+                effective = self._effective_v2(connection, policy)
+            return {
+                "status": current["status"],
+                "desired": {
+                    "contractVersion": CONTROL_CONTRACT_V2_VERSION,
+                    "consumer": CONSUMER_NAMESPACE,
+                    "requestId": policy["requestId"],
+                    "revision": int(current["revision"]),
+                    "enabled": bool(current["enabled"]),
+                    "routes": routes,
+                },
+                "effective": effective,
+                "lastError": _json_load(current["last_error_json"], None),
+                "updatedAt": current["updated_at"],
+            }
+
+    def effective_policy_v2(self) -> dict[str, Any] | None:
+        projection = self.policy_projection_v2()
+        return projection["effective"] if projection else None
+
     def effective_policy(self) -> dict[str, Any] | None:
         projection = self.policy_projection()
         return projection["effective"] if projection else None
@@ -1184,9 +1595,17 @@ class ThesisLedgerControlStore:
         provider_id: str,
         capability: str,
         instrument_type: str,
+        *,
+        upstream_source: str | None = None,
     ) -> dict[str, Any] | None:
         with self._connect() as connection:
-            row = self._health(connection, provider_id, capability, instrument_type)
+            row = self._health(
+                connection,
+                provider_id,
+                capability,
+                instrument_type,
+                upstream_source=upstream_source,
+            )
             return dict(row) if row else None
 
     def claim_provider_request_budget(
@@ -1196,6 +1615,7 @@ class ThesisLedgerControlStore:
         instrument_type: str,
         symbol: str,
         *,
+        upstream_source: str | None = None,
         request_id: str | None = None,
         now: float | None = None,
         budget_seconds: int = PROVIDER_REQUEST_BUDGET_SECONDS,
@@ -1211,15 +1631,20 @@ class ThesisLedgerControlStore:
         normalized_capability = str(capability).strip().upper()
         normalized_type = str(instrument_type).strip().upper()
         normalized_symbol = str(symbol).strip().upper()
+        normalized_source = str(upstream_source or "").strip().lower()
         if not all((normalized_provider, normalized_capability, normalized_type, normalized_symbol)):
             raise ValueError("Provider request budget key fields must be non-empty")
         current = time.time() if now is None else float(now)
         duration = max(PROVIDER_REQUEST_BUDGET_SECONDS, int(budget_seconds))
         expires_at = current + duration
-        request_key = ":".join(
-            (CONSUMER_NAMESPACE, normalized_provider, normalized_capability,
-             normalized_type, normalized_symbol)
+        key_parts = (
+            CONSUMER_NAMESPACE,
+            normalized_provider,
+            normalized_capability,
+            normalized_type,
+            normalized_symbol,
         )
+        request_key = ":".join((*key_parts, normalized_source) if normalized_source else key_parts)
         with self._schema_lock, self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
@@ -1451,12 +1876,8 @@ class ThesisLedgerControlStore:
             current = self._current_state(connection)
             effective = _json_load(current["effective_json"], {}) if current else {}
             if current:
-                policy = {
-                    "revision": int(current["revision"]),
-                    "enabled": bool(current["enabled"]),
-                    "routes": _json_load(current["routes_json"], {}),
-                }
-                effective = self._effective(connection, policy)
+                policy = self._policy_from_state(current)
+                effective = self._effective_for_policy(connection, policy)
                 connection.execute(
                     "UPDATE thesis_ledger_policy_state SET effective_json=?, updated_at=? WHERE consumer=?",
                     (_json(effective), now, CONSUMER_NAMESPACE),
@@ -1654,12 +2075,8 @@ class ThesisLedgerControlStore:
                 current = self._current_state(connection)
                 effective = _json_load(current["effective_json"], {}) if current else {}
                 if current:
-                    policy = {
-                        "revision": int(current["revision"]),
-                        "enabled": bool(current["enabled"]),
-                        "routes": _json_load(current["routes_json"], {}),
-                    }
-                    effective = self._effective(connection, policy)
+                    policy = self._policy_from_state(current)
+                    effective = self._effective_for_policy(connection, policy)
                     connection.execute(
                         "UPDATE thesis_ledger_policy_state SET effective_json=?, updated_at=? WHERE consumer=?",
                         (_json(effective), now, CONSUMER_NAMESPACE),
@@ -1707,8 +2124,11 @@ class ThesisLedgerControlStore:
         consecutive_failures: int = 0,
         latency_ms: int | None = None,
         error_code: str | None = None,
+        upstream_source: str | None = None,
     ) -> None:
         scope_key = f"{CONSUMER_NAMESPACE}:{provider_id}:{capability}:{instrument_type}"
+        if upstream_source:
+            scope_key = f"{scope_key}:{str(upstream_source).strip().lower()}"
         with self._connect() as connection:
             connection.execute(
                 """
@@ -1739,12 +2159,8 @@ class ThesisLedgerControlStore:
             )
             current = self._current_state(connection)
             if current is not None:
-                policy = {
-                    "revision": int(current["revision"]),
-                    "enabled": bool(current["enabled"]),
-                    "routes": _json_load(current["routes_json"], {}),
-                }
-                effective = self._effective(connection, policy)
+                policy = self._policy_from_state(current)
+                effective = self._effective_for_policy(connection, policy)
                 connection.execute(
                     "UPDATE thesis_ledger_policy_state SET effective_json=?, updated_at=? WHERE consumer=?",
                     (_json(effective), _utc_now(), CONSUMER_NAMESPACE),

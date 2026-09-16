@@ -3,9 +3,12 @@
 from datetime import date, datetime, timezone
 
 import pandas as pd
+import pytest
 
 from src.services import thesis_ledger_v2_dependencies as dependencies
+from src.services import thesis_ledger_v2_tradability as tradability
 from src.services.thesis_ledger_v2_tradability import (
+    normalize_complete_bar_tradability,
     normalize_baostock_tradability,
     real_cn_tradability,
 )
@@ -113,6 +116,116 @@ def test_real_tradability_does_not_query_provider_before_conservative_knowledge_
     assert "dataAsOf" in result["reason"]
 
 
+def test_complete_point_in_time_bars_prove_tradability_with_provenance():
+    result = normalize_complete_bar_tradability(
+        bars=pd.DataFrame(
+            [
+                {"date": "2024-01-02", "volume": 100},
+                {"date": "2024-01-03", "volume": 200},
+            ]
+        ),
+        expected_sessions={"2024-01-02", "2024-01-03"},
+        start=date(2024, 1, 2),
+        end=date(2024, 1, 3),
+        data_as_of=datetime(2024, 1, 4, tzinfo=timezone.utc),
+        provider="akshare",
+        upstream_source="tencent",
+        provider_revision="akshare:manifest:1:config:0",
+        route_index=0,
+        policy_revision=23,
+    )
+
+    assert result["coverage"]["complete"] is True
+    assert result["tradable"] is True
+    assert result["provider"] == "akshare/tencent"
+    assert "upstreamSource=tencent" in result["providerRevision"]
+    assert "policyRevision=23" in result["providerRevision"]
+    assert result["availableAt"] == "2024-01-03T07:00:00+00:00"
+
+
+def test_real_tradability_uses_routed_bars_instead_of_baostock(monkeypatch):
+    frame = pd.DataFrame(
+        [
+            {"date": "2024-01-02", "volume": 100},
+            {"date": "2024-01-03", "volume": 200},
+        ]
+    )
+    frame.attrs["upstream_source"] = "tencent"
+    gateway = type(
+        "FakeGateway",
+        (),
+        {
+            "bars": lambda self, *_args, **_kwargs: type(
+                "FakeResult",
+                (),
+                {
+                    "data": frame,
+                    "provider": "akshare",
+                    "provider_revision": "akshare:manifest:1:config:0",
+                    "route_index": 0,
+                    "effective_policy": {"revision": 23},
+                },
+            )(),
+        },
+    )()
+    monkeypatch.setattr(tradability, "_cn_exchange_sessions", lambda *_args: {"2024-01-02", "2024-01-03"})
+    monkeypatch.setattr(
+        "src.services.thesis_ledger_provider_runtime.get_thesis_ledger_data_gateway",
+        lambda: gateway,
+    )
+
+    result = real_cn_tradability(
+        "600519.SH",
+        date(2024, 1, 2),
+        date(2024, 1, 3),
+        datetime(2024, 1, 4, tzinfo=timezone.utc),
+    )
+
+    assert result["coverage"]["complete"] is True
+    assert result["tradable"] is True
+    assert result["provider"] == "akshare/tencent"
+
+
+@pytest.mark.parametrize(
+    ("bars", "reason_fragment"),
+    [
+        (
+            pd.DataFrame([{"date": "2024-01-02", "volume": 100}]),
+            "覆盖不完整",
+        ),
+        (
+            pd.DataFrame(
+                [
+                    {"date": "2024-01-02", "volume": 100},
+                    {"date": "2024-01-03", "volume": 0},
+                ]
+            ),
+            "成交量未证明为正数",
+        ),
+    ],
+)
+def test_incomplete_point_in_time_bars_fail_closed_without_inferring_suspension(
+    bars: pd.DataFrame, reason_fragment: str
+):
+    result = normalize_complete_bar_tradability(
+        bars=bars,
+        expected_sessions={"2024-01-02", "2024-01-03"},
+        start=date(2024, 1, 2),
+        end=date(2024, 1, 3),
+        data_as_of=datetime(2024, 1, 4, tzinfo=timezone.utc),
+        provider="akshare",
+        upstream_source="tencent",
+        provider_revision="akshare:manifest:1:config:0",
+        route_index=0,
+        policy_revision=23,
+    )
+
+    assert result["coverage"]["complete"] is False
+    assert result["tradable"] is False
+    assert result["suspendedDates"] == []
+    assert reason_fragment in result["reason"]
+
+
 def test_instrument_facts_supports_critical_history_while_rules_remain_model_assumption(monkeypatch):
     monkeypatch.setattr(
         dependencies,
@@ -144,6 +257,7 @@ def test_instrument_facts_supports_critical_history_while_rules_remain_model_ass
     assert payload["coverage"]["complete"] is True
     assert payload["reason"] is None
     assert payload["facts"][0]["tradable"] is True
+    assert payload["facts"][0]["availableAt"] == "1990-12-18T16:00:00+00:00"
     assert payload["facts"][0]["executionRules"]["status"] == "unavailable"
     assert [item["field"] for item in payload["missingInputs"]] == ["executionRules"]
     assert payload["missingInputs"][0]["category"] == "modelAssumption"

@@ -25,6 +25,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Requ
 from src.services.thesis_ledger_control import (
     CONSUMER_NAMESPACE,
     CONTROL_CONTRACT_VERSION,
+    CONTROL_CONTRACT_V2_VERSION,
     ControlContractError,
     ThesisLedgerControlStore,
 )
@@ -54,6 +55,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/thesis-ledger",
     tags=["ThesisLedger Contract"],
+)
+
+router_v2 = APIRouter(
+    prefix="/thesis-ledger",
+    tags=["ThesisLedger Market Contract V2"],
 )
 
 
@@ -144,6 +150,22 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _normalize_v2_bar_date(value: Optional[str], field: str) -> Optional[str]:
+    """Normalize V2 bar window dates before passing them to Provider adapters."""
+    if value is None:
+        return None
+    candidate = value.strip()
+    try:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", candidate):
+            return date.fromisoformat(candidate).isoformat()
+        parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError("datetime 必须包含时区 offset")
+        return parsed.date().isoformat()
+    except ValueError as error:
+        raise ValueError(f"{field} 必须是合法日期或带时区的 ISO datetime") from error
+
+
 def _fixture_timestamp() -> str:
     return datetime(2025, 1, 10, 7, 0, tzinfo=timezone.utc).isoformat()
 
@@ -160,11 +182,31 @@ def _backtest_market_for_symbol(symbol: str) -> str:
 def _real_daily_bar_provider_route() -> tuple[str, ...]:
     """Return eligible registry providers for the supported CN daily-bar slice."""
     try:
-        route = _control_store().route("DAILY_BAR", "STOCK")
+        # Control Contract V2 is stored in a separate projection from the
+        # legacy policy. Reading the legacy route here makes an applied V2
+        # policy look empty and incorrectly reports the real bar capability as
+        # unavailable.
+        effective = _control_store().effective_policy_v2()
+        route_status = (
+            effective.get("routeStatus", {})
+            if isinstance(effective, dict)
+            else {}
+        )
+        targets = (
+            route_status.get("DAILY_BAR", {})
+            .get("STOCK", {})
+            .get("eligibleTargets", [])
+        )
+        return tuple(
+            str(target["providerId"]).strip()
+            for target in targets
+            if isinstance(target, dict)
+            and isinstance(target.get("providerId"), str)
+            and target["providerId"].strip()
+        )
     except Exception as exc:  # registry is an availability input, never a reason to claim support
         logger.warning("读取 ThesisLedger DAILY_BAR Provider route 失败: %s", exc)
         return ()
-    return tuple(str(provider).strip() for provider in route if str(provider).strip())
 
 
 def _real_v2_raw_provider_route() -> tuple[str, ...]:
@@ -1284,6 +1326,256 @@ def _real_bars(
     return result[-limit:]
 
 
+def _canonical_number(value: Any) -> str | None:
+    if value is None:
+        return None
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("canonical fingerprint 只接受有限数字")
+    raw = format(number, ".17g").lower()
+    if "e" not in raw:
+        return raw.rstrip("0").rstrip(".") if "." in raw else raw
+    mantissa, exponent_text = raw.split("e", 1)
+    exponent = int(exponent_text)
+    sign = "-" if mantissa.startswith("-") else ""
+    unsigned_mantissa = mantissa.lstrip("-")
+    digits = unsigned_mantissa.replace(".", "")
+    decimal_point = unsigned_mantissa.find(".")
+    decimal_index = (decimal_point if decimal_point >= 0 else len(digits)) + exponent
+    if decimal_index <= 0:
+        shifted = f"0.{('0' * -decimal_index)}{digits}"
+    elif decimal_index >= len(digits):
+        shifted = f"{digits}{'0' * (decimal_index - len(digits))}"
+    else:
+        shifted = f"{digits[:decimal_index]}.{digits[decimal_index:]}"
+    return f"{sign}{shifted}".rstrip("0").rstrip(".") if "." in shifted else f"{sign}{shifted}"
+
+
+def _bar_series_fingerprint(points: list[dict[str, Any]], identity: Mapping[str, Any]) -> str:
+    canonical = [
+        [
+            point["timestamp"],
+            *(_canonical_number(point[key]) for key in ("open", "high", "low", "close", "volume", "amount")),
+            point["completionStatus"],
+            point["availableAt"],
+        ]
+        for point in sorted(points, key=lambda item: item["timestamp"])
+    ]
+    payload = [
+        [identity["symbol"], identity["assetType"], identity["timeframe"], identity["adjustment"]],
+        canonical,
+    ]
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _bar_series_point(item: Mapping[str, Any], *, fetched_at: str) -> dict[str, Any]:
+    session_close = _v2_session_close_available_at(item["timestamp"], fetched_at)
+    return {
+        "timestamp": item["timestamp"],
+        "open": item["open"],
+        "high": item["high"],
+        "low": item["low"],
+        "close": item["close"],
+        "volume": item["volume"],
+        "amount": item["amount"],
+        "completionStatus": "complete" if session_close else "incomplete",
+        "availableAt": session_close or fetched_at,
+    }
+
+
+@router_v2.get("/market/bars", dependencies=[Depends(require_contract_token)])
+def market_bars_v2(
+    request: Request,
+    symbol: str = Query(..., min_length=1),
+    assetType: str = Query(...),
+    timeframe: str = Query("1d"),
+    adjustment: str = Query(...),
+    start: Optional[str] = Query(default=None),
+    end: Optional[str] = Query(default=None),
+    limit: int = Query(90, ge=1, le=3650),
+) -> dict[str, Any]:
+    if timeframe != "1d":
+        _error("unsupported_capability", "V2 当前仅支持 1d BarSeries", 422)
+    if adjustment not in {"qfq", "hfq", "none"}:
+        _error("invalid_request", "adjustment 必须是 none、qfq 或 hfq", 422)
+    asset_type = assetType.upper()
+    if asset_type not in {"STOCK", "ETF", "MUTUAL_FUND"}:
+        _error("unsupported_capability", f"DSA 暂不支持 {asset_type} 的 V2 BarSeries", 422)
+    from src.services.thesis_ledger_provider_runtime import instrument_type_for_symbol
+
+    inferred_asset_type = instrument_type_for_symbol(symbol)
+    if inferred_asset_type != asset_type:
+        _error("invalid_request", f"symbol {symbol} 与 assetType={asset_type} 不一致", 422)
+    request_id = request.headers.get("x-request-id") or _request_id_context.get()
+    try:
+        provider_start = _normalize_v2_bar_date(start, "start")
+        provider_end = _normalize_v2_bar_date(end, "end")
+    except ValueError as error:
+        _error("invalid_request", str(error), 422, request_id)
+    if _fixture_mode():
+        raw = _fixture_bars(symbol)
+        provider = "akshare"
+        upstream_source = "eastmoney"
+        route_index = 0
+        effective_revision = 1
+        provider_revision = "akshare:fixture:1"
+        fetched_at = _now_iso()
+        source_has_more_before = False
+    else:
+        try:
+            from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
+
+            gateway_result = get_thesis_ledger_data_gateway().bars(
+                symbol,
+                timeframe="1d",
+                start=provider_start,
+                end=provider_end,
+                limit=limit,
+                adjustment=adjustment,
+                request_id=request_id,
+            )
+            frame = gateway_result.data
+            source_has_more_before = bool(
+                getattr(frame, "attrs", {}).get("has_more_before", False)
+            )
+            raw = []
+            for _, row in frame.iterrows():
+                timestamp = _iso_timestamp(row.get("date"))
+                raw.append(
+                    {
+                        "timestamp": timestamp,
+                        "open": _number(row.get("open"), "open"),
+                        "high": _number(row.get("high"), "high"),
+                        "low": _number(row.get("low"), "low"),
+                        "close": _number(row.get("close"), "close"),
+                        "volume": _number(row.get("volume"), "volume"),
+                        "amount": _number(row.get("amount"), "amount"),
+                    }
+                )
+            provider = gateway_result.provider
+            upstream_source = _upstream_source(
+                getattr(frame, "attrs", {}).get("upstream_source")
+            ) or "unknown"
+            route_index = int(getattr(gateway_result, "route_index", 0))
+            effective_revision = int(getattr(gateway_result, "effective_revision", 0) or 0)
+            provider_revision = str(getattr(gateway_result, "provider_revision", "unknown"))
+            fetched_at = _now_iso()
+        except Exception as exc:  # noqa: BLE001 - gateway maps provider failures.
+            _data_gateway_error(exc, "V2 BarSeries 暂时不可用")
+    raw = [
+        item
+        for item in raw
+        if (not start or item["timestamp"][:10] >= start[:10])
+        and (not end or item["timestamp"][:10] <= end[:10])
+    ]
+    has_more_before = source_has_more_before or len(raw) >= limit or bool(start and raw and raw[0]["timestamp"][:10] > start[:10])
+    raw = raw[-limit:]
+    if not raw:
+        _error("upstream_unavailable", f"没有 {symbol} 的 V2 BarSeries", 503)
+    points = [_bar_series_point(item, fetched_at=fetched_at) for item in raw]
+    return {
+        "contractVersion": 2,
+        "identity": {
+            "symbol": _canonical_symbol(symbol),
+            "assetType": assetType.upper(),
+            "timeframe": timeframe,
+            "adjustment": adjustment,
+        },
+        "points": points,
+        "coverage": {
+            "actualStart": points[0]["timestamp"],
+            "actualEnd": points[-1]["timestamp"],
+            "hasMoreBefore": has_more_before,
+            "latestCompleteTradingDate": next(
+                (point["timestamp"][:10] for point in reversed(points) if point["completionStatus"] == "complete"),
+                None,
+            ),
+        },
+        "provenance": {
+            "providerId": provider,
+            "upstreamSource": upstream_source,
+            "routeIndex": route_index,
+            "effectivePolicyRevision": effective_revision,
+            "providerRevision": provider_revision,
+            "fetchedAt": fetched_at,
+            "freshUntil": fetched_at,
+            "servedFromCache": False,
+            "cacheStatus": "miss",
+        },
+        "inputFingerprint": _bar_series_fingerprint(points, {"symbol": _canonical_symbol(symbol), "assetType": assetType.upper(), "timeframe": timeframe, "adjustment": adjustment}),
+    }
+
+
+@router_v2.post("/market/indicators/calculate", dependencies=[Depends(require_contract_token)])
+def calculate_indicators_v2(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    from src.services.technical_indicator_series import (
+        build_indicator_points,
+        normalize_indicator_parameters,
+    )
+
+    if payload.get("contractVersion") != 2:
+        _error("invalid_request", "指标计算请求必须使用 Contract V2", 422)
+    points = payload.get("points")
+    input_fingerprint = str(payload.get("inputFingerprint") or "")
+    if not isinstance(points, list) or not points or not input_fingerprint:
+        _error("invalid_request", "指标计算请求缺少 points 或 inputFingerprint", 422)
+    identity = payload.get("identity")
+    if not isinstance(identity, dict) or not {"symbol", "assetType", "timeframe", "adjustment"}.issubset(identity):
+        _error("invalid_request", "指标计算请求缺少 identity", 422)
+    if _bar_series_fingerprint(points, identity) != input_fingerprint:
+        _error("invalid_request", "inputFingerprint 与规范化 points 不一致", 422)
+    requests = payload.get("requests")
+    if not isinstance(requests, list) or not requests:
+        _error("invalid_request", "指标计算请求至少包含一个指标", 422)
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        [
+            {
+                "date": item["timestamp"],
+                "open": item["open"],
+                "high": item["high"],
+                "low": item["low"],
+                "close": item["close"],
+                "volume": item["volume"],
+                "amount": item["amount"],
+            }
+            for item in points
+        ]
+    )
+    results = []
+    for item in requests:
+        if not isinstance(item, dict):
+            _error("invalid_request", "指标请求必须是对象", 422)
+        name = str(item.get("name") or "").upper()
+        try:
+            parameters = normalize_indicator_parameters(name, item.get("parameters"))
+            _, calculated_points, _, _ = build_indicator_points(
+                frame, name, parameters, _iso_timestamp
+            )
+        except (KeyError, ValueError) as exc:
+            _error("invalid_request", str(exc), 422)
+        results.append(
+            {
+                "name": name,
+                "parameters": parameters,
+                "inputFingerprint": input_fingerprint,
+                "points": [
+                    {"timestamp": point["timestamp"], "values": point["values"]}
+                    for point in calculated_points
+                ],
+            }
+        )
+    return {
+        "contractVersion": 2,
+        "engineVersion": "dsa-indicator-v2",
+        "inputFingerprint": input_fingerprint,
+        "results": results,
+    }
+
+
 def _v2_session_close_available_at(occurred_at: str, fetched_at: str | None) -> str | None:
     """Use CN cash-session close only after the fact is safely observable."""
     occurred = datetime.fromisoformat(occurred_at.replace("Z", "+00:00"))
@@ -1951,7 +2243,7 @@ def _require_control_envelope(payload: Any) -> dict[str, Any]:
 
 def _control_envelope(payload: Any) -> dict[str, Any]:
     value = _require_control_envelope(payload)
-    if value.get("contractVersion") != CONTROL_CONTRACT_VERSION:
+    if value.get("contractVersion") not in {CONTROL_CONTRACT_VERSION, CONTROL_CONTRACT_V2_VERSION}:
         error = ControlContractError(
             "CONTROL_CONTRACT_UNSUPPORTED",
             "Control Contract 版本不兼容",
@@ -1975,18 +2267,25 @@ def control_handshake(payload: dict[str, Any] = Body(default_factory=dict)) -> d
         value = _control_envelope(payload)
     except HTTPException:
         raise
-    requested = value.get("supportedVersions", [CONTROL_CONTRACT_VERSION])
-    supported = CONTROL_CONTRACT_VERSION in requested if isinstance(requested, list) else False
-    if not supported:
+    requested = value.get("supportedVersions", [value.get("contractVersion")])
+    supported_version = next(
+        (
+            version
+            for version in (CONTROL_CONTRACT_V2_VERSION, CONTROL_CONTRACT_VERSION)
+            if isinstance(requested, list) and version in requested
+        ),
+        None,
+    )
+    if supported_version is None:
         error = ControlContractError(
             "CONTROL_CONTRACT_UNSUPPORTED",
             "没有共同的 Control Contract 版本",
             request_id=str(value.get("requestId") or ""),
-            details={"supportedVersions": [CONTROL_CONTRACT_VERSION]},
+            details={"supportedVersions": [CONTROL_CONTRACT_VERSION, CONTROL_CONTRACT_V2_VERSION]},
         )
         _control_http_error(error)
     return {
-        "contractVersion": CONTROL_CONTRACT_VERSION,
+        "contractVersion": supported_version,
         "consumer": CONSUMER_NAMESPACE,
         "accepted": True,
         "providerRegistry": True,
@@ -2014,6 +2313,8 @@ def control_provider_config(
         value = _control_envelope(payload)
         return _control_store().save_provider_config(provider_id, value)
     except ControlContractError as error:
+        if isinstance(payload, dict) and payload.get("contractVersion") == CONTROL_CONTRACT_V2_VERSION:
+            error.contract_version = CONTROL_CONTRACT_V2_VERSION
         _control_http_error(error)
 
 
@@ -2152,13 +2453,24 @@ def control_provider_remove(
 def control_apply_policy(payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
     try:
         value = _control_envelope(payload)
+        if value.get("contractVersion") == CONTROL_CONTRACT_V2_VERSION:
+            return _control_store().apply_policy_v2(value)
         return _control_store().apply_policy(value)
     except ControlContractError as error:
+        if isinstance(payload, dict) and payload.get("contractVersion") == CONTROL_CONTRACT_V2_VERSION:
+            error.contract_version = CONTROL_CONTRACT_V2_VERSION
         _control_http_error(error)
 
 
 @router.get("/control/policies/effective", dependencies=[Depends(require_control_token)])
 def control_effective_policy() -> dict[str, Any]:
+    v2_projection = _control_store().policy_projection_v2()
+    if v2_projection and v2_projection.get("effective", {}).get("contractVersion") == CONTROL_CONTRACT_V2_VERSION:
+        return {
+            "contractVersion": CONTROL_CONTRACT_V2_VERSION,
+            "consumer": CONSUMER_NAMESPACE,
+            "projection": v2_projection,
+        }
     return {
         "contractVersion": CONTROL_CONTRACT_VERSION,
         "consumer": CONSUMER_NAMESPACE,

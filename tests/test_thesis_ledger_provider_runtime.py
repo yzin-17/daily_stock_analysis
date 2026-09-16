@@ -147,7 +147,11 @@ def test_provider_registry_exposes_all_dsa_fetchers_for_routing(tmp_path):
         "DAILY_BAR": ["ETF", "STOCK"]
     }
     assert registry["tencent"]["upstreamSources"] == [
-        {"sourceId": "tencent", "displayName": "腾讯财经"}
+        {
+            "sourceId": "tencent",
+            "displayName": "腾讯财经",
+            "capabilities": {"DAILY_BAR": ["ETF", "STOCK"]},
+        }
     ]
     assert registry["yfinance"]["markets"] == ["CN", "HK", "JP", "KR", "TW", "US"]
     assert registry["tushare"]["configurationMode"] == "dsa_environment"
@@ -724,7 +728,7 @@ def test_v2_raw_daily_bar_request_uses_explicit_raw_provider_method(tmp_path):
         ThesisLedgerDataRequest(
             "DAILY_BAR",
             "600519.SH",
-            parameters={"priceMode": "raw"},
+            adjustment="none",
         )
     )
 

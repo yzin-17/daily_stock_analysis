@@ -65,6 +65,7 @@ TENCENT_REALTIME_ENDPOINT = "qt.gtimg.cn/q"
 _AKSHARE_HISTORY_CALL_TIMEOUT = 30.0
 _AKSHARE_TIMEOUT_PROCESS_JOIN_GRACE = 1.0
 _AKSHARE_TIMEOUT_PROCESS_START_METHOD = "spawn"
+_THESIS_LEDGER_TARGET_TIMEOUT_SECONDS = 4.5
 
 
 # User-Agent 池，用于随机轮换
@@ -378,6 +379,71 @@ def _akshare_timeout_worker(conn, func, args, kwargs) -> None:
         conn.close()
 
 
+def _fetch_exact_daily_source(
+    instrument_kind: str,
+    source: str,
+    stock_code: str,
+    start_date: str,
+    end_date: str,
+    adjust: str,
+) -> pd.DataFrame:
+    """Run one exact AkShare upstream in an isolated, killable process."""
+    import akshare as ak
+
+    start = start_date.replace("-", "")
+    end = end_date.replace("-", "")
+    if instrument_kind == "etf" and source == "eastmoney":
+        return ak.fund_etf_hist_em(
+            symbol=stock_code,
+            period="daily",
+            start_date=start,
+            end_date=end,
+            adjust=adjust,
+        )
+    symbol = _to_sina_tx_symbol(stock_code)
+    if instrument_kind == "stock" and source == "eastmoney":
+        return ak.stock_zh_a_hist(
+            symbol=stock_code,
+            period="daily",
+            start_date=start,
+            end_date=end,
+            adjust=adjust,
+        )
+    if source == "sina":
+        frame = ak.stock_zh_a_daily(
+            symbol=symbol,
+            start_date=start,
+            end_date=end,
+            adjust=adjust,
+        )
+    elif source == "tencent":
+        frame = ak.stock_zh_a_hist_tx(
+            symbol=symbol,
+            start_date=start,
+            end_date=end,
+            adjust=adjust,
+        )
+    else:
+        raise DataFetchError(f"Akshare unsupported exact daily source: {source}")
+    if frame is None or frame.empty:
+        return pd.DataFrame()
+    frame = frame.rename(
+        columns={
+            "date": "日期",
+            "open": "开盘",
+            "high": "最高",
+            "low": "最低",
+            "close": "收盘",
+            "volume": "成交量",
+            "amount": "成交额",
+            "pct_chg": "涨跌幅",
+        }
+    )
+    if "收盘" in frame.columns and "涨跌幅" not in frame.columns:
+        frame["涨跌幅"] = frame["收盘"].pct_change().fillna(0) * 100
+    return frame
+
+
 def _terminate_akshare_process(process) -> None:
     if process.is_alive():
         process.terminate()
@@ -566,6 +632,58 @@ class AkshareFetcher(BaseFetcher):
 
         # 所有都失败
         raise DataFetchError(f"Akshare 所有渠道获取失败: {last_error}")
+
+    def get_daily_data_for_source(
+        self,
+        stock_code: str,
+        upstream_source: str,
+        *,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        days: int = 30,
+        adjustment: Optional[str] = None,
+        timeout_seconds: float = _THESIS_LEDGER_TARGET_TIMEOUT_SECONDS,
+    ) -> pd.DataFrame:
+        """Fetch exactly one declared upstream source for ThesisLedger V2.
+
+        The legacy ``get_daily_data`` path intentionally keeps its native
+        fallback chain for DSA analysis.  ThesisLedger's source-pinned route
+        must call one adapter/source pair and let the outer route executor
+        decide whether another target is eligible.
+        """
+        if end_date is None:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+        if start_date is None:
+            start_dt = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=days * 2)
+            start_date = start_dt.strftime("%Y-%m-%d")
+        source = str(upstream_source or "").strip().lower()
+        adjust = "qfq" if adjustment is None else str(adjustment).strip().lower()
+        if adjust not in {"none", "qfq", "hfq"}:
+            raise DataFetchError(f"Akshare 不支持 adjustment={adjust}")
+        upstream_adjust = "" if adjust == "none" else adjust
+        code = normalize_stock_code(stock_code)
+        instrument_kind = "etf" if _is_etf_code(code) else "stock"
+        supported_sources = {"eastmoney", "tencent"}
+        if instrument_kind == "stock":
+            supported_sources.add("sina")
+        if source not in supported_sources:
+            raise DataFetchError(f"Akshare 未声明 source={source} 的日线适配器")
+        raw = _akshare_call_with_timeout(
+            _fetch_exact_daily_source,
+            instrument_kind,
+            source,
+            code,
+            start_date,
+            end_date,
+            upstream_adjust,
+            timeout=timeout_seconds,
+            call_name=f"akshare.{instrument_kind}.{source}",
+        )
+        if raw is None or raw.empty:
+            raise DataFetchError(f"Akshare source={source} 未返回 {code} 日线")
+        raw.attrs["upstream_source"] = source
+        frame = self._clean_data(self._normalize_data(raw, code))
+        return self._calculate_indicators(frame)
 
     def _fetch_stock_data_em(
         self,
@@ -764,8 +882,15 @@ class AkshareFetcher(BaseFetcher):
 
         raise DataFetchError(f"Akshare ETF 所有渠道获取失败: {last_error}")
 
-    def _fetch_etf_data_em(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
-        """通过东方财富获取 ETF 前复权日线。"""
+    def _fetch_etf_data_em(
+        self,
+        stock_code: str,
+        start_date: str,
+        end_date: str,
+        *,
+        adjust: str = "qfq",
+    ) -> pd.DataFrame:
+        """通过东方财富获取 ETF 指定复权模式日线。"""
         import akshare as ak
         
         # 防封禁策略 1: 随机 User-Agent
@@ -775,7 +900,7 @@ class AkshareFetcher(BaseFetcher):
         self._enforce_rate_limit()
         
         logger.info(f"[API调用] ak.fund_etf_hist_em(symbol={stock_code}, period=daily, "
-                   f"start_date={start_date.replace('-', '')}, end_date={end_date.replace('-', '')}, adjust=qfq)")
+                   f"start_date={start_date.replace('-', '')}, end_date={end_date.replace('-', '')}, adjust={adjust})")
         
         try:
             import time as _time
@@ -787,7 +912,7 @@ class AkshareFetcher(BaseFetcher):
                 period="daily",
                 start_date=start_date.replace('-', ''),
                 end_date=end_date.replace('-', ''),
-                adjust="qfq"  # 前复权
+                adjust=adjust,
             )
             
             api_elapsed = _time.time() - api_start

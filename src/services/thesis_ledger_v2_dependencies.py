@@ -159,9 +159,9 @@ def fixture_calendar(start: str, end: str, data_as_of: datetime, calendars: Iter
 def static_cn_instrument_fact(symbol: str, data_as_of: datetime) -> dict[str, Any]:
     """Return versioned CN A-share identity, lot/tick and raw execution-rule state.
 
-    Historical listing/suspension applicability is resolved independently by
-    ``real_cn_tradability``.  The static rule fact must never be used as proof
-    that a symbol was tradable throughout a requested historical range.
+    Historical applicability is resolved by ``real_cn_tradability`` from an
+    explicit, complete routed BarSeries. The static rule fact must never be
+    used as proof that a symbol was tradable throughout a requested range.
     """
     revision = "cn-a-share-standard-lot-tick-v1"
     timestamp = "1990-12-18T16:00:00+00:00"
@@ -208,8 +208,10 @@ def instrument_facts_response(
     provider_revision = f"{tradability['providerRevision']}+{fact['providerRevision']}"
     fact["provider"] = provider
     fact["providerRevision"] = provider_revision
-    if coverage["complete"]:
-        fact["availableAt"] = tradability["availableAt"]
+    # ``availableAt`` remains the point-in-time availability of the identity,
+    # lot and tick fact consumed by the execution engine. Historical
+    # tradability coverage is validated while the snapshot is built and is
+    # carried by the response coverage plus the combined provider revision.
 
     missing: list[dict[str, Any]] = []
     if not coverage["complete"] or not fact["tradable"]:

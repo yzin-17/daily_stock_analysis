@@ -379,3 +379,64 @@ def test_tencent_fetcher_rejects_capped_incomplete_history() -> None:
 
     assert ",day,2020-01-01,2026-05-10,800,qfq" in captured["params"]["param"]
     assert df.empty
+
+
+def test_thesis_ledger_exact_source_caps_open_ended_history_and_marks_more() -> None:
+    raw = pd.DataFrame(
+        [
+            {
+                "date": "2026-05-08",
+                "open": 4.0,
+                "high": 4.2,
+                "low": 3.9,
+                "close": 4.1,
+                "volume": 1000,
+                "amount": 4100,
+            }
+        ]
+    )
+    fetcher = TencentFetcher()
+    with patch.object(fetcher, "_fetch_raw_data", return_value=raw) as request:
+        frame = fetcher.get_daily_data_for_source(
+            "510300",
+            "tencent",
+            end_date="2026-05-10",
+            days=3650,
+            adjustment="qfq",
+            timeout_seconds=4.5,
+        )
+
+    assert request.call_args.kwargs["timeout_seconds"] == 4.5
+    assert request.call_args.args[0] == "510300"
+    assert frame.attrs["upstream_source"] == "tencent"
+    assert frame.attrs["has_more_before"] is True
+    assert frame.attrs["amount_normalization"] == "provider"
+
+
+def test_thesis_ledger_exact_source_normalizes_missing_tencent_amount() -> None:
+    raw = pd.DataFrame(
+        [
+            {
+                "date": "2026-05-08",
+                "open": 4.0,
+                "high": 4.2,
+                "low": 3.9,
+                "close": 4.1,
+                "volume": 1000,
+                "amount": None,
+            }
+        ]
+    )
+    fetcher = TencentFetcher()
+    with patch.object(fetcher, "_fetch_raw_data", return_value=raw):
+        frame = fetcher.get_daily_data_for_source(
+            "510300",
+            "tencent",
+            end_date="2026-05-10",
+            days=90,
+            adjustment="qfq",
+            timeout_seconds=4.5,
+        )
+
+    assert float(frame.iloc[0]["amount"]) == 4100.0
+    assert frame.attrs["amount_normalization"] == "close_times_volume"
