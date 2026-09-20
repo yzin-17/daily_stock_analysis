@@ -503,6 +503,19 @@ class AkshareFetcher(BaseFetcher):
         if start_date is None:
             start_dt = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=days * 2)
             start_date = start_dt.strftime("%Y-%m-%d")
+        if _is_etf_code(stock_code):
+            # ETF raw bars must use the explicit source-pinned path.  The
+            # legacy ETF fallback chain has historically defaulted to qfq and
+            # is therefore not admissible for V2 point-in-time snapshots.
+            return self.get_daily_data_for_source(
+                stock_code,
+                "eastmoney",
+                start_date=start_date,
+                end_date=end_date,
+                days=days,
+                adjustment="none",
+                timeout_seconds=_THESIS_LEDGER_TARGET_TIMEOUT_SECONDS,
+            )
         raw_df = self._fetch_stock_data(
             normalize_stock_code(stock_code),
             start_date,

@@ -69,15 +69,19 @@ def parse_data_as_of(value: str) -> datetime:
 
 
 def validate_cn_stock(symbol: str, market: str, instrument_type: str, canonicalize: Any) -> str:
+    """Validate a CN stock/ETF identity without conflating the two types."""
     if market != "CN":
         raise V2DependencyError("unsupported_capability", "V2 当前仅支持 CN 市场")
-    if instrument_type != "STOCK":
-        raise V2DependencyError("unsupported_capability", "V2 当前仅支持 STOCK 标的")
+    if instrument_type not in {"STOCK", "ETF"}:
+        raise V2DependencyError("unsupported_capability", "V2 当前仅支持 STOCK/ETF 标的")
     canonical = canonicalize(symbol)
     if not re.fullmatch(r"\d{6}\.(?:SH|SZ|BJ)", canonical):
-        raise V2DependencyError("invalid_request", "symbol 必须是 CN 股票代码，例如 600519.SH")
-    if canonical.split(".", 1)[0].startswith(("15", "16", "18", "51", "52", "56", "58")):
-        raise V2DependencyError("unsupported_capability", "V2 暂不支持 CN ETF 事实")
+        raise V2DependencyError("invalid_request", "symbol 必须是 CN 股票或 ETF 代码，例如 600519.SH")
+    is_etf = canonical.split(".", 1)[0].startswith(("15", "16", "18", "51", "52", "56", "58"))
+    if instrument_type == "ETF" and not is_etf:
+        raise V2DependencyError("invalid_request", f"symbol {canonical} 与 instrumentType=ETF 不一致")
+    if instrument_type == "STOCK" and is_etf:
+        raise V2DependencyError("invalid_request", f"symbol {canonical} 与 instrumentType=STOCK 不一致")
     return canonical
 
 
@@ -156,22 +160,33 @@ def fixture_calendar(start: str, end: str, data_as_of: datetime, calendars: Iter
     }
 
 
-def static_cn_instrument_fact(symbol: str, data_as_of: datetime) -> dict[str, Any]:
+def static_cn_instrument_fact(
+    symbol: str,
+    data_as_of: datetime,
+    instrument_type: str = "STOCK",
+) -> dict[str, Any]:
     """Return versioned CN A-share identity, lot/tick and raw execution-rule state.
 
     Historical applicability is resolved by ``real_cn_tradability`` from an
     explicit, complete routed BarSeries. The static rule fact must never be
     used as proof that a symbol was tradable throughout a requested range.
     """
-    revision = "cn-a-share-standard-lot-tick-v1"
+    if instrument_type == "ETF":
+        revision = "cn-etf-standard-lot-tick-v1"
+        lot_size = "100"
+        tick_size = "0.001"
+    else:
+        revision = "cn-a-share-standard-lot-tick-v1"
+        lot_size = "100"
+        tick_size = "0.01"
     timestamp = "1990-12-18T16:00:00+00:00"
     return {
         "symbol": symbol,
         "market": "CN",
-        "instrumentType": "STOCK",
+        "instrumentType": instrument_type,
         "currency": "CNY",
-        "lotSize": "100",
-        "tickSize": "0.01",
+        "lotSize": lot_size,
+        "tickSize": tick_size,
         "tradable": True,
         "executionRules": {
             "status": "unavailable",
@@ -187,6 +202,7 @@ def static_cn_instrument_fact(symbol: str, data_as_of: datetime) -> dict[str, An
 def instrument_facts_response(
     symbol: str, data_as_of: datetime, start: str, end: str,
     execution_start: str, execution_end: str, fixture_facts: list[dict[str, Any]],
+    instrument_type: str | None = None,
 ) -> dict[str, Any]:
     """Resolve critical historical applicability separately from model assumptions."""
     start_date, end_date = validate_range(start, end, data_as_of)
@@ -200,7 +216,12 @@ def instrument_facts_response(
             provider_revision="instrument-v2-fixture-1", coverage=coverage, facts=fixture_facts,
         )
 
-    fact = static_cn_instrument_fact(symbol, data_as_of)
+    resolved_type = instrument_type or (
+        "ETF"
+        if symbol.split(".", 1)[0].startswith(("15", "16", "18", "51", "52", "56", "58"))
+        else "STOCK"
+    )
+    fact = static_cn_instrument_fact(symbol, data_as_of, resolved_type)
     tradability = real_cn_tradability(symbol, start_date, end_date, data_as_of)
     coverage["complete"] = bool(tradability["coverage"].get("complete"))
     fact["tradable"] = bool(tradability.get("tradable")) if coverage["complete"] else False
@@ -254,7 +275,13 @@ def instrument_facts_response(
     return result
 
 
-def real_corporate_actions(symbol: str, start: str, end: str, data_as_of: datetime) -> dict[str, Any]:
+def real_corporate_actions(
+    symbol: str,
+    start: str,
+    end: str,
+    data_as_of: datetime,
+    instrument_type: str = "STOCK",
+) -> dict[str, Any]:
     try:
         from data_provider.fundamental_adapter import AkshareFundamentalAdapter
 
@@ -263,6 +290,7 @@ def real_corporate_actions(symbol: str, start: str, end: str, data_as_of: dateti
             start_date=start,
             end_date=end,
             data_as_of=data_as_of,
+            instrument_type=instrument_type,
         )
     except Exception as exc:  # upstream/provider boundary; do not expose details
         logger.warning("V2 corporate-action provider unavailable: %s", exc)
@@ -277,7 +305,9 @@ def real_corporate_actions(symbol: str, start: str, end: str, data_as_of: dateti
     coverage = result.get("coverage") or {"start": start, "end": end, "complete": False}
     facts = result.get("facts") or []
     provider_revision = str(
-        facts[0].get("providerRevision") if facts else "akshare-corporate-actions-v1"
+        facts[0].get("providerRevision")
+        if facts
+        else result.get("providerRevision") or "akshare-corporate-actions-v1"
     )
     if not coverage.get("complete"):
         return response(

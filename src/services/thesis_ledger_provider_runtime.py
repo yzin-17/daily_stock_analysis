@@ -794,7 +794,19 @@ class ThesisLedgerProviderRuntime:
         entries = status.get("targets") if isinstance(status, Mapping) else None
         if isinstance(entries, list):
             for entry in entries:
-                if not isinstance(entry, Mapping) or not entry.get("eligible"):
+                if not isinstance(entry, Mapping):
+                    continue
+                # Effective Policy snapshots intentionally expose an open
+                # circuit as ineligible.  The runtime must still retain that
+                # configured route as a candidate so its persisted 60-second
+                # cooldown can expire and perform one half-open probe.  A
+                # disabled or unconfigured route remains excluded.
+                retryable_open_circuit = (
+                    entry.get("reason") == "circuit_open"
+                    and bool(entry.get("configured"))
+                    and bool(entry.get("enabled"))
+                )
+                if not entry.get("eligible") and not retryable_open_circuit:
                     continue
                 provider_id = str(entry.get("providerId") or "").strip().lower()
                 upstream_source = str(entry.get("upstreamSource") or "").strip().lower()
@@ -808,7 +820,12 @@ class ThesisLedgerProviderRuntime:
         )
         for entry in providers:
             if isinstance(entry, Mapping):
-                if not entry.get("eligible"):
+                retryable_open_circuit = (
+                    entry.get("reason") == "circuit_open"
+                    and bool(entry.get("configured"))
+                    and bool(entry.get("enabled"))
+                )
+                if not entry.get("eligible") and not retryable_open_circuit:
                     continue
                 provider_id = str(entry.get("providerId") or "").strip().lower()
             else:
@@ -836,12 +853,28 @@ class ThesisLedgerProviderRuntime:
             return [
                 str(entry["providerId"])
                 for entry in entries
-                if isinstance(entry, Mapping) and entry.get("eligible")
+                if isinstance(entry, Mapping)
+                and (
+                    entry.get("eligible")
+                    or (
+                        entry.get("reason") == "circuit_open"
+                        and bool(entry.get("configured"))
+                        and bool(entry.get("enabled"))
+                    )
+                )
             ]
         return [
             str(entry["providerId"])
             for entry in status.get("providers", [])
-            if isinstance(entry, Mapping) and entry.get("eligible")
+            if isinstance(entry, Mapping)
+            and (
+                entry.get("eligible")
+                or (
+                    entry.get("reason") == "circuit_open"
+                    and bool(entry.get("configured"))
+                    and bool(entry.get("enabled"))
+                )
+            )
         ]
 
     def _execute_with_metadata(
@@ -1049,7 +1082,7 @@ class ThesisLedgerProviderRuntime:
                             providers=providers,
                             attempt=attempt + 1,
                         )
-                except (TimeoutError, ConnectionError, OSError) as exc:
+                except (TimeoutError, ConnectionError, OSError):
                     last_error = ProviderCallError(
                         "transient_failure", "Provider 暂时不可用", retryable=True
                     )
@@ -1251,8 +1284,12 @@ class ThesisLedgerProviderRuntime:
                     "akshare",
                     "tencent",
                 }
-                if provider_id == "tencent" and adjustment not in (None, "qfq"):
+                if provider_id == "tencent" and adjustment not in (None, "qfq", "none"):
                     unsupported_adjustment = True
+                if provider_id == "tencent" and adjustment == "none":
+                    unsupported_adjustment = not (
+                        callable(source_method) and upstream_source == "tencent"
+                    )
                 if unsupported_adjustment:
                     raise ProviderCallError(
                         "unsupported_adjustment",

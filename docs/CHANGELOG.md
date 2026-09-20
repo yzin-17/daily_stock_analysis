@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] Tencent 日线路由支持显式 `adjustment=none`：请求 `none` 时只接受上游 `day` 响应键，继续保留 `qfq/qfqday` 行为；响应键与请求模式不一致时保持不可用，不把复权价格冒充原始价格。
+- [改进] ThesisLedger V2 支持 CN ETF 的显式身份校验与原始日线入口；ETF 事实返回 CNY、100 份与 0.001 tick，历史可交易性仍必须由完整、可审计的 routed BarSeries 证明。ETF 公司行动公告缺少生效日或拆分比例时保持覆盖不完整，不生成推测性 fact。
 - [修复] ThesisLedger V2 instrument-facts 复用 BaoStock 的证券基础信息、交易日历与 `tradestatus` 核验 CN 股票历史上市/退市/停牌状态；缺失 Provider 行只会使覆盖不完整，不再被猜测为停牌。历史状态完整且区间内可交易时允许由已冻结研究模型补足独立的 executionRules 假设；已知停牌或覆盖缺失仍保持 critical fact 失败。
 - [改进] ThesisLedger V2 instrument-facts 要求显式传入事实 start/end 与 executionStart/executionEnd；静态 lot/tick 保留原始规则 unavailable，并返回历史可交易性缺失的字段、区间与 Provider 原因。旧版无区间请求返回 422，消费端须同步升级。
 

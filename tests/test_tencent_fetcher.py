@@ -10,8 +10,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
 from data_provider.tencent_fetcher import TencentFetcher, _to_tencent_symbol
+from data_provider.base import DataFetchError
 
 
 def _read_priority_from_fresh_process(value: str | None) -> int:
@@ -440,3 +442,69 @@ def test_thesis_ledger_exact_source_normalizes_missing_tencent_amount() -> None:
 
     assert float(frame.iloc[0]["amount"]) == 4100.0
     assert frame.attrs["amount_normalization"] == "close_times_volume"
+
+
+def test_tencent_exact_source_requests_raw_day_and_accepts_only_day_payload() -> None:
+    payload = {
+        "data": {
+            "sz159516": {
+                "day": [
+                    ["2026-05-06", "1.000", "1.050", "1.060", "0.990", "1000", "105000"],
+                ],
+            }
+        }
+    }
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return payload
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return FakeResponse()
+
+    with patch("data_provider.tencent_fetcher.requests.get", fake_get):
+        frame = TencentFetcher().get_daily_data_for_source(
+            "159516.SZ",
+            "tencent",
+            start_date="2026-05-01",
+            end_date="2026-05-10",
+            adjustment="none",
+        )
+
+    assert captured["params"]["param"].endswith(",none")
+    assert frame.attrs["upstream_source"] == "tencent"
+    assert float(frame.iloc[0]["close"]) == 1.05
+    assert float(frame.iloc[0]["amount"]) == 105000.0
+
+
+def test_tencent_raw_request_rejects_qfq_payload_shape() -> None:
+    payload = {
+        "data": {
+            "sz159516": {
+                "qfqday": [["2026-05-06", "1.000", "1.050", "1.060", "0.990", "1000"]],
+            }
+        }
+    }
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return payload
+
+    with patch("data_provider.tencent_fetcher.requests.get", return_value=FakeResponse()):
+        with pytest.raises(DataFetchError, match="returned no data"):
+            TencentFetcher().get_daily_data_for_source(
+                "159516.SZ",
+                "tencent",
+                start_date="2026-05-01",
+                end_date="2026-05-10",
+                adjustment="none",
+            )

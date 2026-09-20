@@ -67,7 +67,6 @@ def test_every_manifest_capability_has_an_executable_unique_source():
 
 
 def _store(tmp_path, routes):
-    store = ThesisLedgerControlStore(str(tmp_path / "route-v2.db"))
     stock_store = ThesisLedgerControlStore(str(tmp_path / "stock.db"))
     stock_store.apply_policy_v2(
         {
@@ -299,6 +298,54 @@ def test_v2_runtime_tencent_qfq_is_primary_and_receives_target_deadline(tmp_path
     ]
     assert result.provider == "tencent"
     assert result.route_index == 0
+
+
+def test_v2_runtime_tencent_none_is_primary_for_raw_etf_bars(tmp_path):
+    calls = []
+
+    @dataclass
+    class Tencent:
+        def get_daily_data_for_source(self, symbol, source, **options):
+            calls.append((symbol, source, options))
+            return _frame()
+
+    store = _store(
+        tmp_path,
+        {"DAILY_BAR": {"ETF": [{"providerId": "tencent", "upstreamSource": "tencent"}]}},
+    )
+    result = ThesisLedgerProviderRuntime(store, adapters={"tencent": Tencent()}).execute_request(
+        ThesisLedgerDataRequest(
+            "DAILY_BAR", "159516.SZ", instrument_type="ETF", limit=1, adjustment="none"
+        )
+    )
+
+    assert calls == [
+        (
+            "159516",
+            "tencent",
+            {"days": 1, "adjustment": "none", "timeout_seconds": 4.5},
+        )
+    ]
+    assert result.provider == "tencent"
+    assert result.route_index == 0
+
+
+def test_v2_runtime_tencent_none_requires_source_pinned_adapter(tmp_path):
+    @dataclass
+    class Tencent:
+        def get_daily_data(self, symbol, **options):
+            raise AssertionError("unproven Tencent raw fallback must not be called")
+
+    store = _store(
+        tmp_path,
+        {"DAILY_BAR": {"ETF": [{"providerId": "tencent", "upstreamSource": "tencent"}]}},
+    )
+    with pytest.raises(Exception, match="未证明支持 adjustment=none"):
+        ThesisLedgerProviderRuntime(store, adapters={"tencent": Tencent()}).execute_request(
+            ThesisLedgerDataRequest(
+                "DAILY_BAR", "159516.SZ", instrument_type="ETF", limit=1, adjustment="none"
+            )
+        )
 
 
 def test_v2_runtime_none_adjustment_is_explicit_and_not_raw_mode_alias(tmp_path):

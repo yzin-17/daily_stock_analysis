@@ -246,3 +246,45 @@ def test_v2_raw_daily_entry_requests_unadjusted_prices(monkeypatch) -> None:
         "adjust": "",
     }
     assert result.iloc[0]["close"] == 10.2
+
+
+def test_v2_raw_etf_entry_uses_source_pinned_unadjusted_route(monkeypatch) -> None:
+    fetcher = AkshareFetcher(sleep_min=0, sleep_max=0)
+    captured = {}
+    expected = pd.DataFrame(
+        {
+            "date": ["2026-05-25"],
+            "open": [1.0],
+            "high": [1.1],
+            "low": [0.9],
+            "close": [1.05],
+            "volume": [1000],
+            "amount": [20000],
+            "pct_chg": [0.0],
+        }
+    )
+
+    def fake_source(stock_code, source, **kwargs):
+        captured.update(stock_code=stock_code, source=source, kwargs=kwargs)
+        return expected
+
+    monkeypatch.setattr(fetcher, "get_daily_data_for_source", fake_source)
+    result = fetcher.get_daily_data_v2_raw(
+        "159516.SZ",
+        start_date="2026-05-01",
+        end_date="2026-05-25",
+        days=30,
+    )
+
+    assert captured == {
+        "stock_code": "159516.SZ",
+        "source": "eastmoney",
+        "kwargs": {
+            "start_date": "2026-05-01",
+            "end_date": "2026-05-25",
+            "days": 30,
+            "adjustment": "none",
+            "timeout_seconds": 4.5,
+        },
+    }
+    assert result.iloc[0]["close"] == 1.05

@@ -258,6 +258,64 @@ def normalize_corporate_actions_v2(
     return {"facts": facts, "coverage": coverage}
 
 
+def normalize_etf_corporate_actions_v2(
+    announcement_df: pd.DataFrame | None,
+    fund_code: str,
+    *,
+    start_date: str,
+    end_date: str,
+    data_as_of: datetime,
+    provider: str = "akshare",
+    provider_revision: str = "akshare-etf-corporate-actions-v1",
+) -> Dict[str, Any]:
+    """Validate ETF action-announcement coverage without inventing ratios.
+
+    AkShare's ETF announcement index identifies split/distribution events but
+    does not expose an effective date and ratio in the index row.  Such an
+    event is therefore a deliberate coverage blocker when its announcement is
+    inside the requested point-in-time window.  An empty result is trusted
+    only when the provider returned a non-empty, complete announcement index
+    and no action announcement is known in the window.
+    """
+    coverage = {"start": start_date, "end": end_date, "complete": False}
+    if announcement_df is None or announcement_df.empty:
+        return {"facts": [], "coverage": coverage}
+    work_df = _filter_rows_by_code(announcement_df, fund_code)
+    if work_df.empty:
+        return {"facts": [], "coverage": coverage}
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except ValueError:
+        return {"facts": [], "coverage": coverage}
+    as_of = data_as_of.astimezone(timezone.utc)
+    complete = True
+    title_keywords = ("拆分", "分红", "收益分配", "份额折算")
+    for _, row in work_df.iterrows():
+        if not isinstance(row, pd.Series):
+            complete = False
+            continue
+        announced = _safe_datetime(_pick_by_keywords(row, ["公告日期", "公告日"]))
+        title = _safe_str(_pick_by_keywords(row, ["公告标题", "标题"]))
+        if announced is None or not title:
+            complete = False
+            continue
+        if announced.tzinfo:
+            available_at = announced.astimezone(timezone.utc)
+        else:
+            available_at = announced.replace(
+                tzinfo=ZoneInfo("Asia/Shanghai")
+            ).astimezone(timezone.utc)
+        if available_at > as_of:
+            continue
+        if start <= announced.date() <= end and any(keyword in title for keyword in title_keywords):
+            # The index does not contain enough facts for a safe simulation
+            # event.  Do not guess a ratio or turn it into a cash dividend.
+            complete = False
+    coverage["complete"] = complete
+    return {"facts": [], "coverage": coverage}
+
+
 def _build_dividend_payload(
     dividend_df: pd.DataFrame,
     stock_code: str,
@@ -364,8 +422,38 @@ class AkshareFundamentalAdapter:
         start_date: str,
         end_date: str,
         data_as_of: datetime,
+        instrument_type: str = "STOCK",
     ) -> Dict[str, Any]:
-        """Return only auditable CN stock cash-dividend facts for V2."""
+        """Return auditable V2 company-action coverage for a CN instrument."""
+        if instrument_type.upper() == "ETF":
+            # AkShare's ETF announcement endpoint expects the bare fund code;
+            # keep the canonical exchange-qualified symbol for filtering and
+            # the response contract below.
+            provider_symbol = _normalize_code(stock_code)
+            announcement_df, source, errors = self._call_df_candidates(
+                [("fund_announcement_dividend_em", {"symbol": provider_symbol})],
+                allow_empty=False,
+            )
+            if announcement_df is None:
+                return {
+                    "facts": [],
+                    "coverage": {"start": start_date, "end": end_date, "complete": False},
+                    "source": source,
+                    "errors": errors,
+                }
+            result = normalize_etf_corporate_actions_v2(
+                announcement_df,
+                stock_code,
+                start_date=start_date,
+                end_date=end_date,
+                data_as_of=data_as_of,
+                provider="akshare",
+                provider_revision=f"akshare:{source or 'etf-announcements'}:v1",
+            )
+            result["source"] = source
+            result["errors"] = errors
+            result["providerRevision"] = f"akshare:{source or 'etf-announcements'}:v1"
+            return result
         dividend_df, source, errors = self._call_df_candidates([
             ("stock_fhps_detail_em", {"symbol": stock_code}),
             ("stock_history_dividend_detail", {"symbol": stock_code, "indicator": "分红", "date": ""}),
@@ -390,6 +478,7 @@ class AkshareFundamentalAdapter:
         )
         result["source"] = source
         result["errors"] = errors
+        result["providerRevision"] = f"akshare:{source or 'corporate-actions'}:v1"
         return result
 
     def _call_df_candidates(

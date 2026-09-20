@@ -122,7 +122,9 @@ def test_v2_non_fixture_declares_only_registry_confirmed_cn_daily_bars(monkeypat
     monkeypatch.setattr(
         thesis_ledger_api,
         "_real_daily_bar_provider_route",
-        lambda: ("efinance", "akshare"),
+        lambda instrument_type="STOCK": ("efinance", "akshare")
+        if instrument_type == "STOCK"
+        else (),
     )
     client = _client(monkeypatch, fixture=False)
     response = client.get(

@@ -179,8 +179,8 @@ def _backtest_market_for_symbol(symbol: str) -> str:
     return "CN"
 
 
-def _real_daily_bar_provider_route() -> tuple[str, ...]:
-    """Return eligible registry providers for the supported CN daily-bar slice."""
+def _real_daily_bar_provider_route(instrument_type: str = "STOCK") -> tuple[str, ...]:
+    """Return eligible registry providers for one CN daily-bar instrument type."""
     try:
         # Control Contract V2 is stored in a separate projection from the
         # legacy policy. Reading the legacy route here makes an applied V2
@@ -194,7 +194,7 @@ def _real_daily_bar_provider_route() -> tuple[str, ...]:
         )
         targets = (
             route_status.get("DAILY_BAR", {})
-            .get("STOCK", {})
+            .get(instrument_type.upper(), {})
             .get("eligibleTargets", [])
         )
         return tuple(
@@ -209,13 +209,13 @@ def _real_daily_bar_provider_route() -> tuple[str, ...]:
         return ()
 
 
-def _real_v2_raw_provider_route() -> tuple[str, ...]:
+def _real_v2_raw_provider_route(instrument_type: str = "STOCK") -> tuple[str, ...]:
     """Keep only registry providers exposing the explicit V2 raw-bar method."""
     eligible: list[str] = []
     try:
         from src.services.thesis_ledger_provider_runtime import _PROVIDER_ADAPTER_IMPORTS
 
-        for provider_id in _real_daily_bar_provider_route():
+        for provider_id in _real_daily_bar_provider_route(instrument_type):
             try:
                 adapter_import = _PROVIDER_ADAPTER_IMPORTS.get(provider_id)
                 if adapter_import is None:
@@ -250,7 +250,10 @@ def _backtest_capabilities() -> dict[str, Any]:
         if fixture_mode
         else "dsa-backtest-v2-contract-unavailable"
     )
-    real_v2_raw_route = _real_v2_raw_provider_route() if not fixture_mode else ()
+    real_v2_raw_routes = {
+        instrument_type: _real_v2_raw_provider_route(instrument_type)
+        for instrument_type in ("STOCK", "ETF")
+    } if not fixture_mode else {}
     capabilities: list[dict[str, Any]] = []
     for market, timezone_name in (
         ("CN", "Asia/Shanghai"),
@@ -266,16 +269,15 @@ def _backtest_capabilities() -> dict[str, Any]:
                     base_reason = "当前 Provider registry/health 未确认该基础周期可用"
                     if (
                         market == "CN"
-                        and instrument_type == "STOCK"
                         and timeframe == "1d"
-                        and real_v2_raw_route
+                        and real_v2_raw_routes.get(instrument_type)
                     ):
                         base_status = "supported"
                         base_reason = None
                 capability_provider = PROVIDER_ID
                 capability_revision = provider_revision
                 if base_status == "supported" and not fixture_mode:
-                    capability_provider = real_v2_raw_route[0]
+                    capability_provider = real_v2_raw_routes[instrument_type][0]
                     capability_revision = "dsa-backtest-v2-provider-registry-raw-1"
                 capabilities.append(
                     {
@@ -1276,6 +1278,7 @@ def _real_bars(
             limit=limit,
             request_id=request_id,
             parameters={"priceMode": "raw"} if v2_raw else {},
+            adjustment="none" if v2_raw else None,
         )
         frame = gateway_result.data
         provider = gateway_result.provider
@@ -2135,9 +2138,23 @@ def v2_instrument_facts(
         _error(exc.code, str(exc), exc.status_code)
     facts = []
     if _fixture_mode():
-        facts = [fact for fact in _backtest_capabilities()["instrumentFacts"] if fact["symbol"] == canonical]
+        facts = [
+            fact
+            for fact in _backtest_capabilities()["instrumentFacts"]
+            if fact["symbol"] == canonical
+            and fact.get("instrumentType") == instrumentType
+        ]
     try:
-        return instrument_facts_response(canonical, data_as_of, start, end, executionStart, executionEnd, facts)
+        return instrument_facts_response(
+            canonical,
+            data_as_of,
+            start,
+            end,
+            executionStart,
+            executionEnd,
+            facts,
+            instrument_type=instrumentType,
+        )
     except V2DependencyError as exc:
         _error(exc.code, str(exc), exc.status_code)
 
@@ -2163,7 +2180,7 @@ def v2_corporate_actions(
                 **fact,
                 "symbol": canonical,
                 "market": "CN",
-                "instrumentType": "STOCK",
+                "instrumentType": instrumentType,
             }
             for fact in _backtest_capabilities()["corporateActions"] ["facts"]
             if fact.get("symbol") == canonical
@@ -2181,6 +2198,7 @@ def v2_corporate_actions(
         start_date.isoformat(),
         end_date.isoformat(),
         data_as_of,
+        instrument_type=instrumentType,
     )
 
 

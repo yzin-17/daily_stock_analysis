@@ -3,6 +3,7 @@
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -345,6 +346,68 @@ def test_chip_summary_skips_disabled_or_circuit_open_provider(
     assert raised.value.code == "NO_ELIGIBLE_PROVIDER"
     assert raised.value.request_id == "chip-state-request"
     assert adapter.calls == 0
+
+
+def test_expired_v2_circuit_allows_one_half_open_provider_probe(tmp_path):
+    """重启后已过冷却期的 V2 来源级熔断必须允许半开探测。"""
+    store = ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db"))
+    store.save_provider_config("akshare", {"enabled": True, "settings": {}})
+    store.record_health(
+        "akshare",
+        "DAILY_BAR",
+        "STOCK",
+        state="degraded",
+        circuit="open",
+        consecutive_failures=3,
+        error_code="transient_failure",
+        upstream_source="tencent",
+    )
+    store.apply_policy_v2(
+        {
+            "contractVersion": 2,
+            "consumer": "thesis-ledger",
+            "requestId": "expired-circuit-test",
+            "revision": 1,
+            "enabled": True,
+            "routes": {
+                "DAILY_BAR": {
+                    "STOCK": [
+                        {"providerId": "akshare", "upstreamSource": "tencent"}
+                    ]
+                }
+            },
+        }
+    )
+    expired_at = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+    with store._connect() as connection:
+        connection.execute(
+            "UPDATE thesis_ledger_provider_health SET checked_at=? WHERE scope_key=?",
+            (
+                expired_at,
+                "thesis-ledger:akshare:DAILY_BAR:STOCK:tencent",
+            ),
+        )
+        connection.commit()
+
+    calls = []
+    runtime = ThesisLedgerProviderRuntime(store, adapters={"akshare": object()})
+    result = runtime._execute_with_metadata(
+        "DAILY_BAR",
+        "STOCK",
+        lambda provider_id, _adapter, upstream_source: calls.append(
+            (provider_id, upstream_source)
+        )
+        or "ok",
+    )
+
+    assert result.value == "ok"
+    assert calls == [("akshare", "tencent")]
+    assert store.health(
+        "akshare",
+        "DAILY_BAR",
+        "STOCK",
+        upstream_source="tencent",
+    )["circuit"] == "closed"
 
 
 def test_quote_retries_transient_primary_once_then_uses_one_complete_fallback(tmp_path):

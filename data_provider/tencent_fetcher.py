@@ -45,8 +45,11 @@ class TencentFetcher(BaseFetcher):
         start_date: str,
         end_date: str,
         *,
+        adjustment: str = "qfq",
         timeout_seconds: Optional[float] = None,
     ) -> pd.DataFrame:
+        if adjustment not in {"none", "qfq"}:
+            raise DataFetchError(f"TencentFetcher unsupported adjustment: {adjustment}")
         code = normalize_stock_code(stock_code)
         symbol = _to_tencent_symbol(code)
         if not symbol:
@@ -62,13 +65,13 @@ class TencentFetcher(BaseFetcher):
         )
         response = requests.get(
             self._KLINE_ENDPOINT,
-            params={"param": f"{symbol},day,{explicit_window},{lookback},qfq"},
+            params={"param": f"{symbol},day,{explicit_window},{lookback},{adjustment}"},
             headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json,text/plain,*/*"},
             timeout=timeout_seconds or self._HTTP_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
         payload = response.json()
-        rows = _extract_kline_rows(payload, symbol=symbol)
+        rows = _extract_kline_rows(payload, symbol=symbol, adjustment=adjustment)
         if not rows:
             logger.info("TencentFetcher empty daily history for %s", stock_code)
             return _empty_daily_frame()
@@ -111,11 +114,12 @@ class TencentFetcher(BaseFetcher):
         adjustment: Optional[str] = None,
         timeout_seconds: float = 4.5,
     ) -> pd.DataFrame:
-        """Fetch the exact Tencent qfq source for the ThesisLedger route target."""
+        """Fetch one exact Tencent adjustment mode for the ThesisLedger route target."""
         if str(upstream_source or "").strip().lower() != "tencent":
             raise DataFetchError(f"TencentFetcher unsupported source: {upstream_source}")
-        if adjustment not in (None, "qfq"):
+        if adjustment not in (None, "none", "qfq"):
             raise DataFetchError(f"TencentFetcher unsupported adjustment: {adjustment}")
+        requested_adjustment = adjustment or "qfq"
         capped_history = start_date is None and days > _MAX_KLINE_BARS
         if end_date is None:
             end_date = datetime.now().strftime("%Y-%m-%d")
@@ -126,6 +130,7 @@ class TencentFetcher(BaseFetcher):
             stock_code,
             start_date,
             end_date,
+            adjustment=requested_adjustment,
             timeout_seconds=timeout_seconds,
         )
         if raw is None or raw.empty:
@@ -254,12 +259,17 @@ def _lots_to_shares(volume: Any) -> Any:
         return volume
 
 
-def _extract_kline_rows(payload: dict[str, Any], *, symbol: str) -> list[dict[str, Any]]:
+def _extract_kline_rows(
+    payload: dict[str, Any], *, symbol: str, adjustment: str = "qfq"
+) -> list[dict[str, Any]]:
     data = payload.get("data") if isinstance(payload, dict) else None
     item = data.get(symbol) if isinstance(data, dict) else None
     if not isinstance(item, dict):
         return []
-    rows = item.get("qfqday") or item.get("day") or []
+    response_key = {"qfq": "qfqday", "hfq": "hfqday", "none": "day"}.get(adjustment)
+    if response_key is None:
+        return []
+    rows = item.get(response_key) or []
     result: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, list) or len(row) < 6:

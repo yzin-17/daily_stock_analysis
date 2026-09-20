@@ -102,7 +102,7 @@ def test_v2_dependency_routes_have_auditable_fixture_envelope(monkeypatch):
     assert instrument.json()["facts"][0]["executionRules"]["status"] == "supported"
 
 
-def test_v2_rejects_etf_and_never_leaks_fixture_facts(monkeypatch):
+def test_v2_rejects_symbol_type_mismatch_and_never_leaks_fixture_facts(monkeypatch):
     monkeypatch.setattr(
         v2_dependencies,
         "real_cn_tradability",
@@ -126,13 +126,13 @@ def test_v2_rejects_etf_and_never_leaks_fixture_facts(monkeypatch):
             "start": "2025-01-01", "end": "2025-01-10",
             "executionStart": "2025-01-02", "executionEnd": "2025-01-10",
             "market": "CN",
-            "instrumentType": "ETF",
+            "instrumentType": "STOCK",
             "dataAsOf": "2025-01-10T07:00:00Z",
         },
         headers=_headers(),
     )
     assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "unsupported_capability"
+    assert response.json()["detail"]["code"] == "invalid_request"
 
     calendar = client.get(
         "/api/v1/thesis-ledger/v2/calendar",
@@ -170,6 +170,93 @@ def test_v2_rejects_etf_and_never_leaks_fixture_facts(monkeypatch):
         "status": "unavailable",
         "reason": "缺少覆盖请求历史区间的价格限制、法定收费与结算规则事实",
     }
+
+
+def test_v2_etf_facts_keep_exchange_identity_and_bar_provenance(monkeypatch):
+    monkeypatch.setattr(
+        v2_dependencies,
+        "real_cn_tradability",
+        lambda *_args, **_kwargs: {
+            "provider": "akshare/tencent",
+            "providerRevision": "akshare:manifest:1:config:0;upstreamSource=tencent;routeIndex=0;policyRevision=26",
+            "coverage": {"start": "2024-01-02", "end": "2024-01-03", "complete": True},
+            "tradable": True,
+            "suspendedDates": [],
+            "ipoDate": None,
+            "outDate": None,
+            "availableAt": "2024-01-03T07:00:00+00:00",
+            "reason": None,
+        },
+    )
+    client = _client(monkeypatch, fixture=False)
+    response = client.get(
+        "/api/v1/thesis-ledger/v2/instrument-facts",
+        params={
+            "symbol": "159516.SZ",
+            "market": "CN",
+            "instrumentType": "ETF",
+            "start": "2024-01-02",
+            "end": "2024-01-03",
+            "executionStart": "2024-01-02",
+            "executionEnd": "2024-01-03",
+            "dataAsOf": "2024-01-04T07:00:00Z",
+        },
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "supported"
+    assert payload["facts"][0]["instrumentType"] == "ETF"
+    assert payload["facts"][0]["currency"] == "CNY"
+    assert payload["facts"][0]["lotSize"] == "100"
+    assert payload["facts"][0]["tickSize"] == "0.001"
+    assert payload["facts"][0]["executionRules"]["status"] == "unavailable"
+
+
+def test_etf_corporate_action_index_fails_closed_when_action_lacks_ratio():
+    from data_provider.fundamental_adapter import normalize_etf_corporate_actions_v2
+
+    frame = pd.DataFrame(
+        [
+            {
+                "基金代码": "159516",
+                "公告标题": "基金份额拆分并调整最小申购、赎回单位",
+                "公告日期": "2026-07-06",
+            }
+        ]
+    )
+    result = normalize_etf_corporate_actions_v2(
+        frame,
+        "159516.SZ",
+        start_date="2026-01-01",
+        end_date="2026-07-09",
+        data_as_of=datetime(2026, 7, 9, tzinfo=timezone.utc),
+    )
+    assert result["coverage"]["complete"] is False
+    assert result["facts"] == []
+
+
+def test_etf_corporate_action_index_can_prove_empty_window():
+    from data_provider.fundamental_adapter import normalize_etf_corporate_actions_v2
+
+    frame = pd.DataFrame(
+        [
+            {
+                "基金代码": "159516",
+                "公告标题": "基金份额拆分结果公告",
+                "公告日期": "2026-07-10",
+            }
+        ]
+    )
+    result = normalize_etf_corporate_actions_v2(
+        frame,
+        "159516.SZ",
+        start_date="2024-01-02",
+        end_date="2026-03-23",
+        data_as_of=datetime(2026, 3, 23, tzinfo=timezone.utc),
+    )
+    assert result["coverage"]["complete"] is True
+    assert result["facts"] == []
 
 
 @pytest.mark.parametrize("overrides", [
@@ -291,6 +378,40 @@ def test_akshare_adapter_can_assert_a_successful_empty_source(monkeypatch):
     )
     assert result["coverage"]["complete"] is True
     assert result["facts"] == []
+
+
+def test_akshare_etf_announcement_uses_bare_provider_symbol(monkeypatch):
+    from data_provider.fundamental_adapter import AkshareFundamentalAdapter
+
+    calls = []
+
+    def fund_announcement_dividend_em(**kwargs):
+        calls.append(kwargs["symbol"])
+        return pd.DataFrame(
+            [
+                {
+                    "基金代码": "159516",
+                    "公告日期": "2026-03-24",
+                    "公告标题": "份额折算公告",
+                }
+            ]
+        )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "akshare",
+        SimpleNamespace(fund_announcement_dividend_em=fund_announcement_dividend_em),
+    )
+    result = AkshareFundamentalAdapter().get_corporate_actions_v2(
+        "159516.SZ",
+        start_date="2026-01-01",
+        end_date="2026-03-23",
+        data_as_of=datetime(2026, 9, 17, tzinfo=timezone.utc),
+        instrument_type="ETF",
+    )
+
+    assert calls == ["159516"]
+    assert result["coverage"]["complete"] is True
 
 
 def test_corporate_action_provider_failure_is_not_an_empty_success(monkeypatch):
