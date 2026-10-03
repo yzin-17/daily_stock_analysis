@@ -72,10 +72,9 @@ from src.llm.usage import (
 )
 from src.llm.local_cli_backend import redact_diagnostic_text
 from src.llm.provider_cache import (
-    apply_prompt_cache_hints,
-    build_provider_cache_route_context,
-    filter_prompt_cache_telemetry,
+    apply_prompt_cache_hints, build_provider_cache_route_context, filter_prompt_cache_telemetry,
 )
+from src.llm.prompt_cache_request_boundary import sanitize_prompt_cache_router_deployments
 from src.llm.response_content import strip_leading_think_wrapper
 from src.storage import persist_llm_usage
 from src.data.stock_mapping import STOCK_NAME_MAP
@@ -2490,7 +2489,7 @@ class GeminiAnalyzer:
                     return
             try:
                 self._router = Router(
-                    model_list=router_model_list,
+                    model_list=sanitize_prompt_cache_router_deployments(router_model_list),
                     routing_strategy="simple-shuffle",
                     num_retries=2,
                 )
@@ -2535,7 +2534,7 @@ class GeminiAnalyzer:
             self._legacy_router_model_list = legacy_model_list
             try:
                 self._router = Router(
-                    model_list=legacy_model_list,
+                    model_list=sanitize_prompt_cache_router_deployments(legacy_model_list),
                     routing_strategy="simple-shuffle",
                     num_retries=2,
                 )

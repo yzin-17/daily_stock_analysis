@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 
-import pandas as pd
 import pytest
+from tests.current_data_policy_fixture import apply_data_policy
 from fastapi.testclient import TestClient
 
 from src.services.thesis_ledger_control import ThesisLedgerControlStore
@@ -46,16 +46,7 @@ class _Chip:
 def _store(tmp_path, routes, *, revision=1):
     """创建带指定 Effective Policy route 的独立 SQLite store。"""
     store = ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db"))
-    store.apply_policy(
-        {
-            "contractVersion": 1,
-            "consumer": "thesis-ledger",
-            "requestId": "gateway-test",
-            "revision": revision,
-            "enabled": True,
-            "routes": routes,
-        }
-    )
+    apply_data_policy(store, routes, revision=revision)
     return store
 
 
@@ -98,7 +89,7 @@ def test_gateway_returns_effective_policy_and_actual_provider_provenance(tmp_pat
         def get_realtime_quote(self, symbol, *, source=None):
             """确认 gateway 传递裸 Provider symbol 并返回 fixture。"""
             assert symbol == "600519"
-            assert source == "sina"
+            assert source == "em"
             return _Quote()
 
     gateway = ThesisLedgerDataGateway(
@@ -178,7 +169,7 @@ def test_gateway_marks_provider_switch_and_preserves_attempted_route(tmp_path):
 
 def test_gateway_exposes_stable_request_correlated_errors(tmp_path):
     """没有 eligible Provider 时应返回稳定 code 和 request identity。"""
-    store = _store(tmp_path, {"REALTIME_QUOTE": {"STOCK": []}})
+    store = ThesisLedgerControlStore(str(tmp_path / "empty-policy.db"))
     gateway = ThesisLedgerDataGateway(ThesisLedgerProviderRuntime(store))
 
     with pytest.raises(ThesisLedgerGatewayError) as raised:
@@ -193,9 +184,9 @@ def test_gateway_exposes_stable_request_correlated_errors(tmp_path):
     error = raised.value
     assert error.code == "NO_ELIGIBLE_PROVIDER"
     assert error.detail() == {
-        "contractVersion": 1,
+        "contractVersion": 3,
         "code": "NO_ELIGIBLE_PROVIDER",
-        "message": "没有可执行的 REALTIME_QUOTE/STOCK Provider",
+        "message": "当前 Control 路由策略不可用",
         "requestId": "request-4",
         "diagnosticId": "request-4",
     }
@@ -250,183 +241,45 @@ def test_gateway_rejects_unknown_legacy_capability_with_stable_error(tmp_path):
     assert raised.value.request.request_id == "request-6"
 
 
-def test_fastapi_data_contract_uses_applied_effective_policy_for_all_six_capabilities(
-    tmp_path, monkeypatch
-):
-    """通过 HTTP 串起 ControlStore、Effective Policy、Gateway 和 deterministic fakes。"""
-    database_path = str(tmp_path / "stock_analysis.db")
-    monkeypatch.setenv("DATABASE_PATH", database_path)
+def test_fastapi_current_quote_uses_applied_policy_and_exact_target(tmp_path, monkeypatch):
+    """通过 HTTP 验证当前 Control Policy 与精确报价执行一致。"""
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "stock_analysis.db"))
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "data-token")
     monkeypatch.setenv("THESIS_LEDGER_CONTROL_TOKEN", "control-token")
     monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "false")
-    monkeypatch.setenv("RUNTIME_SCHEDULER_SUPPRESS_START", "true")
-
-    from fastapi import FastAPI
-    from api.thesis_ledger import router as thesis_ledger_router
-    import src.services.thesis_ledger_provider_runtime as runtime_module
-
-    daily_frame = pd.DataFrame(
-        {
-            "date": pd.date_range("2025-01-01", periods=90, freq="D"),
-            "open": [100 + index * 0.2 for index in range(90)],
-            "high": [100.5 + index * 0.2 for index in range(90)],
-            "low": [99.5 + index * 0.2 for index in range(90)],
-            "close": [100 + index * 0.2 for index in range(90)],
-            "volume": [1000 + index for index in range(90)],
-            "amount": [(100 + index * 0.2) * (1000 + index) for index in range(90)],
-        }
-    )
-    nav_frame = pd.DataFrame(
-        {
-            "日期": ["2025-01-01", "2025-01-02"],
-            "单位净值": [1.10, 1.12],
-        }
-    )
-    calls: list[tuple[str, str, str, object | None]] = []
+    store = _store(tmp_path, {"REALTIME_QUOTE": {"STOCK": ["akshare"]}}, revision=17)
 
     class _Adapter:
-        """按 Provider ID 返回 deterministic 数据并记录实际调用顺序。"""
+        calls = 0
 
-        def __init__(self, provider_id: str):
-            self.provider_id = provider_id
+        def get_realtime_quote(self, symbol, *, source=None):
+            self.calls += 1
+            assert (symbol, source) == ("600519", "em")
+            return _Quote()
 
-        def get_realtime_quote(self, symbol: str, *, source: str | None = None):
-            calls.append((self.provider_id, "REALTIME_QUOTE", symbol, source))
-            return None if self.provider_id == "akshare" else _Quote()
-
-        def get_daily_data(self, symbol: str, *, days: int):
-            calls.append((self.provider_id, "DAILY_BAR", symbol, days))
-            return None if self.provider_id == "akshare" else daily_frame.copy()
-
-        def get_fund_nav_history(self, symbol: str):
-            calls.append((self.provider_id, "FUND_NAV", symbol, None))
-            if self.provider_id == "akshare":
-                return pd.DataFrame({"日期": ["2025-01-02"], "其他字段": [1.0]})
-            return nav_frame.copy()
-
-        def get_chip_distribution(self, symbol: str):
-            calls.append((self.provider_id, "CHIP_SUMMARY", symbol, None))
-            return _Chip()
-
-    from src.services.thesis_ledger_control import ThesisLedgerControlStore
-    from src.services.thesis_ledger_provider_runtime import (
-        ThesisLedgerDataGateway,
-        ThesisLedgerProviderRuntime,
+    adapter = _Adapter()
+    gateway = ThesisLedgerDataGateway(
+        ThesisLedgerProviderRuntime(store, adapters={"akshare": adapter})
     )
-
-    runtime = ThesisLedgerProviderRuntime(
-        ThesisLedgerControlStore(database_path),
-        adapters={
-            "akshare": _Adapter("akshare"),
-            "efinance": _Adapter("efinance"),
-        },
-    )
-    monkeypatch.setattr(runtime_module, "get_thesis_ledger_runtime", lambda: runtime)
-    gateway = runtime_module.get_thesis_ledger_data_gateway()
-    assert isinstance(gateway, ThesisLedgerDataGateway)
-
-    routes = {
-        "REALTIME_QUOTE": {"STOCK": ["akshare", "efinance"]},
-        "DAILY_BAR": {"STOCK": ["akshare", "efinance"]},
-        "FUND_NAV": {"MUTUAL_FUND": ["akshare", "efinance"]},
-        "FUND_NAV_HISTORY": {"MUTUAL_FUND": ["akshare", "efinance"]},
-        "CHIP_SUMMARY": {"STOCK": ["akshare"]},
-    }
-    control_headers = {"Authorization": "Bearer control-token"}
-    data_headers = {"Authorization": "Bearer data-token"}
+    import src.services.thesis_ledger_provider_runtime as runtime_module
+    monkeypatch.setattr(runtime_module, "get_thesis_ledger_data_gateway", lambda: gateway)
+    from fastapi import FastAPI
+    from api.thesis_ledger import router_v3
     app = FastAPI()
-    app.include_router(thesis_ledger_router, prefix="/api/v1")
+    app.include_router(router_v3, prefix="/api/v3")
     client = TestClient(app)
 
-    applied = client.post(
-        "/api/v1/thesis-ledger/control/policies/apply",
-        headers=control_headers,
-        json={
-            "contractVersion": 1,
-            "consumer": "thesis-ledger",
-            "requestId": "closure-04-black-box",
-            "revision": 17,
-            "enabled": True,
-            "routes": routes,
-        },
+    effective = client.get(
+        "/api/v3/thesis-ledger/control/policies/effective",
+        headers={"Authorization": "Bearer control-token"},
     )
-    assert applied.status_code == 200, applied.text
-
-    effective_response = client.get(
-        "/api/v1/thesis-ledger/control/policies/effective",
-        headers=control_headers,
+    assert effective.status_code == 200
+    assert effective.json()["projection"]["effective"]["revision"] == 17
+    quote = client.get(
+        "/api/v3/thesis-ledger/market/quote?symbol=600519.SH",
+        headers={"Authorization": "Bearer data-token"},
     )
-    assert effective_response.status_code == 200, effective_response.text
-    effective = effective_response.json()["projection"]["effective"]
-    assert effective["revision"] == 17
-    assert effective["sourceDesiredRevision"] == 17
-    assert effective["routes"] == routes
-    for capability, instrument_type_routes in routes.items():
-        for instrument_type, provider_route in instrument_type_routes.items():
-            assert effective["routeStatus"][capability][instrument_type][
-                "eligibleProviderIds"
-            ] == provider_route
-
-    def effective_route(capability: str, instrument_type: str) -> list[str]:
-        return effective["routeStatus"][capability][instrument_type][
-            "eligibleProviderIds"
-        ]
-
-    quote_route = effective_route("REALTIME_QUOTE", "STOCK")
-    daily_bar_route = effective_route("DAILY_BAR", "STOCK")
-    fund_nav_route = effective_route("FUND_NAV", "MUTUAL_FUND")
-    fund_nav_history_route = effective_route("FUND_NAV_HISTORY", "MUTUAL_FUND")
-    chip_route = effective_route("CHIP_SUMMARY", "STOCK")
-
-    def get_contract(path: str, **params):
-        response = client.get(path, headers=data_headers, params=params)
-        assert response.status_code == 200, response.text
-        return response.json()
-
-    quote = get_contract("/api/v1/thesis-ledger/market/quote", symbol="600519.SH")
-    bars = get_contract(
-        "/api/v1/thesis-ledger/market/bars",
-        symbol="600519.SH",
-        limit=3,
-    )
-    indicator = get_contract(
-        "/api/v1/thesis-ledger/market/indicators/RSI",
-        symbol="600519.SH",
-    )
-    fund_nav = get_contract("/api/v1/thesis-ledger/market/fund-nav", symbol="000001.OF")
-    fund_nav_history = get_contract(
-        "/api/v1/thesis-ledger/market/fund-nav/history",
-        symbol="000001.OF",
-        limit=2,
-    )
-    chip = get_contract("/api/v1/thesis-ledger/market/chip", symbol="600519.SH")
-
-    assert quote["provider"] == quote_route[-1]
-    assert quote["fallbackUsed"] is (len(quote_route) > 1)
-    assert len(bars) == 3
-    assert {row["provider"] for row in bars} == {daily_bar_route[-1]}
-    assert {row["fallbackUsed"] for row in bars} == {len(daily_bar_route) > 1}
-    assert indicator["provider"] == daily_bar_route[-1]
-    assert indicator["fallbackUsed"] is (len(daily_bar_route) > 1)
-    assert fund_nav["provider"] == fund_nav_route[-1]
-    assert fund_nav["fallbackUsed"] is (len(fund_nav_route) > 1)
-    assert {row["provider"] for row in fund_nav_history} == {
-        fund_nav_history_route[-1]
-    }
-    assert {row["fallbackUsed"] for row in fund_nav_history} == {
-        len(fund_nav_history_route) > 1
-    }
-    assert chip["provider"] == chip_route[-1]
-    assert chip["fallbackUsed"] is (len(chip_route) > 1)
-
-    def provider_attempts(capability: str) -> list[str]:
-        return [provider for provider, item, _, _ in calls if item == capability]
-
-    assert provider_attempts("REALTIME_QUOTE") == quote_route
-    assert provider_attempts("DAILY_BAR") == daily_bar_route * 2
-    assert provider_attempts("FUND_NAV") == fund_nav_route + fund_nav_history_route
-    assert provider_attempts("CHIP_SUMMARY") == chip_route
-    assert calls[0] == ("akshare", "REALTIME_QUOTE", "600519", "sina")
-    assert all(symbol == "600519" for _, item, symbol, _ in calls if item == "DAILY_BAR")
-    assert all(symbol == "000001" for _, item, symbol, _ in calls if item == "FUND_NAV")
-    assert calls[-1] == ("akshare", "CHIP_SUMMARY", "600519", None)
+    assert quote.status_code == 200, quote.text
+    assert quote.json()["version"] == 3
+    assert quote.json()["provider"] == "akshare"
+    assert adapter.calls == 1

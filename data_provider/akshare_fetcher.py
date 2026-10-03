@@ -31,6 +31,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import Optional, Dict, Any, List, Tuple
 
 import pandas as pd
@@ -52,6 +53,11 @@ from .realtime_types import (
     safe_float, safe_int  # 使用统一的类型转换函数
 )
 from .us_index_mapping import is_us_index_code, is_us_stock_code
+from .akshare_daily_contract import annotate_exact_daily_contract
+from .tencent_quote_identity import quote_timestamp, verified_quote_fields
+from .eastmoney_quote_identity import unique_quote_row
+from .sector_rankings_contract import normalize_sector_rankings
+from .fund_holdings_source import read_recent_fund_holdings
 
 
 # 保留旧的 RealtimeQuote 别名，用于向后兼容
@@ -659,10 +665,7 @@ class AkshareFetcher(BaseFetcher):
     ) -> pd.DataFrame:
         """Fetch exactly one declared upstream source for ThesisLedger V2.
 
-        The legacy ``get_daily_data`` path intentionally keeps its native
-        fallback chain for DSA analysis.  ThesisLedger's source-pinned route
-        must call one adapter/source pair and let the outer route executor
-        decide whether another target is eligible.
+        Legacy analysis keeps its fallback; this route calls one exact source.
         """
         if end_date is None:
             end_date = datetime.now().strftime("%Y-%m-%d")
@@ -696,7 +699,7 @@ class AkshareFetcher(BaseFetcher):
             raise DataFetchError(f"Akshare source={source} 未返回 {code} 日线")
         raw.attrs["upstream_source"] = source
         frame = self._clean_data(self._normalize_data(raw, code))
-        return self._calculate_indicators(frame)
+        return annotate_exact_daily_contract(self._calculate_indicators(frame), instrument_kind, source, adjust)
 
     def _fetch_stock_data_em(
         self,
@@ -964,12 +967,14 @@ class AkshareFetcher(BaseFetcher):
         """获取最近可用的场外基金股票持仓披露。"""
         import akshare as ak
 
-        current_year = datetime.now().year
-        for year in (current_year, current_year - 1):
-            frame = ak.fund_portfolio_hold_em(symbol=fund_code, date=str(year))
-            if frame is not None and not frame.empty:
-                return frame
-        return frame
+        return read_recent_fund_holdings(
+            fund_code,
+            current_year=datetime.now(ZoneInfo("Asia/Shanghai")).year,
+            fetch_year=lambda symbol, year: ak.fund_portfolio_hold_em(
+                symbol=symbol,
+                date=year,
+            ),
+        )
     
     def _fetch_us_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
         """
@@ -1271,12 +1276,10 @@ class AkshareFetcher(BaseFetcher):
                 return None
             
             # 查找指定股票
-            row = df[df['代码'] == stock_code]
-            if row.empty:
+            row = unique_quote_row(df, stock_code)
+            if row is None:
                 logger.info(f"[API返回] 未找到股票 {stock_code} 的实时行情")
                 return None
-            
-            row = row.iloc[0]
             
             # 使用 realtime_types.py 中的统一转换函数
             quote = UnifiedRealtimeQuote(
@@ -1525,43 +1528,7 @@ class AkshareFetcher(BaseFetcher):
                 circuit_breaker.record_failure(source_key, failure_message)
                 return None
             
-            # 提取数据
-            data_start = content.find('"')
-            data_end = content.rfind('"')
-            if data_start == -1 or data_end == -1:
-                failure_message = _build_realtime_failure_message(
-                    source_name="腾讯",
-                    endpoint=TENCENT_REALTIME_ENDPOINT,
-                    stock_code=stock_code,
-                    symbol=symbol,
-                    category="malformed_payload",
-                    detail="quote payload missing quotes",
-                    elapsed=api_elapsed,
-                    error_type="MalformedPayload",
-                )
-                logger.info(failure_message)
-                circuit_breaker.record_failure(source_key, failure_message)
-                return None
-            
-            data_str = content[data_start+1:data_end]
-            fields = data_str.split('~')
-
-            if len(fields) < 45:
-                failure_message = _build_realtime_failure_message(
-                    source_name="腾讯",
-                    endpoint=TENCENT_REALTIME_ENDPOINT,
-                    stock_code=stock_code,
-                    symbol=symbol,
-                    category="insufficient_fields",
-                    detail=f"field_count={len(fields)}",
-                    elapsed=api_elapsed,
-                    error_type="InsufficientFields",
-                )
-                logger.info(failure_message)
-                circuit_breaker.record_failure(source_key, failure_message)
-                return None
-            
-            circuit_breaker.record_success(source_key)
+            fields = verified_quote_fields(content, symbol)
             
             # 腾讯数据字段顺序（完整）：
             # 1:名称 2:代码 3:最新价 4:昨收 5:今开 6:成交量 7:外盘 8:内盘
@@ -1574,6 +1541,7 @@ class AkshareFetcher(BaseFetcher):
                 code=stock_code,
                 name=fields[1] if len(fields) > 1 else "",
                 source=RealtimeSource.TENCENT,
+                provider_timestamp=quote_timestamp(fields),
                 price=safe_float(fields[3]),
                 change_pct=safe_float(fields[32]),
                 change_amount=safe_float(fields[31]) if len(fields) > 31 else None,
@@ -1591,6 +1559,7 @@ class AkshareFetcher(BaseFetcher):
                 circ_mv=safe_float(fields[44]) * 100000000 if len(fields) > 44 and fields[44] else None,  # 流通市值(亿->元)
                 total_mv=safe_float(fields[45]) * 100000000 if len(fields) > 45 and fields[45] else None,  # 总市值(亿->元)
             )
+            circuit_breaker.record_success(source_key)
             
             logger.info(
                 f"[实时行情-腾讯] {stock_code} {quote.name}: endpoint={TENCENT_REALTIME_ENDPOINT}, "
@@ -1676,12 +1645,10 @@ class AkshareFetcher(BaseFetcher):
                 return None
             
             # 查找指定 ETF
-            row = df[df['代码'] == stock_code]
-            if row.empty:
+            row = unique_quote_row(df, stock_code)
+            if row is None:
                 logger.info(f"[API返回] 未找到 ETF {stock_code} 的实时行情")
                 return None
-            
-            row = row.iloc[0]
             
             # 使用 realtime_types.py 中的统一转换函数
             # ETF 行情数据构建
@@ -2033,6 +2000,7 @@ class AkshareFetcher(BaseFetcher):
         if region != "cn":
             return None
         import akshare as ak
+        from .sina_index_identity import select_unique_sina_index_row
 
         # 主要指数代码映射
         indices_map = {
@@ -2054,14 +2022,8 @@ class AkshareFetcher(BaseFetcher):
             results = []
             if df is not None and not df.empty:
                 for code, name in indices_map.items():
-                    # 查找对应指数
-                    row = df[df['代码'] == code]
-                    if row.empty:
-                        # 尝试带前缀查找
-                        row = df[df['代码'].str.contains(code)]
-
-                    if not row.empty:
-                        row = row.iloc[0]
+                    row = select_unique_sina_index_row(df, code)
+                    if row is not None:
                         current = safe_float(row.get('最新价', 0))
                         prev_close = safe_float(row.get('昨收', 0))
                         high = safe_float(row.get('最高', 0))
@@ -2263,52 +2225,33 @@ class AkshareFetcher(BaseFetcher):
         """
         import akshare as ak
 
-        def _get_rank_top_n(df: pd.DataFrame, change_col: str, industry_name: str, n: int) -> Tuple[list, list]:
-            df[change_col] = pd.to_numeric(df[change_col], errors='coerce')
-            df = df.dropna(subset=[change_col])
-
-            # 涨幅前n
-            top = df.nlargest(n, change_col)
-            top_sectors = [
-                {'name': row[industry_name], 'change_pct': row[change_col]}
-                for _, row in top.iterrows()
-            ]
-
-            bottom = df.nsmallest(n, change_col)
-            bottom_sectors = [
-                {'name': row[industry_name], 'change_pct': row[change_col]}
-                for _, row in bottom.iterrows()
-            ]
-            return top_sectors, bottom_sectors
-        
-        # 优先东财接口
         try:
             self._set_random_user_agent()
             self._enforce_rate_limit()
-
             logger.info("[API调用] ak.stock_board_industry_name_em() 获取板块排行...")
-            df = ak.stock_board_industry_name_em()
-            if df is not None and not df.empty:
-                change_col = '涨跌幅'
-                name = '板块名称'
-                return _get_rank_top_n(df, change_col, name, n)
-            
+            result = normalize_sector_rankings(
+                ak.stock_board_industry_name_em(),
+                name_column="板块名称",
+                change_column="涨跌幅",
+                source="akshare/eastmoney:stock_board_industry_name_em",
+                n=n,
+            )
+            if result is not None:
+                return result
         except Exception as e:
             logger.warning(f"[Akshare] 东财接口获取行业板块排行失败: {e}，尝试新浪接口")
 
-        # 东财失败后，尝试新浪接口
         try:
             self._set_random_user_agent()
             self._enforce_rate_limit()
-
             logger.info("[API调用] ak.stock_sector_spot() 获取行业板块排行(新浪)...")
-            df = ak.stock_sector_spot(indicator='行业')
-            if df is None or df.empty:
-                return None
-            change_col = '涨跌幅'
-            name = '板块'
-            return _get_rank_top_n(df, change_col, name, n)
-        
+            return normalize_sector_rankings(
+                ak.stock_sector_spot(indicator="行业"),
+                name_column="板块",
+                change_column="涨跌幅",
+                source="akshare/sina:stock_sector_spot",
+                n=n,
+            )
         except Exception as e:
             logger.error(f"[Akshare] 新浪接口获取板块排行也失败: {e}")
             return None
@@ -2320,31 +2263,13 @@ class AkshareFetcher(BaseFetcher):
         try:
             self._set_random_user_agent()
             self._enforce_rate_limit()
-
             logger.info("[API调用] ak.stock_board_concept_name_em() 获取概念排行...")
-            df = ak.stock_board_concept_name_em()
-            if df is None or df.empty:
-                return None
-
-            change_col = '涨跌幅'
-            name_col = '板块名称'
-            if change_col not in df.columns or name_col not in df.columns:
-                return None
-
-            df = df.copy()
-            df[change_col] = pd.to_numeric(df[change_col], errors='coerce')
-            df = df.dropna(subset=[change_col])
-            top = df.nlargest(n, change_col)
-            bottom = df.nsmallest(n, change_col)
-            return (
-                [
-                    {'name': str(row[name_col]), 'change_pct': float(row[change_col])}
-                    for _, row in top.iterrows()
-                ],
-                [
-                    {'name': str(row[name_col]), 'change_pct': float(row[change_col])}
-                    for _, row in bottom.iterrows()
-                ],
+            return normalize_sector_rankings(
+                ak.stock_board_concept_name_em(),
+                name_column="板块名称",
+                change_column="涨跌幅",
+                source="akshare/eastmoney:stock_board_concept_name_em",
+                n=n,
             )
         except Exception as e:
             logger.warning(f"[Akshare] 获取概念排行失败: {e}")

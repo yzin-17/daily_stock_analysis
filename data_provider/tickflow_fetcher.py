@@ -998,14 +998,38 @@ class TickFlowFetcher(BaseFetcher):
             batch_symbols = symbols[offset : offset + _MAX_SYMBOLS_PER_QUOTE_REQUEST]
             batch_quotes = client.quotes.get(symbols=batch_symbols)
             if batch_quotes:
-                quotes.extend(batch_quotes)
+                requested = {symbol.upper() for symbol in batch_symbols}
+                quotes.extend(
+                    item
+                    for item in batch_quotes
+                    if isinstance(item, dict)
+                    and str(item.get("symbol") or "").strip().upper() in requested
+                )
         if not quotes:
             logger.warning("[TickFlowFetcher] empty index quotes")
             return None
 
-        quotes_by_symbol = {
-            str(item.get("symbol", "")).upper(): item for item in quotes if item
-        }
+        expected_symbols = {symbol for symbol, _, _ in _CN_MAIN_INDEX_QUOTES}
+        quotes_by_symbol: Dict[str, Dict[str, Any]] = {}
+        quote_times: Dict[str, str] = {}
+        for item in quotes:
+            if not isinstance(item, dict):
+                continue
+            symbol = str(item.get("symbol") or "").strip().upper()
+            if symbol not in expected_symbols:
+                continue
+            if symbol in quotes_by_symbol:
+                logger.warning("[TickFlowFetcher] duplicate index quote symbol=%s", symbol)
+                return None
+            provider_time = self._format_provider_timestamp(
+                item.get("timestamp") or item.get("time") or item.get("ts")
+            )
+            if provider_time is None:
+                logger.warning("[TickFlowFetcher] index quote missing timestamp symbol=%s", symbol)
+                return None
+            quotes_by_symbol[symbol] = item
+            quote_times[symbol] = provider_time
+
         results: List[Dict[str, Any]] = []
 
         for symbol, code, name in _CN_MAIN_INDEX_QUOTES:
@@ -1039,6 +1063,14 @@ class TickFlowFetcher(BaseFetcher):
                     "volume": self._safe_float(quote.get("volume")) or 0.0,
                     "amount": self._safe_float(quote.get("amount")) or 0.0,
                     "amplitude": amplitude or 0.0,
+                    "source": "tickflow:quotes.get:index",
+                    "as_of": quote_times[symbol],
+                    "price_unit": "index_point",
+                    "change_unit": "index_point",
+                    "change_pct_unit": "percent",
+                    "volume_unit": "unknown",
+                    "amount_unit": "unknown",
+                    "historical_visibility_verified": False,
                 }
             )
 
@@ -1172,6 +1204,7 @@ class TickFlowFetcher(BaseFetcher):
             raise
 
         quote_changes: Dict[str, float] = {}
+        quote_times: Dict[str, str] = {}
         for quote in quotes or []:
             if not isinstance(quote, dict):
                 continue
@@ -1185,6 +1218,11 @@ class TickFlowFetcher(BaseFetcher):
                     change_pct = (last_price - prev_close) / prev_close * 100
             if symbol and change_pct is not None:
                 quote_changes[symbol] = change_pct
+                provider_time = self._format_provider_timestamp(
+                    quote.get("timestamp") or quote.get("time") or quote.get("ts")
+                )
+                if provider_time is not None:
+                    quote_times[symbol] = provider_time
 
         industry_symbols: Dict[str, set[str]] = {}
         universe_by_id = {
@@ -1201,6 +1239,22 @@ class TickFlowFetcher(BaseFetcher):
                 continue
             industry_symbols.setdefault(name, set()).update(self._extract_universe_symbols(detail))
 
+        ranking_symbols = {
+            symbol
+            for symbols in industry_symbols.values()
+            for symbol in symbols
+            if symbol in quote_changes
+        }
+        if (
+            not ranking_symbols
+            or any(symbol not in quote_times for symbol in ranking_symbols)
+        ):
+            return None
+        ranking_times = {quote_times[symbol] for symbol in ranking_symbols}
+        if len(ranking_times) != 1:
+            return None
+        ranking_as_of = next(iter(ranking_times))
+
         rows: List[Dict[str, Any]] = []
         for name, symbols in industry_symbols.items():
             changes = [quote_changes[symbol] for symbol in symbols if symbol in quote_changes]
@@ -1209,7 +1263,10 @@ class TickFlowFetcher(BaseFetcher):
                     {
                         "name": name,
                         "change_pct": round(sum(changes) / len(changes), 4),
-                        "source": "tickflow_sw1",
+                        "source": "tickflow/sw1:universes.list+universes.batch+quotes.get",
+                        "classification": "SW1",
+                        "classification_version": None,
+                        "as_of": ranking_as_of,
                         "constituent_count": len(changes),
                     }
                 )

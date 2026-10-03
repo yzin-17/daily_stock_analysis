@@ -3,9 +3,9 @@
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 
 import pytest
+from tests.current_data_policy_fixture import apply_data_policy
 
 from src.services.thesis_ledger_control import (
     PROVIDER_MANIFESTS,
@@ -72,16 +72,7 @@ class _Frame:
 def _store(tmp_path, routes):
     """建立带指定 Effective route 的独立 SQLite store。"""
     store = ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db"))
-    store.apply_policy(
-        {
-            "contractVersion": 1,
-            "consumer": "thesis-ledger",
-            "requestId": "runtime-test",
-            "revision": 1,
-            "enabled": True,
-            "routes": routes,
-        }
-    )
+    apply_data_policy(store, routes)
     return store
 
 
@@ -121,8 +112,8 @@ def _quote_log_events(caplog, request_id):
     ]
 
 
-def test_provider_registry_exposes_all_dsa_fetchers_for_routing(tmp_path):
-    """Control 注册表应完整列出可参与路由配置的 DSA 数据源。"""
+def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
+    """Control 注册表列出已有抓取器及尚未接线的受门禁来源。"""
     registry = {
         item["providerId"]: item
         for item in ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db")).provider_registry()
@@ -140,9 +131,19 @@ def test_provider_registry_exposes_all_dsa_fetchers_for_routing(tmp_path):
         "longbridge",
         "finnhub",
         "alphavantage",
+        "hithink",
+        "rqdata",
     }
     assert all("routeEligible" not in manifest for manifest in registry.values())
-    assert set(_PROVIDER_ADAPTER_IMPORTS) == set(registry)
+    assert set(_PROVIDER_ADAPTER_IMPORTS) == set(registry) - {"hithink", "rqdata"}
+    assert registry["hithink"]["capabilities"] == {
+        "DAILY_BAR": ["ETF", "STOCK"],
+        "REALTIME_QUOTE": ["ETF", "STOCK"],
+        "CASH_DISTRIBUTION": ["ETF"],
+    }
+    assert registry["hithink"]["requiresCredential"] is True
+    assert registry["rqdata"]["capabilities"] == {}
+    assert registry["rqdata"]["upstreamSources"][0]["capabilities"] == {}
     assert registry["tencent"]["origin"] == "dsa"
     assert registry["tencent"]["capabilities"] == {
         "DAILY_BAR": ["ETF", "STOCK"]
@@ -156,6 +157,7 @@ def test_provider_registry_exposes_all_dsa_fetchers_for_routing(tmp_path):
     ]
     assert registry["yfinance"]["markets"] == ["CN", "HK", "JP", "KR", "TW", "US"]
     assert registry["tushare"]["configurationMode"] == "dsa_environment"
+    assert registry["tushare"]["capabilities"]["DAILY_BAR"] == ["ETF", "STOCK"]
 
 
 def test_mapping_quote_is_normalized_for_route_contract(tmp_path):
@@ -179,7 +181,8 @@ def test_mapping_quote_is_normalized_for_route_contract(tmp_path):
         adapters={"pytdx": _MappingQuoteAdapter()},
     )
 
-    quote, provider, fallback_used = runtime.quote("600519.SH")
+    execution = runtime.execute_request(ThesisLedgerDataRequest("REALTIME_QUOTE", "600519.SH"))
+    quote, provider, fallback_used = execution.value, execution.provider, execution.fallback_used
 
     assert provider == "pytdx"
     assert fallback_used is False
@@ -223,12 +226,16 @@ def test_fund_holdings_uses_effective_route_without_weight_normalization(tmp_pat
     assert adapter.calls == ["000001"]
 
 
-def test_chip_summary_uses_effective_route_and_preserves_fallback_metadata(tmp_path, monkeypatch):
-    """筹码摘要失败时切换完整 Provider，不允许字段级混源。"""
+def test_chip_summary_rejects_manifest_only_fallback(tmp_path, monkeypatch):
+    """仅修改宽 manifest 不能把缺少精确适配器的来源变成后备目标。"""
     monkeypatch.setitem(
         PROVIDER_MANIFESTS["efinance"]["capabilities"],
         "CHIP_SUMMARY",
         ["STOCK"],
+    )
+    monkeypatch.setitem(
+        PROVIDER_MANIFESTS["efinance"]["upstreamSources"][0]["capabilities"],
+        "CHIP_SUMMARY", ["STOCK"],
     )
 
     class _UnavailableAdapter:
@@ -264,26 +271,21 @@ def test_chip_summary_uses_effective_route_and_preserves_fallback_metadata(tmp_p
         )
     )
 
-    result = gateway.chip_summary("600519.SH", request_id="chip-request")
-
-    assert result.data.avg_cost == 100.0
-    assert result.provider == "efinance"
-    assert result.fallback_used is True
-    assert result.route == ("akshare", "efinance")
-    assert result.attempted_providers == ("akshare", "efinance")
+    with pytest.raises(ThesisLedgerGatewayError):
+        gateway.chip_summary("600519.SH", request_id="chip-request")
     assert primary.calls == 1
-    assert fallback.calls == 1
-    assert fallback.symbols == ["600519"]
+    assert fallback.calls == 0
+    assert fallback.symbols == []
 
 
 def test_chip_summary_rejects_non_stock_route_before_provider_call(tmp_path):
     """不支持的 CHIP_SUMMARY/InstrumentType 组合必须原子拒绝。"""
-    with pytest.raises(ControlContractError, match="没有 Provider 支持"):
+    with pytest.raises(ControlContractError, match="一至两个 RouteTarget"):
         _store(tmp_path, {"CHIP_SUMMARY": {"ETF": []}})
 
     store = _store(tmp_path, {"CHIP_SUMMARY": {"STOCK": ["akshare"]}})
     runtime = ThesisLedgerProviderRuntime(store, adapters={"akshare": object()})
-    with pytest.raises(ProviderCallError, match="STOCK 的 CHIP_SUMMARY"):
+    with pytest.raises(ThesisLedgerGatewayError) as rejected:
         runtime.execute_request(
             ThesisLedgerDataRequest(
                 "CHIP_SUMMARY",
@@ -292,6 +294,7 @@ def test_chip_summary_rejects_non_stock_route_before_provider_call(tmp_path):
                 request_id="chip-invalid-route",
             )
         )
+    assert rejected.value.code == "unsupported_capability"
 
 
 @pytest.mark.parametrize(
@@ -315,15 +318,20 @@ def test_chip_summary_skips_disabled_or_circuit_open_provider(
             circuit=circuit,
             consecutive_failures=3,
             error_code="transient_failure",
+            upstream_source="eastmoney",
         )
-    store.apply_policy(
+    store.apply_policy_v3(
         {
-            "contractVersion": 1,
+            "contractVersion": 3,
             "consumer": "thesis-ledger",
             "requestId": "chip-state-test",
             "revision": 1,
             "enabled": True,
-            "routes": {"CHIP_SUMMARY": {"STOCK": ["akshare"]}},
+            "routes": [{
+                "key": {"kind": "data", "market": "CN", "assetType": "STOCK",
+                        "capability": "CHIP_SUMMARY"},
+                "targets": [{"providerId": "akshare", "upstreamSource": "eastmoney"}],
+            }],
         }
     )
 
@@ -348,70 +356,8 @@ def test_chip_summary_skips_disabled_or_circuit_open_provider(
     assert adapter.calls == 0
 
 
-def test_expired_v2_circuit_allows_one_half_open_provider_probe(tmp_path):
-    """重启后已过冷却期的 V2 来源级熔断必须允许半开探测。"""
-    store = ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db"))
-    store.save_provider_config("akshare", {"enabled": True, "settings": {}})
-    store.record_health(
-        "akshare",
-        "DAILY_BAR",
-        "STOCK",
-        state="degraded",
-        circuit="open",
-        consecutive_failures=3,
-        error_code="transient_failure",
-        upstream_source="tencent",
-    )
-    store.apply_policy_v2(
-        {
-            "contractVersion": 2,
-            "consumer": "thesis-ledger",
-            "requestId": "expired-circuit-test",
-            "revision": 1,
-            "enabled": True,
-            "routes": {
-                "DAILY_BAR": {
-                    "STOCK": [
-                        {"providerId": "akshare", "upstreamSource": "tencent"}
-                    ]
-                }
-            },
-        }
-    )
-    expired_at = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
-    with store._connect() as connection:
-        connection.execute(
-            "UPDATE thesis_ledger_provider_health SET checked_at=? WHERE scope_key=?",
-            (
-                expired_at,
-                "thesis-ledger:akshare:DAILY_BAR:STOCK:tencent",
-            ),
-        )
-        connection.commit()
-
-    calls = []
-    runtime = ThesisLedgerProviderRuntime(store, adapters={"akshare": object()})
-    result = runtime._execute_with_metadata(
-        "DAILY_BAR",
-        "STOCK",
-        lambda provider_id, _adapter, upstream_source: calls.append(
-            (provider_id, upstream_source)
-        )
-        or "ok",
-    )
-
-    assert result.value == "ok"
-    assert calls == [("akshare", "tencent")]
-    assert store.health(
-        "akshare",
-        "DAILY_BAR",
-        "STOCK",
-        upstream_source="tencent",
-    )["circuit"] == "closed"
-
-
-def test_quote_retries_transient_primary_once_then_uses_one_complete_fallback(tmp_path):
-    """确认 transient failure 只重试一次并切换到完整的后备记录。"""
+def test_quote_uses_one_call_per_exact_target_then_complete_fallback(tmp_path):
+    """确认精确来源仅调用一次，再切换到完整的后备记录。"""
 
     class _TimeoutAdapter:
         """模拟持续 timeout 的主 Provider。"""
@@ -442,12 +388,13 @@ def test_quote_retries_transient_primary_once_then_uses_one_complete_fallback(tm
         adapters={"akshare": primary, "efinance": fallback},
     )
 
-    quote, provider, fallback_used = runtime.quote("600519.SH")
+    execution = runtime.execute_request(ThesisLedgerDataRequest("REALTIME_QUOTE", "600519.SH"))
+    quote, provider, fallback_used = execution.value, execution.provider, execution.fallback_used
 
     assert quote is not None
     assert provider == "efinance"
     assert fallback_used is True
-    assert primary.calls == 2
+    assert primary.calls == 1
     assert fallback.calls == 1
     assert fallback.symbols == ["600519"]
 
@@ -456,15 +403,13 @@ def test_etf_effective_policy_excludes_akshare_but_preserves_desired_route(tmp_p
     """AkShare ETF 全市场能力保留在 Desired Policy，不能进入 Effective route。"""
     store = _store(tmp_path, _etf_quote_routes())
 
-    effective = store.effective_policy()
-    status = effective["routeStatus"]["REALTIME_QUOTE"]["ETF"]
-
-    assert effective["routes"]["REALTIME_QUOTE"]["ETF"] == ["akshare", "efinance"]
-    assert status["eligibleProviderIds"] == ["efinance"]
-    akshare = next(item for item in status["providers"] if item["providerId"] == "akshare")
-    assert akshare["available"] is False
+    effective = store.effective_policy_v3()
+    route = next(item for item in effective["routes"] if item["key"]["assetType"] == "ETF")
+    assert [item["providerId"] for item in route["targets"]] == ["akshare", "efinance"]
+    assert [item["providerId"] for item in route["targets"] if item["eligible"]] == ["efinance"]
+    akshare = route["targets"][0]
     assert akshare["eligible"] is False
-    assert akshare["reason"] == "single_symbol_adapter_unavailable"
+    assert akshare["reason"] == "not_adapted"
 
 
 def test_etf_quote_uses_single_adapter_once_and_persists_cooldown_after_reopen(tmp_path, caplog):
@@ -535,7 +480,7 @@ def test_etf_quote_uses_single_adapter_once_and_persists_cooldown_after_reopen(t
 def test_quote_no_eligible_provider_logs_request_and_does_not_call_adapter(tmp_path, caplog):
     """Quote 无 eligible Provider 时记录 request identity 且不进入适配器。"""
     runtime = ThesisLedgerProviderRuntime(
-        _store(tmp_path, {"REALTIME_QUOTE": {"STOCK": []}}),
+        ThesisLedgerControlStore(str(tmp_path / "empty-policy.db")),
         adapters={"akshare": object(), "efinance": object()},
     )
 
@@ -655,191 +600,12 @@ def test_quote_derives_missing_previous_close_from_change_amount(tmp_path):
         adapters={"akshare": _Adapter()},
     )
 
-    quote, provider, fallback_used = runtime.quote("600519.SH")
+    execution = runtime.execute_request(ThesisLedgerDataRequest("REALTIME_QUOTE", "600519.SH"))
+    quote, provider, fallback_used = execution.value, execution.provider, execution.fallback_used
 
     assert quote.pre_close == 99.0
     assert provider == "akshare"
     assert fallback_used is False
-
-
-def test_bars_returns_one_complete_frame_and_uses_route_provider_identity(tmp_path):
-    """确认 Bars 返回完整序列并使用 route Provider 而非 adapter source。"""
-
-    frame = _Frame(
-        [
-            _Row(
-                date="2025-01-01",
-                open=99.0,
-                high=102.0,
-                low=98.0,
-                close=100.0,
-                volume=1000.0,
-                amount=100000.0,
-            ),
-            _Row(
-                date="2025-01-02",
-                open=100.0,
-                high=103.0,
-                low=99.0,
-                close=101.0,
-                volume=1100.0,
-                amount=110000.0,
-            ),
-        ]
-    )
-    frame.attrs = {"upstream_source": "tencent"}
-
-    class _Adapter:
-        """模拟返回完整 Bars frame 的 Provider。"""
-
-        symbols = []
-
-        def get_daily_data(self, symbol, *, days):
-            """返回带无关 source 标签的完整 Bars frame。"""
-            assert days == 30
-            self.symbols.append(symbol)
-            return frame, "adapter-source-must-not-be-used-as-provider"
-
-    runtime = ThesisLedgerProviderRuntime(
-        _store(tmp_path, _bar_routes()),
-        adapters={"akshare": _Adapter()},
-    )
-
-    result, provider, fallback_used = runtime.bars("600519.SH", days=30)
-
-    assert result is frame
-    assert provider == "akshare"
-    assert fallback_used is False
-    assert runtime.adapters["akshare"].symbols == ["600519"]
-
-
-def test_daily_bar_request_passes_explicit_range_to_provider(tmp_path):
-    """显式日线区间必须进入 Provider，不能只在返回后过滤。"""
-    frame = _Frame(
-        [
-            _Row(
-                date="2025-01-02",
-                open=100.0,
-                high=103.0,
-                low=99.0,
-                close=101.0,
-                volume=1100.0,
-                amount=110000.0,
-            )
-        ]
-    )
-    calls = []
-
-    class _Adapter:
-        """记录 runtime 传给 Provider 的完整日线范围。"""
-
-        def get_daily_data(self, symbol, *, days, start_date, end_date):
-            calls.append((symbol, days, start_date, end_date))
-            return frame
-
-    runtime = ThesisLedgerProviderRuntime(
-        _store(tmp_path, {"DAILY_BAR": {"STOCK": ["akshare"]}}),
-        adapters={"akshare": _Adapter()},
-    )
-
-    runtime.execute_request(
-        ThesisLedgerDataRequest(
-            "DAILY_BAR",
-            "600519.SH",
-            start="2025-01-01",
-            end="2025-12-31",
-            limit=365,
-        )
-    )
-
-    assert calls == [("600519", 365, "2025-01-01", "2025-12-31")]
-
-
-def test_v2_raw_daily_bar_request_uses_explicit_raw_provider_method(tmp_path):
-    """V2 raw 请求走专用不复权入口，V1 仍调用默认日线入口。"""
-    frame = _Frame(
-        [
-            _Row(
-                date="2025-01-02",
-                open=100.0,
-                high=103.0,
-                low=99.0,
-                close=101.0,
-                volume=1100.0,
-                amount=110000.0,
-            )
-        ]
-    )
-    calls: list[tuple[str, str]] = []
-
-    class _Adapter:
-        def get_daily_data(self, symbol, *, days):
-            calls.append(("v1", symbol))
-            return frame
-
-        def get_daily_data_v2_raw(self, symbol, *, days):
-            calls.append(("v2-raw", symbol))
-            return frame
-
-    runtime = ThesisLedgerProviderRuntime(
-        _store(tmp_path, {"DAILY_BAR": {"STOCK": ["akshare"]}}),
-        adapters={"akshare": _Adapter()},
-    )
-
-    runtime.execute_request(ThesisLedgerDataRequest("DAILY_BAR", "600519.SH"))
-    runtime.execute_request(
-        ThesisLedgerDataRequest(
-            "DAILY_BAR",
-            "600519.SH",
-            adjustment="none",
-        )
-    )
-
-    assert calls == [("v1", "600519"), ("v2-raw", "600519")]
-
-
-def test_tencent_daily_route_preserves_provider_and_actual_source(tmp_path):
-    """腾讯独立路由既是 route Provider，也是实际日线通道。"""
-    frame = _Frame(
-        [
-            _Row(
-                date="2025-01-02",
-                open=100.0,
-                high=103.0,
-                low=99.0,
-                close=101.0,
-                volume=1100.0,
-                amount=110000.0,
-            )
-        ]
-    )
-    frame.attrs = {}
-
-    class _Adapter:
-        """模拟腾讯日线适配器。"""
-
-        def get_daily_data(self, symbol, *, days):
-            assert symbol == "510300"
-            assert days == 30
-            return frame
-
-    runtime = ThesisLedgerProviderRuntime(
-        _store(tmp_path, {"DAILY_BAR": {"ETF": ["tencent"]}}),
-        adapters={"tencent": _Adapter()},
-    )
-
-    result = runtime.execute_request(
-        ThesisLedgerDataRequest(
-            "DAILY_BAR",
-            "510300.SH",
-            instrument_type="ETF",
-            limit=30,
-        )
-    )
-
-    assert result.provider == "tencent"
-    assert result.fallback_used is False
-    assert result.value.attrs["upstream_source"] == "tencent"
 
 
 def test_provider_smoke_uses_native_symbol_format(tmp_path):
@@ -876,100 +642,6 @@ def test_provider_smoke_uses_native_symbol_format(tmp_path):
     assert adapter.bar_symbols == [("600519", 5)]
 
 
-def test_bars_accepts_direct_fetcher_frame_result(tmp_path):
-    """确认直接调用 BaseFetcher 时的 DataFrame 返回值不会被错误解包。"""
-
-    frame = _Frame(
-        [
-            _Row(
-                date="2025-01-01",
-                open=99.0,
-                high=102.0,
-                low=98.0,
-                close=100.0,
-                volume=1000.0,
-                amount=100000.0,
-            )
-        ]
-    )
-
-    class _Adapter:
-        """模拟返回直接 frame 的日线 Provider。"""
-
-        def get_daily_data(self, _symbol, *, days):
-            """校验 facade 传入的天数并返回 fixture frame。"""
-            assert days == 30
-            return frame
-
-    runtime = ThesisLedgerProviderRuntime(
-        _store(tmp_path, _bar_routes()),
-        adapters={"akshare": _Adapter()},
-    )
-
-    result, provider, fallback_used = runtime.bars("600519.SH", days=30)
-
-    assert result is frame
-    assert provider == "akshare"
-    assert fallback_used is False
-
-
-def test_real_bars_facade_consumes_runtime_frame(monkeypatch, tmp_path):
-    """确认非 fixture facade 能消费 runtime 返回的 frame。"""
-
-    frame = _Frame(
-        [
-            _Row(
-                date="2025-01-01",
-                open=99.0,
-                high=102.0,
-                low=98.0,
-                close=100.0,
-                volume=1000.0,
-                amount=100000.0,
-            ),
-            _Row(
-                date="2025-01-02",
-                open=100.0,
-                high=103.0,
-                low=99.0,
-                close=101.0,
-                volume=1100.0,
-                amount=110000.0,
-            ),
-        ]
-    )
-    frame.attrs = {"upstream_source": "tencent"}
-
-    class _Adapter:
-        """模拟返回供 facade 转换的 Bars Provider。"""
-
-        def get_daily_data(self, _symbol, *, days):
-            """返回供 facade 转换的最小 Bars frame。"""
-            return frame, "adapter-source-must-not-be-used-as-provider"
-
-    database_path = str(tmp_path / "stock_analysis.db")
-    runtime = ThesisLedgerProviderRuntime(
-        _store(tmp_path, _bar_routes()),
-        adapters={"akshare": _Adapter()},
-    )
-    monkeypatch.setenv("DATABASE_PATH", database_path)
-    monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "false")
-
-    import api.thesis_ledger as contract
-    import src.services.thesis_ledger_provider_runtime as runtime_module
-
-    monkeypatch.setattr(runtime_module, "get_thesis_ledger_runtime", lambda: runtime)
-
-    rows = contract._real_bars("600519.SH", None, None, 1)
-
-    assert len(rows) == 1
-    assert rows[0]["timestamp"] == "2025-01-02T00:00:00+00:00"
-    assert rows[0]["provider"] == "akshare"
-    assert rows[0]["upstreamSource"] == "tencent"
-    assert rows[0]["symbol"] == "600519.SH"
-    assert rows[0]["fallbackUsed"] is False
-
-
 def test_fund_nav_history_switches_the_complete_sequence_on_invalid_primary(
     monkeypatch, tmp_path
 ):
@@ -1001,7 +673,8 @@ def test_fund_nav_history_switches_the_complete_sequence_on_invalid_primary(
         adapters={"akshare": object(), "efinance": object()},
     )
 
-    result, provider, fallback_used = runtime.fund_nav_history("000001.OF")
+    execution = runtime.execute_request(ThesisLedgerDataRequest("FUND_NAV_HISTORY", "000001.OF"))
+    result, provider, fallback_used = execution.value, execution.provider, execution.fallback_used
 
     assert result is fallback_frame
     assert provider == "efinance"
@@ -1029,7 +702,7 @@ def test_fund_nav_history_rejects_non_ascending_sequence(monkeypatch, tmp_path):
     )
 
     with pytest.raises(ProviderCallError, match="严格升序"):
-        runtime.fund_nav_history("000001.OF")
+        runtime.execute_request(ThesisLedgerDataRequest("FUND_NAV_HISTORY", "000001.OF"))
 
 
 def test_provider_history_smoke_validates_complete_sequence(monkeypatch, tmp_path):
@@ -1067,24 +740,28 @@ def test_control_projection_catalog_ack_and_tombstone_survive_store_reopen(tmp_p
         "akshare",
         {"enabled": True, "settings": {}},
     )
-    store.apply_policy(
+    store.apply_policy_v3(
         {
-            "contractVersion": 1,
+            "contractVersion": 3,
             "consumer": "thesis-ledger",
             "requestId": "persistence-test",
             "revision": 1,
             "enabled": True,
-            "routes": _quote_routes(),
+            "routes": [{
+                "key": {"kind": "data", "market": "CN", "assetType": "STOCK",
+                        "capability": "REALTIME_QUOTE"},
+                "targets": [{"providerId": "akshare", "upstreamSource": "eastmoney"}],
+            }],
         }
     )
     snapshot = store.catalog_snapshot()
-    assert store.catalog_ack({"generation": snapshot["generation"], "checksum": snapshot["checksum"]})[
+    assert store.catalog_ack({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "catalog-reopen", "generation": snapshot["generation"], "checksum": snapshot["checksum"]})[
         "acknowledged"
     ] is True
     store.remove_provider("akshare", {"requestId": "persistence-remove", "reason": "test"})
 
     reopened = ThesisLedgerControlStore(database_path)
-    projection = reopened.policy_projection()
+    projection = reopened.policy_projection_v3()
     registry = {item["providerId"]: item for item in reopened.provider_registry()}
     with reopened._connect() as connection:
         ack = connection.execute(

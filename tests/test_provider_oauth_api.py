@@ -28,33 +28,57 @@ def test_control_boundary_create_resume_and_cancel(monkeypatch, tmp_path):
     )
     app = FastAPI()
     app.state.provider_oauth_manager = manager
-    app.include_router(router, prefix="/api/v1")
-    base = "/api/v1/thesis-ledger/control/providers/longbridge/oauth/sessions"
+    app.include_router(router, prefix="/api/v3")
+    base = "/api/v3/thesis-ledger/control/providers/longbridge/oauth/sessions"
     headers = {"Authorization": "Bearer control-fixture"}
     with TestClient(app) as client:
         assert client.get(base + "/current").status_code == 401
+        assert client.get("/api/v1/thesis-ledger/control/providers/longbridge/oauth/sessions/current", headers=headers).status_code == 404
+        legacy = client.post(
+            base,
+            json={"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "old-oauth", "clientId": "client"},
+            headers=headers,
+        )
+        assert legacy.status_code == 422
+        assert legacy.json()["detail"]["code"] == "CONTROL_CONTRACT_UNSUPPORTED"
         response = client.post(
             base,
-            json={"contractVersion": 1, "consumer": "thesis-ledger", "clientId": "client"},
+            json={"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "oauth-test", "clientId": "client"},
             headers=headers,
         )
         assert response.status_code == 200
         assert response.headers["cache-control"] == "no-store"
         session_id = response.json()["sessionId"]
+        assert response.json()["contractVersion"] == 3
+        assert response.json()["consumer"] == "thesis-ledger"
+        import sqlite3
+        def snapshot():
+            with sqlite3.connect(control.database_path) as connection:
+                return tuple(connection.iterdump())
+        before = snapshot()
+        for version in (1, 2):
+            cancelled_old = client.post(base + f"/{session_id}/cancel", headers=headers,
+                json={"contractVersion": version, "consumer": "thesis-ledger", "requestId": "old-cancel"})
+            assert cancelled_old.status_code == 422
+            assert snapshot() == before
         resumed = client.get(base + "/current", headers=headers).json()["session"]
         assert resumed["sessionId"] == session_id
         assert resumed["status"] in {"starting", "authorizing"}
-        cancelled = client.post(base + f"/{session_id}/cancel", headers=headers)
+        cancelled = client.post(base + f"/{session_id}/cancel", headers=headers,
+                                json={"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "cancel-current"})
         assert cancelled.json()["status"] == "cancelled"
         assert cancelled.json()["authorizationUrl"] is None
-        assert client.get(base + "/current", headers=headers).json() == {"session": None}
+        assert client.get(base + "/current", headers=headers).json() == {
+            "contractVersion": 3, "consumer": "thesis-ledger", "session": None,
+        }
         assert client.get(base + "/missing", headers=headers).status_code == 404
         assert (
             client.post(
                 base,
                 json={
-                    "contractVersion": 1,
+                    "contractVersion": 3,
                     "consumer": "thesis-ledger",
+                    "requestId": "oauth-invalid-test",
                     "clientId": "client",
                     "access_token": "never-accept",
                 },

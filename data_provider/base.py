@@ -2960,6 +2960,36 @@ class DataFetcherManager:
         if bundle_err:
             adapter_errors.append(bundle_err)
 
+        bundle_valuation = (
+            bundle_payload.get("valuation", {})
+            if isinstance(bundle_payload.get("valuation"), dict)
+            else {}
+        )
+        if market == "us" and any(
+            bundle_valuation.get(field) is not None
+            for field in ("pe_ratio", "pb_ratio")
+        ):
+            valuation_status = (
+                "ok"
+                if all(
+                    bundle_valuation.get(field) is not None
+                    for field in ("pe_ratio", "pb_ratio")
+                )
+                else "partial"
+            )
+            result_ctx["valuation"] = self._build_fundamental_block(
+                valuation_status,
+                bundle_valuation,
+                [
+                    {
+                        "provider": "yfinance.info",
+                        "result": valuation_status,
+                        "duration_ms": bundle_ms,
+                    }
+                ],
+                [],
+            )
+
         growth_payload = bundle_payload.get("growth", {}) if isinstance(bundle_payload.get("growth"), dict) else {}
         earnings_payload = bundle_payload.get("earnings", {}) if isinstance(bundle_payload.get("earnings"), dict) else {}
         belong_boards = bundle_payload.get("belong_boards") if isinstance(bundle_payload.get("belong_boards"), list) else []
@@ -3152,7 +3182,7 @@ class DataFetcherManager:
                 reason="fundamental pipeline disabled",
             )
 
-        stock_code = normalize_stock_code(stock_code)
+        original_stock_code, stock_code = stock_code, normalize_stock_code(stock_code)
         market = _market_tag(stock_code)
         is_etf = _is_etf_code(stock_code)
         if market in {"us", "hk", "jp", "kr", "tw"}:
@@ -3171,7 +3201,7 @@ class DataFetcherManager:
 
         cache_ttl = int(config.fundamental_cache_ttl_seconds)
         cache_max_entries = max(0, int(getattr(config, "fundamental_cache_max_entries", 256)))
-        cache_key = self._get_fundamental_cache_key(stock_code, stage_timeout)
+        cache_key = f"{self._get_fundamental_cache_key(stock_code, stage_timeout)}|capital-scope-v1={original_stock_code}"
         if cache_ttl > 0:
             self._prune_fundamental_cache(cache_ttl, cache_max_entries)
             with self._fundamental_cache_lock:
@@ -3202,40 +3232,12 @@ class DataFetcherManager:
             nonlocal remaining_seconds
             remaining_seconds = max(0.0, remaining_seconds - consumed_ms / 1000.0)
 
-        valuation_timeout = min(fetch_timeout, remaining_seconds)
-        if valuation_timeout > 0:
-            quote_payload, valuation_err, valuation_ms = self._run_with_retry(
-                lambda: self.get_realtime_quote(stock_code),
-                valuation_timeout,
-                "fundamental_valuation",
-            )
-            _consume_budget(valuation_ms)
-        else:
-            quote_payload, valuation_err, valuation_ms = None, "fundamental stage timeout", 0
+        from .fundamental_valuation import build_cn_valuation
 
-        valuation_payload = {
-            "pe_ratio": getattr(quote_payload, "pe_ratio", None) if quote_payload else None,
-            "pb_ratio": getattr(quote_payload, "pb_ratio", None) if quote_payload else None,
-            "total_mv": getattr(quote_payload, "total_mv", None) if quote_payload else None,
-            "circ_mv": getattr(quote_payload, "circ_mv", None) if quote_payload else None,
-        }
-        valuation_status = self._infer_block_status(
-            valuation_payload,
-            "partial" if quote_payload is not None else "not_supported",
-        )
-        if valuation_status == "partial" and valuation_err and not self._has_meaningful_payload(valuation_payload):
-            valuation_status = "failed"
-        result_ctx["valuation"] = self._build_fundamental_block(
-            valuation_status,
-            valuation_payload,
-            self._normalize_source_chain(
-                [{"provider": "realtime_quote", "result": valuation_status, "duration_ms": valuation_ms}],
-                "realtime_quote",
-                valuation_status,
-                valuation_ms,
-            ),
-            [valuation_err] if valuation_err else [],
-        )
+        quote_payload, result_ctx["valuation"], valuation_ms = build_cn_valuation(
+            self, stock_code=stock_code, original_stock_code=original_stock_code,
+            is_etf=is_etf, timeout_seconds=min(fetch_timeout, remaining_seconds))
+        _consume_budget(valuation_ms)
 
         # growth / earnings / institution (one AkShare call)
         if remaining_seconds <= 0:
@@ -3377,7 +3379,7 @@ class DataFetcherManager:
             capital_flow_budget = min(fetch_timeout, remaining_seconds)
             capital_flow_start = time.time()
             result_ctx["capital_flow"] = self.get_capital_flow_context(
-                stock_code,
+                original_stock_code,
                 budget_seconds=capital_flow_budget,
             )
             _consume_budget(int((time.time() - capital_flow_start) * 1000))
@@ -3444,7 +3446,7 @@ class DataFetcherManager:
         from src.config import get_config
 
         config = get_config()
-        stock_code = normalize_stock_code(stock_code)
+        original_stock_code, stock_code = stock_code, normalize_stock_code(stock_code)
         timeout = float(budget_seconds if budget_seconds is not None else config.fundamental_fetch_timeout_seconds)
         if _market_tag(stock_code) != "cn" or _is_etf_code(stock_code):
             return self._build_fundamental_block(
@@ -3462,7 +3464,7 @@ class DataFetcherManager:
                 ["fundamental stage timeout"],
             )
         payload, err, cost_ms = self._run_with_retry(
-            lambda: self._fundamental_adapter.get_capital_flow(stock_code),
+            lambda: self._fundamental_adapter.get_capital_flow(original_stock_code),
             timeout,
             "capital_flow",
         )

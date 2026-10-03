@@ -128,6 +128,38 @@ class TestFundamentalAdapter(unittest.TestCase):
         self.assertEqual(dividend_payload.get("ttm_event_count"), 1)
         self.assertAlmostEqual(dividend_payload.get("ttm_cash_dividend_per_share"), 0.3, places=6)
 
+    def test_financial_abstract_metric_matrix_does_not_claim_growth(self) -> None:
+        adapter = AkshareFundamentalAdapter()
+        fin_df = pd.DataFrame(
+            {"选项": ["常用指标"], "指标": ["基本每股收益"], "20260630": [1.25]}
+        )
+        with patch.object(
+            adapter,
+            "_call_df_candidates",
+            side_effect=[(fin_df, "stock_financial_abstract", [])] + [(None, None, [])] * 5,
+        ):
+            result = adapter.get_fundamental_bundle("600519")
+
+        self.assertEqual(result["status"], "not_supported")
+        self.assertEqual(result["growth"], {})
+        self.assertNotIn("financial_report", result["earnings"])
+        self.assertNotIn("growth:stock_financial_abstract", result["source_chain"])
+        self.assertIn("stock_financial_abstract:unmapped_matrix", result["errors"])
+
+    def test_financial_candidates_never_use_default_stock(self) -> None:
+        adapter = AkshareFundamentalAdapter()
+        with patch.object(adapter, "_call_df_candidates", return_value=(None, None, [])) as call:
+            adapter.get_fundamental_bundle("600519")
+
+        financial_candidates = call.call_args_list[0].args[0]
+        self.assertEqual(
+            financial_candidates,
+            [
+                ("stock_financial_abstract", {"symbol": "600519"}),
+                ("stock_financial_analysis_indicator", {"symbol": "600519"}),
+            ],
+        )
+
     def test_build_dividend_payload_returns_empty_when_code_not_matched(self) -> None:
         now = datetime.now().strftime("%Y-%m-%d")
         df = pd.DataFrame(

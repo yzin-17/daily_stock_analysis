@@ -183,13 +183,18 @@ class TestAlphaVantageFetcherInit(unittest.TestCase):
         self.assertEqual(f._api_key, 'AVTEST123')
 
     @patch.dict(os.environ, {}, clear=False)
+    @patch('data_provider.alphavantage_fetcher.requests.get')
     @patch('src.config.get_config')
-    def test_init_without_key(self, mock_config):
+    def test_init_without_key(self, mock_config, mock_get):
         os.environ.pop('ALPHAVANTAGE_API_KEY', None)
         mock_config.return_value = MagicMock(alphavantage_api_key=None)
         from data_provider.alphavantage_fetcher import AlphaVantageFetcher
+        from data_provider.base import DataFetchError
         f = AlphaVantageFetcher()
-        self.assertIsNone(f._api_key)
+        self.assertEqual(f._api_key, '')
+        with self.assertRaisesRegex(DataFetchError, 'API key not configured'):
+            f._fetch_raw_data('AAPL', '2024-06-10', '2024-06-11')
+        mock_get.assert_not_called()
 
 
 class TestAlphaVantageFetcherNewestFirst(unittest.TestCase):

@@ -10,6 +10,10 @@ import pytest
 from src.services import thesis_ledger_catalog as catalog_module
 from src.services.thesis_ledger_control import ThesisLedgerControlStore
 
+# 完整离线集在 macOS spawn 子进程时有额外导入开销；本组验证终止与重试语义，
+# 不以 1 秒内写出子进程标记作为业务时限。
+_SPAWN_TOLERANT_TIMEOUT_SECONDS = 5.0
+
 
 def _hanging_loader(marker_path: str) -> list[dict[str, str]]:
     Path(marker_path).write_text(str(os.getpid()), encoding="utf-8")
@@ -35,8 +39,27 @@ def _healthy_loader() -> list[dict[str, str]]:
     ]
 
 
+def _invalid_response_loader(counter_path: str):
+    path = Path(counter_path)
+    count = int(path.read_text()) if path.exists() else 0
+    path.write_text(str(count + 1))
+    raise catalog_module.CatalogBuildError(
+        "invalid fixture", code="catalog_provider_invalid_response", retryable=False,
+    )
+
+
+def test_non_retryable_response_survives_process_boundary(tmp_path):
+    counter = tmp_path / "invalid-attempts"
+    with pytest.raises(catalog_module.CatalogBuildError) as error:
+        catalog_module._bounded_call(partial(_invalid_response_loader, str(counter)),
+                                     timeout_seconds=3, max_attempts=3, backoff_seconds=0)
+    assert error.value.code == "catalog_provider_invalid_response"
+    assert error.value.retryable is False
+    assert counter.read_text() == "1"
+
+
 def _wait_terminal(store: ThesisLedgerControlStore, job_id: str) -> dict:
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + 12
     while time.monotonic() < deadline:
         result = store.get_catalog_job(job_id)
         if result["status"] in {"succeeded", "failed", "timeout"}:
@@ -62,7 +85,7 @@ def test_timeout_terminates_hanging_provider_process(tmp_path):
     with pytest.raises(catalog_module.CatalogBuildError) as raised:
         catalog_module._bounded_call(
             partial(_hanging_loader, str(marker_path)),
-            timeout_seconds=1.0,
+            timeout_seconds=_SPAWN_TOLERANT_TIMEOUT_SECONDS,
             max_attempts=1,
         )
 
@@ -77,7 +100,7 @@ def test_provider_retry_is_bounded_and_uses_stable_error(tmp_path):
     with pytest.raises(catalog_module.CatalogBuildError) as raised:
         catalog_module._bounded_call(
             partial(_failing_loader, str(counter_path)),
-            timeout_seconds=1,
+            timeout_seconds=_SPAWN_TOLERANT_TIMEOUT_SECONDS,
             max_attempts=2,
             backoff_seconds=0.01,
         )
@@ -94,7 +117,7 @@ def test_hanging_provider_does_not_block_successful_catalog_provider(tmp_path):
             "hanging": partial(_hanging_loader, str(marker_path)),
             "healthy": _healthy_loader,
         },
-        provider_timeout_seconds=1.0,
+        provider_timeout_seconds=_SPAWN_TOLERANT_TIMEOUT_SECONDS,
         max_attempts=1,
     )
 
@@ -114,7 +137,7 @@ def test_catalog_job_reports_provider_code_and_next_job_remains_available(
     def build_hanging_catalog():
         return original_build_catalog(
             {"hanging": partial(_hanging_loader, str(marker_path))},
-            provider_timeout_seconds=1.0,
+            provider_timeout_seconds=_SPAWN_TOLERANT_TIMEOUT_SECONDS,
             max_attempts=1,
         )
 

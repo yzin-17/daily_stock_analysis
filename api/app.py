@@ -164,8 +164,10 @@ def _warn_if_open_cors_without_auth() -> None:
     )
 
 from api.v1 import api_v1_router
-from api.thesis_ledger import router as thesis_ledger_router
-from api.thesis_ledger import router_v2 as thesis_ledger_v2_router
+from api.thesis_ledger import router_v3 as thesis_ledger_v3_router
+from api.thesis_ledger_chart_v3 import router as thesis_ledger_chart_v3_router
+from api.thesis_ledger_events_v3 import router as thesis_ledger_events_v3_router
+from api.thesis_ledger_nav_v3 import router as thesis_ledger_nav_v3_router
 from api.thesis_ledger_oauth import (
     initialize_provider_oauth,
     shutdown_provider_oauth,
@@ -385,9 +387,37 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
     # ============================================================
     
     app.include_router(api_v1_router, prefix="/api/v1")
-    app.include_router(thesis_ledger_router, prefix="/api/v1")
-    app.include_router(thesis_ledger_v2_router, prefix="/api/v2")
-    app.include_router(thesis_ledger_oauth_router, prefix="/api/v1")
+    app.include_router(thesis_ledger_v3_router, prefix="/api/v3")
+    app.include_router(thesis_ledger_chart_v3_router, prefix="/api/v3")
+    app.include_router(thesis_ledger_events_v3_router, prefix="/api/v3")
+    app.include_router(thesis_ledger_nav_v3_router, prefix="/api/v3")
+    app.include_router(thesis_ledger_oauth_router, prefix="/api/v3")
+
+    # 带前端资源时，GET 型 SPA 回退会让旧 ThesisLedger POST 路径返回 405。
+    # 在回退路由前精确关闭旧前缀，避免把已移除的合同误报为方法不支持。
+    @app.api_route(
+        "/api/v1/thesis-ledger/{legacy_path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+        include_in_schema=False,
+    )
+    @app.api_route(
+        "/api/v2/thesis-ledger/{legacy_path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+        include_in_schema=False,
+    )
+    @app.api_route(
+        "/api/v1/thesis-ledger",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+        include_in_schema=False,
+    )
+    @app.api_route(
+        "/api/v2/thesis-ledger",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+        include_in_schema=False,
+    )
+    async def retired_thesis_ledger_route(legacy_path: str = ""):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+
     add_error_handlers(app)
     
     # ============================================================

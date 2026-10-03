@@ -122,9 +122,59 @@ class TestTushareFetcherFollowUps(unittest.TestCase):
         ) as rate_limit_mock:
             top, bottom = fetcher.get_sector_rankings(n=1)
 
-        self.assertEqual(top, [{"name": "AI", "change_pct": 1.8}])
-        self.assertEqual(bottom, [{"name": "消费", "change_pct": -0.6}])
+        self.assertEqual(
+            top,
+            [{"name": "AI", "change_pct": 1.8, "source": "tushare/ths:moneyflow_ind_ths"}],
+        )
+        self.assertEqual(
+            bottom,
+            [{"name": "消费", "change_pct": -0.6, "source": "tushare/ths:moneyflow_ind_ths"}],
+        )
         self.assertEqual(rate_limit_mock.call_count, 2)
+
+    def test_get_sector_rankings_fallback_keeps_dc_source(self) -> None:
+        fetcher = self._make_fetcher()
+        fetcher._api.trade_cal.return_value = pd.DataFrame(
+            {"cal_date": ["20260317", "20260314"], "is_open": [1, 1]}
+        )
+        fetcher._api.moneyflow_ind_ths.return_value = pd.DataFrame(
+            {"industry": ["重复", "重复"], "pct_change": [1.0, 2.0]}
+        )
+        fetcher._api.moneyflow_ind_dc.return_value = pd.DataFrame(
+            {
+                "content_type": ["行业", "行业", "概念"],
+                "name": ["银行", "科技", "忽略"],
+                "pct_change": [-0.5, 1.2, 9.9],
+            }
+        )
+
+        with patch.object(
+            fetcher, "_get_china_now", return_value=datetime(2026, 3, 17, 16, 0)
+        ), patch.object(fetcher, "_check_rate_limit"):
+            top, bottom = fetcher.get_sector_rankings(n=1)
+
+        self.assertEqual(top[0]["source"], "tushare/eastmoney:moneyflow_ind_dc")
+        self.assertEqual(bottom[0]["source"], "tushare/eastmoney:moneyflow_ind_dc")
+        fetcher._api.moneyflow_ind_ths.assert_called_once_with(trade_date="20260317")
+        fetcher._api.moneyflow_ind_dc.assert_called_once_with(trade_date="20260317")
+
+    def test_get_sector_rankings_before_1530_uses_previous_trade_date(self) -> None:
+        fetcher = self._make_fetcher()
+        fetcher._api.trade_cal.return_value = pd.DataFrame(
+            {"cal_date": ["20260317", "20260316"], "is_open": [1, 1]}
+        )
+        fetcher._api.moneyflow_ind_ths.return_value = pd.DataFrame(
+            {"industry": ["AI"], "pct_change": [0.8]}
+        )
+
+        with patch.object(
+            fetcher, "_get_china_now", return_value=datetime(2026, 3, 17, 15, 0)
+        ), patch.object(fetcher, "_check_rate_limit"):
+            top, _ = fetcher.get_sector_rankings(n=1)
+
+        self.assertEqual(top[0]["source"], "tushare/ths:moneyflow_ind_ths")
+        fetcher._api.moneyflow_ind_ths.assert_called_once_with(trade_date="20260316")
+        fetcher._api.moneyflow_ind_dc.assert_not_called()
 
     def test_get_chip_distribution_rate_limits_all_tushare_calls(self) -> None:
         fetcher = self._make_fetcher()

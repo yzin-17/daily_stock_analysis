@@ -568,7 +568,7 @@ class IntelligenceService:
             socket.getaddrinfo = guarded_getaddrinfo
             try:
                 request_kwargs = dict(kwargs)
-                request_kwargs.setdefault("proxies", _DISABLE_REQUEST_PROXIES)
+                request_kwargs.setdefault("proxies", dict(_DISABLE_REQUEST_PROXIES))
                 return requests.get(raw_url, **request_kwargs)
             finally:
                 socket.getaddrinfo = original_getaddrinfo

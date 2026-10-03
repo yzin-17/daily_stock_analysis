@@ -39,6 +39,12 @@ class _DummyBoardFetcher:
 
 
 class TestFundamentalContext(unittest.TestCase):
+    def setUp(self) -> None:
+        reader = patch("data_provider.fundamental_valuation.read_current_stock_valuation",
+                       side_effect=ValueError("offline valuation fixture"))
+        reader.start()
+        self.addCleanup(reader.stop)
+
     def test_offshore_market_returns_not_supported_when_adapter_empty(self) -> None:
         """When yfinance adapter has no data, offshore (US/HK) status is not_supported.
 
@@ -96,6 +102,16 @@ class TestFundamentalContext(unittest.TestCase):
         )
         bundle = {
             "status": "partial",
+            "valuation": {
+                "pe_ratio": 25.5,
+                "pb_ratio": 8.25,
+                "ratio_unit": "multiple",
+                "currency": None,
+                "period_basis": "current_info_period_unknown",
+                "observed_at": "2026-09-28T10:00:00+00:00",
+                "source_available_at": None,
+                "historical_visibility_verified": False,
+            },
             "growth": {
                 "revenue_yoy": 16.5,
                 "net_profit_yoy": 19.3,
@@ -145,6 +161,13 @@ class TestFundamentalContext(unittest.TestCase):
         self.assertEqual(ctx["coverage"].get("earnings"), "ok")
         self.assertEqual(ctx["coverage"].get("capital_flow"), "not_supported")
         self.assertEqual(ctx["coverage"].get("boards"), "not_supported")
+        valuation_data = ctx["valuation"].get("data") or {}
+        self.assertEqual(valuation_data.get("pe_ratio"), 25.5)
+        self.assertEqual(valuation_data.get("pb_ratio"), 8.25)
+        self.assertEqual(valuation_data.get("ratio_unit"), "multiple")
+        self.assertIsNone(valuation_data.get("source_available_at"))
+        self.assertFalse(valuation_data.get("historical_visibility_verified"))
+        self.assertEqual(ctx["valuation"]["source_chain"][0]["provider"], "yfinance.info")
         growth_data = ctx["growth"].get("data") or {}
         self.assertEqual(growth_data.get("revenue_yoy"), 16.5)
         self.assertEqual(growth_data.get("roe"), 141.4)

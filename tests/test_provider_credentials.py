@@ -52,12 +52,13 @@ def test_structured_credential_schema_and_partial_merge():
     }
 
 
-def test_structured_credential_format_round_trips_and_legacy_is_compatible():
+def test_structured_credential_format_round_trips_and_rejects_old_string():
     patch = CredentialPatch("api_key", {"apiKey": "secret"})
     decoded = decode_credential_plaintext(encode_credential_plaintext(patch))
     assert decoded.method == "api_key"
     assert decoded.values == {"apiKey": "secret"}
-    assert decode_credential_plaintext("old-single-secret").legacy is True
+    with pytest.raises(ValueError, match="格式无效"):
+        decode_credential_plaintext("old-single-secret")
     with pytest.raises(ValueError, match="格式版本"):
         decode_credential_plaintext(
             '{"kind":"provider_credentials","version":99,"method":"token","values":{"token":"x"}}'
@@ -235,16 +236,19 @@ def test_clearing_page_credential_restores_environment_source(monkeypatch, tmp_p
         )
 
 
-def test_historical_legacy_credential_does_not_take_over_environment(monkeypatch, tmp_path):
+def test_old_string_credential_is_rejected_without_changing_environment(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "src.config.get_config",
         lambda: type("EnvironmentConfig", (), {"tushare_token": "environment-token"})(),
     )
     store = _store(monkeypatch, tmp_path)
-    result = store.save_provider_config("tushare", {"requestId": "legacy", "credential": "old"})
-    assert result["credentialSource"] == "environment"
-    assert result["credentialFieldsConfigured"] == {"token": False}
-    assert result["credentialMethod"] is None
+    with pytest.raises(ControlContractError) as raised:
+        store.save_provider_config("tushare", {"requestId": "old", "credential": "old"})
+    assert raised.value.code == "INVALID_PROVIDER_CONFIG"
+    provider = next(item for item in store.provider_registry() if item["providerId"] == "tushare")
+    assert provider["credentialSource"] == "environment"
+    assert provider["credentialFieldsConfigured"] == {"token": False}
+    assert provider["credentialMethod"] is None
 
 
 def test_longbridge_environment_oauth_does_not_fill_legacy_fields(monkeypatch, tmp_path):

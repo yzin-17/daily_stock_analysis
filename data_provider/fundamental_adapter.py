@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
-from zoneinfo import ZoneInfo
 
 import pandas as pd
+from data_provider.eastmoney_individual_fund_flow_request import resolve_individual_fund_flow_request
+from data_provider.eastmoney_individual_fund_flow_rows import select_latest_individual_fund_flow
+from data_provider.eastmoney_industry_fund_flow_rank import select_industry_fund_flow_rankings
 
 logger = logging.getLogger(__name__)
 
@@ -166,156 +168,6 @@ def _normalize_report_date(value: Any) -> Optional[str]:
     return parsed.date().isoformat() if parsed else None
 
 
-def _as_utc_iso(value: datetime, *, tz_name: str = "Asia/Shanghai") -> str:
-    """Convert a provider date/time to a stable UTC timestamp."""
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=ZoneInfo(tz_name))
-    return value.astimezone(timezone.utc).isoformat()
-
-
-def normalize_corporate_actions_v2(
-    dividend_df: pd.DataFrame | None,
-    stock_code: str,
-    *,
-    start_date: str,
-    end_date: str,
-    data_as_of: datetime,
-    provider: str = "akshare",
-    provider_revision: str = "akshare-corporate-actions-v1",
-    source_complete: bool = False,
-) -> Dict[str, Any]:
-    """Normalize auditable CN stock cash dividends for the V2 contract.
-
-    The source table is considered complete only when it contains rows for the
-    requested symbol.  An upstream exception is represented by the caller as
-    ``complete=False``; this helper never turns an unknown result into an empty
-    fact set.  Events without a reliable announcement date or economic
-    effective date are excluded and make the coverage incomplete because their
-    knowledge or application time cannot be proven.
-    """
-    coverage = {"start": start_date, "end": end_date, "complete": False}
-    if dividend_df is None or dividend_df.empty:
-        coverage["complete"] = bool(source_complete and dividend_df is not None)
-        return {"facts": [], "coverage": coverage}
-
-    work_df = _filter_rows_by_code(dividend_df, stock_code)
-    if work_df.empty:
-        return {"facts": [], "coverage": coverage}
-
-    try:
-        start = date.fromisoformat(start_date)
-        end = date.fromisoformat(end_date)
-    except ValueError:
-        return {"facts": [], "coverage": coverage}
-    as_of = data_as_of.astimezone(timezone.utc)
-    facts: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    complete = True
-
-    for _, row in work_df.iterrows():
-        if not isinstance(row, pd.Series):
-            complete = False
-            continue
-        ex_dt = _safe_datetime(_pick_by_keywords(row, _DIVIDEND_KEYWORD_MAP["ex_dividend_date"]))
-        announce_dt = _safe_datetime(_pick_by_keywords(row, _DIVIDEND_KEYWORD_MAP["announce_date"]))
-        per_share = _extract_cash_dividend_per_share(row)
-        # Announcement date is the minimum auditable knowledge-time evidence.
-        if announce_dt is None or per_share is None or per_share <= 0:
-            complete = False
-            continue
-        # Only the ex-dividend date proves when the cash entitlement becomes
-        # economically effective.  Record/announcement dates are not safe
-        # substitutes for simulation accounting.
-        if ex_dt is None:
-            complete = False
-            continue
-        occurred_date = ex_dt.date()
-        available_at = _as_utc_iso(announce_dt)
-        available_dt = datetime.fromisoformat(available_at.replace("Z", "+00:00"))
-        if available_dt > as_of or occurred_date < start or occurred_date > end:
-            continue
-        key = (occurred_date.isoformat(), f"{per_share:.6f}")
-        if key in seen:
-            continue
-        seen.add(key)
-        facts.append(
-            {
-                "symbol": stock_code.upper(),
-                "market": "CN",
-                "instrumentType": "STOCK",
-                "type": "CASH_DIVIDEND",
-                "cashAmount": f"{per_share:.6f}".rstrip("0").rstrip("."),
-                "currency": "CNY",
-                "occurredAt": _as_utc_iso(ex_dt),
-                "availableAt": available_at,
-                "provider": provider,
-                "providerRevision": provider_revision,
-            }
-        )
-
-    facts.sort(key=lambda item: item["occurredAt"])
-    coverage["complete"] = complete
-    return {"facts": facts, "coverage": coverage}
-
-
-def normalize_etf_corporate_actions_v2(
-    announcement_df: pd.DataFrame | None,
-    fund_code: str,
-    *,
-    start_date: str,
-    end_date: str,
-    data_as_of: datetime,
-    provider: str = "akshare",
-    provider_revision: str = "akshare-etf-corporate-actions-v1",
-) -> Dict[str, Any]:
-    """Validate ETF action-announcement coverage without inventing ratios.
-
-    AkShare's ETF announcement index identifies split/distribution events but
-    does not expose an effective date and ratio in the index row.  Such an
-    event is therefore a deliberate coverage blocker when its announcement is
-    inside the requested point-in-time window.  An empty result is trusted
-    only when the provider returned a non-empty, complete announcement index
-    and no action announcement is known in the window.
-    """
-    coverage = {"start": start_date, "end": end_date, "complete": False}
-    if announcement_df is None or announcement_df.empty:
-        return {"facts": [], "coverage": coverage}
-    work_df = _filter_rows_by_code(announcement_df, fund_code)
-    if work_df.empty:
-        return {"facts": [], "coverage": coverage}
-    try:
-        start = date.fromisoformat(start_date)
-        end = date.fromisoformat(end_date)
-    except ValueError:
-        return {"facts": [], "coverage": coverage}
-    as_of = data_as_of.astimezone(timezone.utc)
-    complete = True
-    title_keywords = ("拆分", "分红", "收益分配", "份额折算")
-    for _, row in work_df.iterrows():
-        if not isinstance(row, pd.Series):
-            complete = False
-            continue
-        announced = _safe_datetime(_pick_by_keywords(row, ["公告日期", "公告日"]))
-        title = _safe_str(_pick_by_keywords(row, ["公告标题", "标题"]))
-        if announced is None or not title:
-            complete = False
-            continue
-        if announced.tzinfo:
-            available_at = announced.astimezone(timezone.utc)
-        else:
-            available_at = announced.replace(
-                tzinfo=ZoneInfo("Asia/Shanghai")
-            ).astimezone(timezone.utc)
-        if available_at > as_of:
-            continue
-        if start <= announced.date() <= end and any(keyword in title for keyword in title_keywords):
-            # The index does not contain enough facts for a safe simulation
-            # event.  Do not guess a ratio or turn it into a cash dividend.
-            complete = False
-    coverage["complete"] = complete
-    return {"facts": [], "coverage": coverage}
-
-
 def _build_dividend_payload(
     dividend_df: pd.DataFrame,
     stock_code: str,
@@ -415,72 +267,6 @@ def _extract_latest_row(df: pd.DataFrame, stock_code: str) -> Optional[pd.Series
 class AkshareFundamentalAdapter:
     """AkShare adapter for fundamentals, capital flow and dragon-tiger signals."""
 
-    def get_corporate_actions_v2(
-        self,
-        stock_code: str,
-        *,
-        start_date: str,
-        end_date: str,
-        data_as_of: datetime,
-        instrument_type: str = "STOCK",
-    ) -> Dict[str, Any]:
-        """Return auditable V2 company-action coverage for a CN instrument."""
-        if instrument_type.upper() == "ETF":
-            # AkShare's ETF announcement endpoint expects the bare fund code;
-            # keep the canonical exchange-qualified symbol for filtering and
-            # the response contract below.
-            provider_symbol = _normalize_code(stock_code)
-            announcement_df, source, errors = self._call_df_candidates(
-                [("fund_announcement_dividend_em", {"symbol": provider_symbol})],
-                allow_empty=False,
-            )
-            if announcement_df is None:
-                return {
-                    "facts": [],
-                    "coverage": {"start": start_date, "end": end_date, "complete": False},
-                    "source": source,
-                    "errors": errors,
-                }
-            result = normalize_etf_corporate_actions_v2(
-                announcement_df,
-                stock_code,
-                start_date=start_date,
-                end_date=end_date,
-                data_as_of=data_as_of,
-                provider="akshare",
-                provider_revision=f"akshare:{source or 'etf-announcements'}:v1",
-            )
-            result["source"] = source
-            result["errors"] = errors
-            result["providerRevision"] = f"akshare:{source or 'etf-announcements'}:v1"
-            return result
-        dividend_df, source, errors = self._call_df_candidates([
-            ("stock_fhps_detail_em", {"symbol": stock_code}),
-            ("stock_history_dividend_detail", {"symbol": stock_code, "indicator": "分红", "date": ""}),
-            ("stock_dividend_cninfo", {"symbol": stock_code}),
-        ], allow_empty=True)
-        if dividend_df is None:
-            return {
-                "facts": [],
-                "coverage": {"start": start_date, "end": end_date, "complete": False},
-                "source": source,
-                "errors": errors,
-            }
-        result = normalize_corporate_actions_v2(
-            dividend_df,
-            stock_code,
-            start_date=start_date,
-            end_date=end_date,
-            data_as_of=data_as_of,
-            provider="akshare",
-            provider_revision=f"akshare:{source or 'corporate-actions'}:v1",
-            source_complete=True,
-        )
-        result["source"] = source
-        result["errors"] = errors
-        result["providerRevision"] = f"akshare:{source or 'corporate-actions'}:v1"
-        return result
-
     def _call_df_candidates(
         self,
         candidates: List[Tuple[str, Dict[str, Any]]],
@@ -521,13 +307,14 @@ class AkshareFundamentalAdapter:
             "errors": [],
         }
 
-        # Financial indicators
         fin_df, fin_source, fin_errors = self._call_df_candidates([
             ("stock_financial_abstract", {"symbol": stock_code}),
             ("stock_financial_analysis_indicator", {"symbol": stock_code}),
-            ("stock_financial_analysis_indicator", {}),
         ])
         result["errors"].extend(fin_errors)
+        if fin_source == "stock_financial_abstract" and fin_df is not None and {"选项", "指标"} <= set(fin_df):
+            result["errors"].append("stock_financial_abstract:unmapped_matrix")
+            fin_df = None
         if fin_df is not None:
             row = _extract_latest_row(fin_df, stock_code)
             if row is not None:
@@ -558,7 +345,6 @@ class AkshareFundamentalAdapter:
                     result["earnings"]["financial_report"] = financial_report_payload
                 result["source_chain"].append(f"growth:{fin_source}")
 
-        # Earnings forecast
         forecast_df, forecast_source, forecast_errors = self._call_df_candidates([
             ("stock_yjyg_em", {"symbol": stock_code}),
             ("stock_yjyg_em", {}),
@@ -644,45 +430,31 @@ class AkshareFundamentalAdapter:
             "errors": [],
         }
 
-        stock_df, stock_source, stock_errors = self._call_df_candidates([
-            ("stock_individual_fund_flow", {"stock": stock_code}),
-            ("stock_individual_fund_flow", {"symbol": stock_code}),
-            ("stock_individual_fund_flow", {}),
-            ("stock_main_fund_flow", {"symbol": stock_code}),
-            ("stock_main_fund_flow", {}),
-        ])
+        stock_request = resolve_individual_fund_flow_request(stock_code)
+        stock_df, stock_source, stock_errors = None, None, ["capital_stock:missing_explicit_exchange"]
+        if stock_request is not None:
+            stock_df, stock_source, stock_errors = self._call_df_candidates([
+                ("stock_individual_fund_flow", stock_request),
+            ])
         result["errors"].extend(stock_errors)
         if stock_df is not None:
-            row = _extract_latest_row(stock_df, stock_code)
-            if row is not None:
-                net_inflow = _safe_float(_pick_by_keywords(row, ["主力净流入", "净流入", "净额"]))
-                inflow_5d = _safe_float(_pick_by_keywords(row, ["5日", "五日"]))
-                inflow_10d = _safe_float(_pick_by_keywords(row, ["10日", "十日"]))
-                result["stock_flow"] = {
-                    "main_net_inflow": net_inflow,
-                    "inflow_5d": inflow_5d,
-                    "inflow_10d": inflow_10d,
-                }
+            try:
+                result["stock_flow"] = select_latest_individual_fund_flow(stock_df)
+            except ValueError:
+                result["errors"].append("capital_stock:invalid_daily_rows")
+            else:
                 result["source_chain"].append(f"capital_stock:{stock_source}")
 
         sector_df, sector_source, sector_errors = self._call_df_candidates([
-            ("stock_sector_fund_flow_rank", {}),
-            ("stock_sector_fund_flow_summary", {}),
+            ("stock_sector_fund_flow_rank", {"indicator": "今日", "sector_type": "行业资金流"}),
         ])
         result["errors"].extend(sector_errors)
         if sector_df is not None:
-            name_col = next((c for c in sector_df.columns if any(k in str(c) for k in ("板块", "行业", "名称", "name"))), None)
-            flow_col = next((c for c in sector_df.columns if any(k in str(c) for k in ("净流入", "主力", "flow", "净额"))), None)
-            if name_col and flow_col:
-                work_df = sector_df[[name_col, flow_col]].copy()
-                work_df[flow_col] = pd.to_numeric(work_df[flow_col], errors="coerce")
-                work_df = work_df.dropna(subset=[flow_col])
-                top_df = work_df.nlargest(top_n, flow_col)
-                bottom_df = work_df.nsmallest(top_n, flow_col)
-                result["sector_rankings"] = {
-                    "top": [{"name": _safe_str(r[name_col]), "net_inflow": float(r[flow_col])} for _, r in top_df.iterrows()],
-                    "bottom": [{"name": _safe_str(r[name_col]), "net_inflow": float(r[flow_col])} for _, r in bottom_df.iterrows()],
-                }
+            try:
+                result["sector_rankings"] = select_industry_fund_flow_rankings(sector_df, top_n)
+            except ValueError:
+                result["errors"].append("capital_sector:invalid_rank_rows")
+            else:
                 result["source_chain"].append(f"capital_sector:{sector_source}")
 
         has_content = bool(result["stock_flow"] or result["sector_rankings"]["top"] or result["sector_rankings"]["bottom"])

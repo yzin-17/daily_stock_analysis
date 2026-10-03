@@ -558,8 +558,24 @@ class TestIssue1512SettingsFields(unittest.TestCase):
 class TestEnvExampleWebSettingsCoverage(unittest.TestCase):
     """Active .env.example keys must be registered or intentionally hidden."""
 
+    _THESIS_LEDGER_INTERNAL_KEYS = (
+        "THESIS_LEDGER_DSA_TOKEN",
+        "THESIS_LEDGER_FIXTURE_MODE",
+    )
     _ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
     _ACTIVE_ENV_ASSIGNMENT_RE = re.compile(r"^([A-Z][A-Z0-9_]*)=")
+
+    def test_thesis_ledger_internal_keys_are_hidden_from_web_settings(self) -> None:
+        registered_keys = set(get_registered_field_keys())
+        schema_keys = {
+            field["key"]
+            for category in build_schema_response()["categories"]
+            for field in category["fields"]
+        }
+        for key in self._THESIS_LEDGER_INTERNAL_KEYS:
+            self.assertIn(key, WEB_SETTINGS_HIDDEN_FROM_UI)
+            self.assertNotIn(key, registered_keys)
+            self.assertNotIn(key, schema_keys)
 
     def test_active_env_example_keys_are_registered_or_hidden_from_web_ui(self) -> None:
         active_keys = {

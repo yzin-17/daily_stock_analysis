@@ -1,0 +1,334 @@
+{
+  "response": {
+    "contractVersion": 3,
+    "requestId": "market-data-v3-etf-qfq-fixture",
+    "symbol": "159516.SZ",
+    "routeKey": {
+      "kind": "bar",
+      "market": "CN",
+      "assetType": "ETF",
+      "capability": "DAILY_BAR",
+      "timeframe": "1d",
+      "adjustment": "qfq"
+    },
+    "bars": [
+      {
+        "timestamp": "2026-05-18T07:00:00.000Z",
+        "open": 1.012,
+        "high": 1.028,
+        "low": 1.006,
+        "close": 1.021,
+        "volume": 183400,
+        "amount": 186828.4,
+        "completionStatus": "complete",
+        "availableAt": "2026-05-18T07:00:00.000Z"
+      },
+      {
+        "timestamp": "2026-05-19T07:00:00.000Z",
+        "open": 1.021,
+        "high": 1.034,
+        "low": 1.015,
+        "close": 1.029,
+        "volume": 204100,
+        "amount": 209238.9,
+        "completionStatus": "complete",
+        "availableAt": "2026-05-19T07:00:00.000Z"
+      },
+      {
+        "timestamp": "2026-05-20T07:00:00.000Z",
+        "open": 1.029,
+        "high": 1.041,
+        "low": 1.024,
+        "close": 1.036,
+        "volume": 197800,
+        "amount": 204920.8,
+        "completionStatus": "complete",
+        "availableAt": "2026-05-20T07:00:00.000Z"
+      }
+    ],
+    "coverage": {
+      "requestedStart": "2026-05-18",
+      "requestedEnd": "2026-05-20",
+      "actualStart": "2026-05-18T07:00:00.000Z",
+      "actualEnd": "2026-05-20T07:00:00.000Z",
+      "hasMoreBefore": false,
+      "latestCompleteTradingDate": "2026-05-20"
+    },
+    "coverageProof": {
+      "calendar": {
+        "market": "CN",
+        "timezone": "Asia/Shanghai",
+        "source": "fixture-cn-market-calendar",
+        "revision": "fixture-cn-calendar-revision-1",
+        "supportedRange": {
+          "start": "2020-01-01",
+          "end": "2030-12-31"
+        },
+        "expectedSessionDates": [
+          "2026-05-18",
+          "2026-05-19",
+          "2026-05-20"
+        ]
+      },
+      "listing": {
+        "symbol": "159516.SZ",
+        "firstTradingDate": "2023-07-27",
+        "source": "fixture-exchange-listing-announcement",
+        "revision": "fixture-listing-fact-revision-1",
+        "knownAt": "2023-07-24T09:00:00.000Z"
+      },
+      "window": {
+        "status": "complete",
+        "requestedStart": "2026-05-18",
+        "requestedEnd": "2026-05-20"
+      },
+      "pagination": {
+        "status": "complete",
+        "pagesFetched": 1,
+        "continuationPending": false
+      }
+    },
+    "sourcePriceBasis": {
+      "adjustment": "qfq",
+      "method": "provider-native",
+      "methodVersion": "hithink-financial-api-qfq-fixture-v1",
+      "basisScope": "request-window",
+      "anchor": null,
+      "revision": {
+        "origin": "local-observation",
+        "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "observedAt": "2026-05-20T07:02:00Z",
+      "volumeBasis": "unknown",
+      "dividendMeaning": "provider-defined",
+      "dividendEvidenceRef": null,
+      "conversionAvailable": false,
+      "conversionEvidenceRef": null,
+      "derivation": null
+    },
+    "provenance": {
+      "providerId": "hithink",
+      "upstreamSource": "hithink-financial-api",
+      "routeIndex": 0,
+      "effectivePolicyRevision": 1
+    },
+    "inputFingerprint": "v3-fixture-fingerprint-1",
+    "windowObservations": [
+      {
+        "startedAt": "2026-05-20T07:00:00Z",
+        "completedAt": "2026-05-20T07:02:00Z",
+        "response": {
+          "contractVersion": 3,
+          "requestId": "market-data-v3-etf-qfq-fixture",
+          "symbol": "159516.SZ",
+          "routeKey": {
+            "kind": "bar",
+            "market": "CN",
+            "assetType": "ETF",
+            "capability": "DAILY_BAR",
+            "timeframe": "1d",
+            "adjustment": "qfq"
+          },
+          "bars": [
+            {
+              "timestamp": "2026-05-18T07:00:00.000Z",
+              "open": 1.012,
+              "high": 1.028,
+              "low": 1.006,
+              "close": 1.021,
+              "volume": 183400,
+              "amount": 186828.4,
+              "completionStatus": "complete",
+              "availableAt": "2026-05-18T07:00:00.000Z"
+            },
+            {
+              "timestamp": "2026-05-19T07:00:00.000Z",
+              "open": 1.021,
+              "high": 1.034,
+              "low": 1.015,
+              "close": 1.029,
+              "volume": 204100,
+              "amount": 209238.9,
+              "completionStatus": "complete",
+              "availableAt": "2026-05-19T07:00:00.000Z"
+            }
+          ],
+          "coverage": {
+            "requestedStart": "2026-05-18",
+            "requestedEnd": "2026-05-19",
+            "actualStart": "2026-05-18T07:00:00.000Z",
+            "actualEnd": "2026-05-19T07:00:00.000Z",
+            "hasMoreBefore": false,
+            "latestCompleteTradingDate": "2026-05-19"
+          },
+          "coverageProof": {
+            "calendar": {
+              "market": "CN",
+              "timezone": "Asia/Shanghai",
+              "source": "fixture-cn-market-calendar",
+              "revision": "fixture-cn-calendar-revision-1",
+              "supportedRange": {
+                "start": "2020-01-01",
+                "end": "2030-12-31"
+              },
+              "expectedSessionDates": [
+                "2026-05-18",
+                "2026-05-19"
+              ]
+            },
+            "listing": {
+              "symbol": "159516.SZ",
+              "firstTradingDate": "2023-07-27",
+              "source": "fixture-exchange-listing-announcement",
+              "revision": "fixture-listing-fact-revision-1",
+              "knownAt": "2023-07-24T09:00:00.000Z"
+            },
+            "window": {
+              "status": "complete",
+              "requestedStart": "2026-05-18",
+              "requestedEnd": "2026-05-19"
+            },
+            "pagination": {
+              "status": "complete",
+              "pagesFetched": 1,
+              "continuationPending": false
+            }
+          },
+          "sourcePriceBasis": {
+            "adjustment": "qfq",
+            "method": "provider-native",
+            "methodVersion": "hithink-financial-api-qfq-fixture-v1",
+            "basisScope": "provider-defined",
+            "anchor": null,
+            "revision": {
+              "origin": "provider",
+              "id": "hithink-financial-api-fixture-revision-1"
+            },
+            "observedAt": "2026-05-20T07:01:00.000Z",
+            "volumeBasis": "unknown",
+            "dividendMeaning": "provider-defined",
+            "dividendEvidenceRef": null,
+            "conversionAvailable": false,
+            "conversionEvidenceRef": null,
+            "derivation": null
+          },
+          "provenance": {
+            "providerId": "hithink",
+            "upstreamSource": "hithink-financial-api",
+            "routeIndex": 0,
+            "effectivePolicyRevision": 1
+          },
+          "inputFingerprint": "v3-fixture-fingerprint-1"
+        }
+      },
+      {
+        "startedAt": "2026-05-20T07:00:00Z",
+        "completedAt": "2026-05-20T07:02:00Z",
+        "response": {
+          "contractVersion": 3,
+          "requestId": "market-data-v3-etf-qfq-fixture",
+          "symbol": "159516.SZ",
+          "routeKey": {
+            "kind": "bar",
+            "market": "CN",
+            "assetType": "ETF",
+            "capability": "DAILY_BAR",
+            "timeframe": "1d",
+            "adjustment": "qfq"
+          },
+          "bars": [
+            {
+              "timestamp": "2026-05-19T07:00:00.000Z",
+              "open": 1.021,
+              "high": 1.034,
+              "low": 1.015,
+              "close": 1.029,
+              "volume": 204100,
+              "amount": 209238.9,
+              "completionStatus": "complete",
+              "availableAt": "2026-05-19T07:00:00.000Z"
+            },
+            {
+              "timestamp": "2026-05-20T07:00:00.000Z",
+              "open": 1.029,
+              "high": 1.041,
+              "low": 1.024,
+              "close": 1.036,
+              "volume": 197800,
+              "amount": 204920.8,
+              "completionStatus": "complete",
+              "availableAt": "2026-05-20T07:00:00.000Z"
+            }
+          ],
+          "coverage": {
+            "requestedStart": "2026-05-19",
+            "requestedEnd": "2026-05-20",
+            "actualStart": "2026-05-19T07:00:00.000Z",
+            "actualEnd": "2026-05-20T07:00:00.000Z",
+            "hasMoreBefore": false,
+            "latestCompleteTradingDate": "2026-05-20"
+          },
+          "coverageProof": {
+            "calendar": {
+              "market": "CN",
+              "timezone": "Asia/Shanghai",
+              "source": "fixture-cn-market-calendar",
+              "revision": "fixture-cn-calendar-revision-1",
+              "supportedRange": {
+                "start": "2020-01-01",
+                "end": "2030-12-31"
+              },
+              "expectedSessionDates": [
+                "2026-05-19",
+                "2026-05-20"
+              ]
+            },
+            "listing": {
+              "symbol": "159516.SZ",
+              "firstTradingDate": "2023-07-27",
+              "source": "fixture-exchange-listing-announcement",
+              "revision": "fixture-listing-fact-revision-1",
+              "knownAt": "2023-07-24T09:00:00.000Z"
+            },
+            "window": {
+              "status": "complete",
+              "requestedStart": "2026-05-19",
+              "requestedEnd": "2026-05-20"
+            },
+            "pagination": {
+              "status": "complete",
+              "pagesFetched": 1,
+              "continuationPending": false
+            }
+          },
+          "sourcePriceBasis": {
+            "adjustment": "qfq",
+            "method": "provider-native",
+            "methodVersion": "hithink-financial-api-qfq-fixture-v1",
+            "basisScope": "provider-defined",
+            "anchor": null,
+            "revision": {
+              "origin": "provider",
+              "id": "hithink-financial-api-fixture-revision-1"
+            },
+            "observedAt": "2026-05-20T07:01:00.000Z",
+            "volumeBasis": "unknown",
+            "dividendMeaning": "provider-defined",
+            "dividendEvidenceRef": null,
+            "conversionAvailable": false,
+            "conversionEvidenceRef": null,
+            "derivation": null
+          },
+          "provenance": {
+            "providerId": "hithink",
+            "upstreamSource": "hithink-financial-api",
+            "routeIndex": 0,
+            "effectivePolicyRevision": 1
+          },
+          "inputFingerprint": "v3-fixture-fingerprint-1"
+        }
+      }
+    ]
+  },
+  "expectedContentHash": "d73bbe8060612a0eece8033f4c31f254c892391522fcf435f1d826586741325c"
+}

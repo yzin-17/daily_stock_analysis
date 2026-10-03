@@ -28,10 +28,13 @@ mark the block as ``partial`` when only some fields are populated.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+import math
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
+
+from .us_index_mapping import is_us_stock_code
 
 logger = logging.getLogger(__name__)
 
@@ -82,27 +85,39 @@ def _pick_row(df: pd.DataFrame, keys) -> Optional[pd.Series]:
     return None
 
 
-def _latest_value(row: Optional[pd.Series]) -> Optional[float]:
+def _value_for_report_date(row: Optional[pd.Series], report_date: str) -> Optional[float]:
     if row is None or row.empty:
         return None
-    try:
-        return _safe_float(row.iloc[0])
-    except IndexError:
+    columns = []
+    for column in row.index:
+        if not isinstance(column, (datetime, pd.Timestamp)):
+            continue
+        if pd.Timestamp(column).date().isoformat() == report_date:
+            columns.append(column)
+    if len(columns) != 1:
         return None
+    return _safe_float(row[columns[0]])
 
 
 def _yoy_from_row(row: Optional[pd.Series]) -> Optional[float]:
-    """Statement-derived YoY: requires the same quarter from 4 quarters back.
-
-    yfinance ``quarterly_*_stmt`` returns 4 quarters by default, so this
-    typically returns None and callers fall back to ``info.revenueGrowth`` /
-    ``info.earningsGrowth`` (already TTM YoY ratios). Doing QoQ via ``iloc[1]``
-    is wrong for seasonal businesses — explicitly refuse it.
-    """
-    if row is None or row.empty or len(row) < 5:
+    """Only compare unique statement columns with matching year-ago dates."""
+    if row is None or row.empty or len(row) < 2:
         return None
-    latest = _safe_float(row.iloc[0])
-    prev_year = _safe_float(row.iloc[4])
+    values_by_date = {}
+    for column, value in row.items():
+        if not isinstance(column, (datetime, pd.Timestamp)):
+            return None
+        report_date = pd.Timestamp(column).date()
+        if report_date in values_by_date:
+            return None
+        values_by_date[report_date] = value
+    latest_date = max(values_by_date)
+    try:
+        prior_date = latest_date.replace(year=latest_date.year - 1)
+    except ValueError:
+        return None
+    latest = _safe_float(values_by_date[latest_date])
+    prev_year = _safe_float(values_by_date.get(prior_date))
     if latest is None or prev_year in (None, 0):
         return None
     return round((latest - prev_year) / abs(prev_year) * 100.0, 4)
@@ -146,6 +161,7 @@ class YfinanceFundamentalAdapter:
     def get_fundamental_bundle(self, stock_code: str) -> Dict[str, Any]:
         result: Dict[str, Any] = {
             "status": "not_supported",
+            "valuation": {},
             "growth": {},
             "earnings": {},
             "institution": {},
@@ -183,6 +199,33 @@ class YfinanceFundamentalAdapter:
         financial_currency = str(info.get("financialCurrency") or info.get("currency") or "").upper() or None
         dividend_currency = str(info.get("currency") or info.get("financialCurrency") or "").upper() or None
 
+        # ---------------- valuation block ----------------
+        # R05.5 deliberately selects US stocks only.  Yahoo's .info ratios are
+        # current observations with no verified publication/revision timestamp,
+        # so keep them out of historical PIT semantics and do not mix in
+        # market-cap values whose unit/currency contract is not frozen here.
+        requested = (stock_code or "").strip().upper()
+        us_identity = requested[:-3] if requested.endswith(".US") else requested
+        if is_us_stock_code(us_identity):
+            pe_ratio = _safe_float(info.get("trailingPE"))
+            pb_ratio = _safe_float(info.get("priceToBook"))
+            if pe_ratio is not None and not math.isfinite(pe_ratio):
+                pe_ratio = None
+            if pb_ratio is not None and not math.isfinite(pb_ratio):
+                pb_ratio = None
+            if pe_ratio is not None or pb_ratio is not None:
+                result["valuation"] = {
+                    "pe_ratio": pe_ratio,
+                    "pb_ratio": pb_ratio,
+                    "ratio_unit": "multiple",
+                    "currency": None,
+                    "period_basis": "current_info_period_unknown",
+                    "observed_at": datetime.now(timezone.utc).isoformat(),
+                    "source_available_at": None,
+                    "historical_visibility_verified": False,
+                }
+                result["source_chain"].append("valuation:yfinance.info")
+
         # ---------------- growth block ----------------
         growth_payload: Dict[str, Any] = {
             "revenue_yoy": _ratio_to_pct(info.get("revenueGrowth")),
@@ -209,37 +252,37 @@ class YfinanceFundamentalAdapter:
             income_df = None
         if income_df is not None and not income_df.empty:
             try:
-                if all(hasattr(col, "to_pydatetime") or isinstance(col, (datetime, pd.Timestamp)) for col in income_df.columns):
+                if all(isinstance(col, (datetime, pd.Timestamp)) for col in income_df.columns):
                     income_df = income_df.reindex(columns=sorted(income_df.columns, reverse=True))
-                first_col = income_df.columns[0]
-                ts = pd.to_datetime(first_col, errors="coerce")
-                if pd.notna(ts):
-                    report_date = ts.date().isoformat()
+                    report_date = pd.Timestamp(income_df.columns[0]).date().isoformat()
             except Exception:
                 pass
             revenue_row = _pick_row(income_df, _INCOME_REVENUE_KEYS)
             net_profit_row = _pick_row(income_df, _INCOME_NET_PROFIT_KEYS)
-            revenue_latest = _latest_value(revenue_row)
-            net_profit_latest = _latest_value(net_profit_row)
+            if report_date:
+                revenue_latest = _value_for_report_date(revenue_row, report_date)
+                net_profit_latest = _value_for_report_date(net_profit_row, report_date)
 
         try:
             cashflow_df = ticker.quarterly_cashflow
         except Exception as exc:
             result["errors"].append(f"quarterly_cashflow:{type(exc).__name__}")
             cashflow_df = None
-        if cashflow_df is not None and not cashflow_df.empty:
-            operating_cash_flow_latest = _latest_value(_pick_row(cashflow_df, _CASHFLOW_OP_KEYS))
+        if report_date and cashflow_df is not None and not cashflow_df.empty:
+            operating_cash_flow_latest = _value_for_report_date(
+                _pick_row(cashflow_df, _CASHFLOW_OP_KEYS), report_date)
 
-        # Fallback to TTM aggregates from .info when quarterly statements are
-        # unavailable — still produces a non-empty row.
-        if revenue_latest is None:
+        # Without usable quarterly values, keep undated .info aggregates separate.
+        if all(value is None for value in
+               (revenue_latest, net_profit_latest, operating_cash_flow_latest)):
+            report_date = None
+        if report_date is None:
             revenue_latest = _safe_float(info.get("totalRevenue"))
-        if operating_cash_flow_latest is None:
             operating_cash_flow_latest = _safe_float(info.get("operatingCashflow"))
-        if net_profit_latest is None and revenue_latest is not None:
-            margin = _safe_float(info.get("profitMargins"))
-            if margin is not None:
-                net_profit_latest = revenue_latest * margin
+            if revenue_latest is not None:
+                margin = _safe_float(info.get("profitMargins"))
+                if margin is not None:
+                    net_profit_latest = revenue_latest * margin
 
         # Statement-derived YoY (requires 4 quarters of history) is preferred
         # over .info ratios; otherwise keep the TTM growth values already set
@@ -256,13 +299,16 @@ class YfinanceFundamentalAdapter:
 
         financial_report = {
             "report_date": report_date,
+            "period_basis": "quarterly_statement" if report_date else "info_aggregate_period_unknown",
             "revenue": revenue_latest,
             "net_profit_parent": net_profit_latest,
             "operating_cash_flow": operating_cash_flow_latest,
-            "roe": growth_payload.get("roe"),
+            "roe": None if report_date else growth_payload.get("roe"),
             "currency": financial_currency,
+            "source_available_at": None,
         }
-        if any(v is not None and v != "" for v in financial_report.values()):
+        if any(value is not None for value in
+               (revenue_latest, net_profit_latest, operating_cash_flow_latest)):
             result.setdefault("earnings", {})["financial_report"] = financial_report
             result["source_chain"].append("earnings.financial_report:yfinance")
 
@@ -366,7 +412,8 @@ class YfinanceFundamentalAdapter:
             result["source_chain"].append("belong_boards:yfinance.info")
 
         has_content = bool(
-            result.get("growth")
+            result.get("valuation")
+            or result.get("growth")
             or result.get("earnings")
             or result.get("belong_boards")
         )

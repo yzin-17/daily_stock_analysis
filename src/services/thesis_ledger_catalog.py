@@ -7,7 +7,11 @@ import logging
 import multiprocessing
 import threading
 import time
+from numbers import Integral
 from typing import Any, Callable, Iterable
+
+from data_provider.eastmoney_fund_catalog_reader import read_fund_catalog
+from data_provider.sina_etf_catalog_reader import read_sina_etf_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +21,6 @@ _CATALOG_PROVIDER_WORKER_SLOTS = threading.BoundedSemaphore(2)
 _CATALOG_PROVIDER_MAX_ATTEMPTS = 2
 _CATALOG_PROVIDER_RETRY_BACKOFF_SECONDS = 0.25
 
-ETF_PREFIXES = ("51", "52", "56", "58", "15", "16", "18")
 
 
 class CatalogBuildError(RuntimeError):
@@ -60,7 +63,9 @@ def _catalog_provider_process_worker(connection: Any, operation: Callable[[], An
         connection.send((True, operation()))
     except BaseException as exc:
         try:
-            connection.send((False, type(exc).__name__, str(exc)[:256]))
+            code = exc.code if isinstance(exc, CatalogBuildError) else "catalog_provider_unavailable"
+            retryable = exc.retryable if isinstance(exc, CatalogBuildError) else True
+            connection.send((False, code, retryable))
         except BaseException:
             # Provider 可能在发送错误前退出；父进程会按稳定的 isolation code 处理。
             pass
@@ -120,7 +125,8 @@ def _run_catalog_provider_once(
             return result[1]
         raise CatalogBuildError(
             "Provider 目录请求失败",
-            code="catalog_provider_unavailable",
+            code=result[1],
+            retryable=result[2],
         )
     except CatalogBuildError:
         raise
@@ -173,7 +179,7 @@ def _column(frame: Any, candidates: Iterable[str]) -> str | None:
 
 
 def _market_for(code: str) -> str:
-    if code.startswith(("4", "8")):
+    if code.startswith(("4", "8", "920")):
         return "BJ"
     if code.startswith(("5", "6", "9")):
         return "SH"
@@ -183,7 +189,7 @@ def _market_for(code: str) -> str:
 def _normalize_frame(
     frame: Any,
     *,
-    instrument_type: str | None = None,
+    instrument_type: str,
     market: str | None = None,
 ) -> list[dict[str, str]]:
     if frame is None or getattr(frame, "empty", True):
@@ -198,16 +204,22 @@ def _normalize_frame(
         )
     items: list[dict[str, str]] = []
     for _, row in frame.iterrows():
-        code = str(row.get(code_column) or "").strip().upper().zfill(6)
-        name = str(row.get(name_column) or "").strip()
-        if len(code) != 6 or not code.isdigit() or not name:
-            continue
-        resolved_type = instrument_type or ("ETF" if code.startswith(ETF_PREFIXES) else "STOCK")
+        raw_code = row.get(code_column)
+        raw_name = row.get(name_column)
+        code = str(raw_code).strip() if isinstance(raw_code, (str, Integral)) and not isinstance(raw_code, bool) else ""
+        name = raw_name.strip() if isinstance(raw_name, str) else ""
+        if not code or len(code) > 6 or not code.isascii() or not code.isdigit() or not name or int(code) == 0:
+            raise CatalogBuildError(
+                "Provider 目录包含无效代码或名称",
+                code="catalog_provider_invalid_response",
+                retryable=False,
+            )
+        code = code.zfill(6)
         resolved_market = market or _market_for(code)
         items.append(
             {
                 "canonicalCode": code,
-                "instrumentType": resolved_type,
+                "instrumentType": instrument_type,
                 "market": resolved_market,
                 "displayName": name,
             }
@@ -219,8 +231,16 @@ def _akshare_catalog() -> list[dict[str, str]]:
     import akshare as ak
 
     items: list[dict[str, str]] = []
-    items.extend(_normalize_frame(ak.stock_info_a_code_name()))
-    items.extend(_normalize_frame(ak.fund_etf_spot_em(), instrument_type="ETF"))
+    items.extend(_normalize_frame(ak.stock_info_a_code_name(), instrument_type="STOCK"))
+    try:
+        items.extend(read_sina_etf_catalog()['rows'])
+    except (ValueError, TimeoutError) as exc:
+        timeout = isinstance(exc, TimeoutError)
+        raise CatalogBuildError(
+            "新浪 ETF 目录读取超时" if timeout else "新浪 ETF 目录响应无效",
+            code="catalog_provider_timeout" if timeout else "catalog_provider_invalid_response",
+            retryable=timeout,
+        ) from exc
     items.extend(
         _normalize_frame(
             ak.fund_name_em(),
@@ -231,6 +251,63 @@ def _akshare_catalog() -> list[dict[str, str]]:
     return items
 
 
+def _eastmoney_open_fund_catalog() -> list[dict[str, str]]:
+    try:
+        result = read_fund_catalog(timeout_seconds=45)
+    except TimeoutError as exc:
+        raise CatalogBuildError(
+            "EastMoney 开放基金目录读取超时",
+            code="catalog_provider_timeout",
+        ) from exc
+    except ValueError as exc:
+        raise CatalogBuildError(
+            "EastMoney 开放基金目录响应无效",
+            code="catalog_provider_invalid_response",
+            retryable=False,
+        ) from exc
+
+    rows = result.get("rows") if isinstance(result, dict) else None
+    if not isinstance(rows, tuple) or not rows:
+        raise CatalogBuildError(
+            "EastMoney 开放基金目录响应无效",
+            code="catalog_provider_invalid_response",
+            retryable=False,
+        )
+    items, seen = [], set()
+    for row in rows:
+        if not isinstance(row, tuple) or len(row) != 2:
+            raise CatalogBuildError(
+                "EastMoney 开放基金目录响应无效",
+                code="catalog_provider_invalid_response",
+                retryable=False,
+            )
+        code, raw_name = row
+        name = raw_name.strip() if isinstance(raw_name, str) else ""
+        if (
+            not isinstance(code, str)
+            or not code.isascii()
+            or not code.isdigit()
+            or len(code) != 6
+            or not name
+            or code in seen
+        ):
+            raise CatalogBuildError(
+                "EastMoney 开放基金目录响应无效",
+                code="catalog_provider_invalid_response",
+                retryable=False,
+            )
+        seen.add(code)
+        items.append(
+            {
+                "canonicalCode": code,
+                "instrumentType": "MUTUAL_FUND",
+                "market": "OF",
+                "displayName": name,
+            }
+        )
+    return items
+
+
 def _efinance_catalog() -> list[dict[str, str]]:
     import efinance as ef
 
@@ -238,7 +315,7 @@ def _efinance_catalog() -> list[dict[str, str]]:
     stock = getattr(ef, "stock", None)
     stock_quotes = getattr(stock, "get_realtime_quotes", None)
     if callable(stock_quotes):
-        items.extend(_normalize_frame(stock_quotes()))
+        items.extend(_normalize_frame(stock_quotes(), instrument_type="STOCK"))
     fund = getattr(ef, "fund", None)
     fund_quotes = getattr(fund, "get_realtime_quotes", None)
     if callable(fund_quotes):
@@ -249,6 +326,8 @@ def _efinance_catalog() -> list[dict[str, str]]:
                 market="OF",
             )
         )
+    else:
+        items.extend(_eastmoney_open_fund_catalog())
     if not items:
         raise CatalogBuildError("efinance 不提供可用目录接口")
     return items
@@ -283,12 +362,23 @@ def build_catalog(
                     code="catalog_provider_empty",
                     retryable=False,
                 )
+            provider_snapshot: dict[tuple[str, str, str], dict[str, str]] = {}
             for item in provider_items:
                 key = (
                     item["canonicalCode"],
                     item["market"],
                     item["instrumentType"],
                 )
+                previous = provider_snapshot.get(key)
+                if previous is not None and previous != item:
+                    raise CatalogBuildError(
+                        "Provider 同一标的目录记录冲突",
+                        code="catalog_provider_invalid_response",
+                        retryable=False,
+                    )
+                provider_snapshot[key] = item
+            # 整个来源校验完成后才合并，冲突不能留下部分目录。
+            for key, item in provider_snapshot.items():
                 merged.setdefault(key, item)
         except Exception as exc:  # Provider 原始错误只写日志和稳定诊断。
             logger.warning("Catalog provider failed provider=%s: %s", provider_id, exc)

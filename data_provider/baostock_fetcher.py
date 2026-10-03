@@ -37,6 +37,7 @@ from .base import (
     normalize_stock_code,
     _is_hk_market,
 )
+from .baostock_names import validated_names
 import os
 
 logger = logging.getLogger(__name__)
@@ -317,14 +318,22 @@ class BaostockFetcher(BaseFetcher):
                 if rs.error_code == '0':
                     data_list = []
                     while rs.next():
+                        if data_list:
+                            return None
                         data_list.append(rs.get_row_data())
                     
                     if data_list:
                         # Baostock 返回的字段：code, code_name, ipoDate, outDate, type, status
                         fields = rs.fields
-                        name_idx = fields.index('code_name') if 'code_name' in fields else None
-                        if name_idx is not None and len(data_list[0]) > name_idx:
-                            name = data_list[0][name_idx]
+                        if rs.error_code != '0' or 'code' not in fields or 'code_name' not in fields:
+                            return None
+                        code_idx = fields.index('code')
+                        name_idx = fields.index('code_name')
+                        row = data_list[0]
+                        if len(row) > max(code_idx, name_idx) and row[code_idx] == bs_code:
+                            name = row[name_idx].strip() if isinstance(row[name_idx], str) else ''
+                            if not name:
+                                return None
                             self._stock_name_cache[stock_code] = name
                             logger.debug(f"Baostock 获取股票名称成功: {stock_code} -> {name}")
                             return name
@@ -353,18 +362,12 @@ class BaostockFetcher(BaseFetcher):
                     while rs.next():
                         data_list.append(rs.get_row_data())
                     
-                    if data_list:
-                        df = pd.DataFrame(data_list, columns=rs.fields)
-                        
-                        # 转换代码格式（去除 sh. 或 sz. 前缀）
-                        df['code'] = df['code'].apply(lambda x: x.split('.')[1] if '.' in x else x)
-                        df = df.rename(columns={'code_name': 'name'})
-                        
-                        # 更新缓存
+                    if data_list and rs.error_code == '0':
+                        names = validated_names(rs.fields, data_list)
+                        df = pd.DataFrame(names.items(), columns=['code', 'name'])
                         if not hasattr(self, '_stock_name_cache'):
                             self._stock_name_cache = {}
-                        for _, row in df.iterrows():
-                            self._stock_name_cache[row['code']] = row['name']
+                        self._stock_name_cache.update(names)
                         
                         logger.info(f"Baostock 获取股票列表成功: {len(df)} 条")
                         return df[['code', 'name']]

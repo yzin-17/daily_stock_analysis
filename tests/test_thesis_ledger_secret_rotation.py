@@ -5,6 +5,7 @@ import sqlite3
 import pytest
 
 from src.services import thesis_ledger_control as control_module
+from src.services.provider_credentials import decode_credential_plaintext
 from src.services.thesis_ledger_control import ControlContractError, ThesisLedgerControlStore
 
 
@@ -15,7 +16,7 @@ def _credential_row(database_path: str):
             """
             SELECT credential_ciphertext, secret_key_version
             FROM thesis_ledger_provider_config
-            WHERE provider_id='akshare'
+            WHERE provider_id='tushare'
             """
         ).fetchone()
 
@@ -28,7 +29,7 @@ def test_provider_credentials_are_reencrypted_with_retained_previous_key(
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY_VERSION", "v1")
     monkeypatch.delenv("THESIS_LEDGER_DSA_SECRET_KEY_PREVIOUS", raising=False)
     ThesisLedgerControlStore(database_path).save_provider_config(
-        "akshare", {"credential": "provider-secret", "settings": {}}
+        "tushare", {"credentials": {"method": "token", "values": {"token": "provider-secret"}}, "settings": {}}
     )
     old_row = _credential_row(database_path)
 
@@ -42,12 +43,11 @@ def test_provider_credentials_are_reencrypted_with_retained_previous_key(
     assert old_row["secret_key_version"] == "v1"
     assert rotated_row["secret_key_version"] == "v2"
     assert rotated_row["credential_ciphertext"] != old_row["credential_ciphertext"]
-    assert (
-        control_module._decrypt_secret(
-            rotated_row["secret_key_version"], rotated_row["credential_ciphertext"]
-        )
-        == "provider-secret"
-    )
+    decoded = decode_credential_plaintext(control_module._decrypt_secret(
+        rotated_row["secret_key_version"], rotated_row["credential_ciphertext"]
+    ))
+    assert decoded.method == "token"
+    assert decoded.values == {"token": "provider-secret"}
 
 
 def test_rotation_defers_without_previous_key_and_keeps_old_ciphertext(monkeypatch, tmp_path):
@@ -55,7 +55,7 @@ def test_rotation_defers_without_previous_key_and_keeps_old_ciphertext(monkeypat
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "old-secret")
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY_VERSION", "v1")
     ThesisLedgerControlStore(database_path).save_provider_config(
-        "akshare", {"credential": "provider-secret", "settings": {}}
+        "tushare", {"credentials": {"method": "token", "values": {"token": "provider-secret"}}, "settings": {}}
     )
     old_row = _credential_row(database_path)
 

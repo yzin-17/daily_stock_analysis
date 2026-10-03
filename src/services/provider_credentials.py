@@ -22,7 +22,6 @@ CONFIG_PATCH_KEYS = frozenset(
         "requestId",
         "enabled",
         "settings",
-        "credential",
         "credentials",
         "clearCredentials",
     }
@@ -37,11 +36,10 @@ class CredentialDefinition:
 
 @dataclass(frozen=True)
 class CredentialValue:
-    """A decrypted credential, retaining whether it predates structured storage."""
+    """A decrypted structured credential."""
 
-    method: str | None
+    method: str
     values: dict[str, str]
-    legacy: bool = False
 
 
 @dataclass(frozen=True)
@@ -51,6 +49,7 @@ class CredentialPatch:
 
 
 PROVIDER_CREDENTIAL_DEFINITIONS: dict[str, tuple[CredentialDefinition, ...]] = {
+    "rqdata": (CredentialDefinition("username_password", ("username", "password")),),
     "tushare": (CredentialDefinition("token", ("token",)),),
     "tickflow": (CredentialDefinition("api_key", ("apiKey",)),),
     "finnhub": (CredentialDefinition("api_key", ("apiKey",)),),
@@ -116,7 +115,10 @@ def parse_credential_patch(provider_id: str, raw: Any) -> CredentialPatch:
     for field, value in values.items():
         if not isinstance(value, str):
             raise ValueError(f"credentials.values.{field} 必须是字符串")
-        normalized[field] = value.strip()
+        if provider_id == "rqdata" and field == "password" and value.strip():
+            normalized[field] = value
+        else:
+            normalized[field] = value.strip()
     return CredentialPatch(method=method, values=normalized)
 
 
@@ -127,18 +129,18 @@ def validate_config_patch_keys(payload: dict[str, Any]) -> None:
 
 
 def decode_credential_plaintext(plaintext: str) -> CredentialValue:
-    """Decode new JSON storage while preserving the old single-string meaning."""
+    """Decode the current structured storage format."""
 
     try:
         raw = json.loads(plaintext)
-    except (TypeError, ValueError):
-        return CredentialValue(method=None, values={}, legacy=True)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Provider 凭证格式无效") from exc
     if not isinstance(raw, dict):
-        return CredentialValue(method=None, values={}, legacy=True)
+        raise ValueError("Provider 凭证格式无效")
     if raw.get("kind") == STRUCTURED_CREDENTIAL_KIND and raw.get("version") != CREDENTIAL_FORMAT_VERSION:
         raise ValueError("Provider 凭证格式版本不支持")
     if raw.get("kind") != STRUCTURED_CREDENTIAL_KIND:
-        return CredentialValue(method=None, values={}, legacy=True)
+        raise ValueError("Provider 凭证格式无效")
     unknown = set(raw) - {"version", "kind", "method", "values"}
     if unknown:
         raise ValueError(f"Provider 凭证包含未知字段: {', '.join(sorted(map(str, unknown)))}")
@@ -148,12 +150,10 @@ def decode_credential_plaintext(plaintext: str) -> CredentialValue:
         raise ValueError("Provider 凭证格式无效")
     if any(not isinstance(key, str) or not isinstance(value, str) for key, value in values.items()):
         raise ValueError("Provider 凭证字段格式无效")
-    return CredentialValue(method=method, values=dict(values), legacy=False)
+    return CredentialValue(method=method, values=dict(values))
 
 
 def validate_stored_credential(provider_id: str, credential: CredentialValue) -> None:
-    if credential.legacy:
-        return
     definition = _definition(provider_id, str(credential.method or ""))
     if set(credential.values) - set(definition.fields):
         raise ValueError("Provider 凭证包含未知字段")
@@ -182,7 +182,7 @@ def merge_credential_patch(
     existing: CredentialValue | None,
 ) -> CredentialValue:
     definition = _definition(provider_id, patch.method)
-    if existing is None or existing.legacy or existing.method != patch.method:
+    if existing is None or existing.method != patch.method:
         values = dict(patch.values)
         missing = [field for field in definition.fields if not values.get(field)]
         if missing:
@@ -206,7 +206,7 @@ def configured_fields(provider_id: str, credential: CredentialValue | None) -> d
         definitions[0] if definitions else None,
     )
     fields = set(definition.fields) if definition else set()
-    if credential is None or credential.legacy or credential.method is None:
+    if credential is None:
         return {field: False for field in sorted(fields)}
     if credential.method == "oauth":
         return {"clientId": bool(credential.values.get("clientId", ""))}

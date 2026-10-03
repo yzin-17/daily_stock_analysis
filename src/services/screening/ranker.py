@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from src.config import apply_litellm_api_surface
 from src.llm.errors import call_litellm_with_param_recovery
 from src.llm.generation_params import apply_litellm_generation_params
+from src.llm.prompt_cache_request_boundary import sanitize_prompt_cache_router_deployments
 from src.services.screening.models import Pick
 from src.services.screening.normalize import (
     bounded_float as _bounded_float,
@@ -938,7 +939,7 @@ def _call_litellm_router(
         model_list = data.get("model_list")
         if not isinstance(model_list, list) or not model_list:
             return None
-        router = litellm.Router(model_list=model_list)
+        router = litellm.Router(model_list=sanitize_prompt_cache_router_deployments(model_list))
         for model in model_chain:
             kwargs = {
                 "model": model,
@@ -956,16 +957,13 @@ def _call_litellm_router(
                 temperature=temperature,
                 model_list=model_list,
             )
-            try:
-                response = _call_screening_litellm_completion(
-                    lambda request_kwargs: router.completion(**request_kwargs),
-                    model=model,
-                    call_kwargs=kwargs,
-                    model_list=model_list,
-                )
-                return _extract_completion_text(response)
-            except Exception:
-                raise
+            response = _call_screening_litellm_completion(
+                lambda request_kwargs: router.completion(**request_kwargs),
+                model=model,
+                call_kwargs=kwargs,
+                model_list=model_list,
+            )
+            return _extract_completion_text(response)
     except Exception as exc:
         if _is_timeout_error(exc):
             raise

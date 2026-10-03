@@ -192,17 +192,29 @@ def test_control_trigger_returns_before_provider_and_status_is_observable(monkey
     import src.services.thesis_ledger_catalog as catalog_module
 
     monkeypatch.setattr(catalog_module, "build_catalog", blocked_catalog)
-    from api.thesis_ledger import router
+    from api.thesis_ledger import router_v3
 
     app = FastAPI()
-    app.include_router(router, prefix="/api/v1")
+    app.include_router(router_v3, prefix="/api/v3")
     client = TestClient(app)
-    started = time.monotonic()
-    response = client.post(
+    assert client.post(
         "/api/v1/thesis-ledger/control/catalog/jobs",
         headers={"authorization": "Bearer control-token"},
+        json={"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "old-url"},
+    ).status_code == 404
+    rejected = client.post(
+        "/api/v3/thesis-ledger/control/catalog/jobs",
+        headers={"authorization": "Bearer control-token"},
+        json={"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "old-body"},
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"]["code"] == "CONTROL_CONTRACT_UNSUPPORTED"
+    started = time.monotonic()
+    response = client.post(
+        "/api/v3/thesis-ledger/control/catalog/jobs",
+        headers={"authorization": "Bearer control-token"},
         json={
-            "contractVersion": 1,
+            "contractVersion": 3,
             "consumer": "thesis-ledger",
             "requestId": "async-catalog-test",
         },
@@ -215,7 +227,7 @@ def test_control_trigger_returns_before_provider_and_status_is_observable(monkey
     assert entered.wait(timeout=5)
 
     status = client.get(
-        f"/api/v1/thesis-ledger/control/catalog/jobs/{job['id']}",
+        f"/api/v3/thesis-ledger/control/catalog/jobs/{job['id']}",
         headers={"authorization": "Bearer control-token"},
     )
     assert status.status_code == 200

@@ -23,6 +23,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 import pandas as pd
+from data_provider.tushare_fund_daily import FIELDS
 
 from tests.litellm_stub import ensure_litellm_stub
 
@@ -128,7 +129,8 @@ class TestTushareFetcherFetchRawData(unittest.TestCase):
 
     def test_fetch_raw_data_etf_uses_fund_daily(self) -> None:
         fetcher = self._make_fetcher()
-        fetcher._api.fund_daily.return_value = pd.DataFrame({"trade_date": ["20260101"]})
+        fetcher._api.fund_daily.return_value = pd.DataFrame({"ts_code": ["510050.SH"], "trade_date": ["20260101"],
+            "open": [1], "high": [1], "low": [1], "close": [1], "vol": [1], "amount": [1]})
 
         with patch.object(fetcher, "_check_rate_limit"):
             out = fetcher._fetch_raw_data("510050", "20260101", "20260105")
@@ -138,13 +140,15 @@ class TestTushareFetcherFetchRawData(unittest.TestCase):
             ts_code="510050.SH",
             start_date="20260101",
             end_date="20260105",
+            fields=FIELDS,
         )
         fetcher._api.daily.assert_not_called()
         fetcher._api.hk_daily.assert_not_called()
 
     def test_fetch_raw_data_56_prefix_etf_uses_sh_fund_daily(self) -> None:
         fetcher = self._make_fetcher()
-        fetcher._api.fund_daily.return_value = pd.DataFrame({"trade_date": ["20260101"]})
+        fetcher._api.fund_daily.return_value = pd.DataFrame({"ts_code": ["563230.SH"], "trade_date": ["20260101"],
+            "open": [1], "high": [1], "low": [1], "close": [1], "vol": [1], "amount": [1]})
 
         with patch.object(fetcher, "_check_rate_limit"):
             out = fetcher._fetch_raw_data("563230", "20260101", "20260105")
@@ -154,6 +158,7 @@ class TestTushareFetcherFetchRawData(unittest.TestCase):
             ts_code="563230.SH",
             start_date="20260101",
             end_date="20260105",
+            fields=FIELDS,
         )
         fetcher._api.daily.assert_not_called()
         fetcher._api.hk_daily.assert_not_called()

@@ -8,6 +8,7 @@ graceful degradation when yfinance is unavailable.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -32,6 +33,13 @@ def _build_mock_ticker(
     ticker.quarterly_cashflow = cashflow if cashflow is not None else pd.DataFrame()
     ticker.dividends = dividends if dividends is not None else pd.Series(dtype="float64")
     return ticker
+
+
+@contextmanager
+def _dividend_observed_at(when: str):
+    with patch("data_provider.yfinance_fundamental_adapter.pd", wraps=pd) as adapter_pd:
+        adapter_pd.Timestamp.now.return_value = pd.Timestamp(when, tz="America/New_York")
+        yield
 
 
 class TestYfinanceSymbolConversion(unittest.TestCase):
@@ -69,14 +77,6 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
             "trailingAnnualDividendRate": 1.04,
             "dividendYield": 0.36,
         }
-        income_df = pd.DataFrame(
-            {
-                pd.Timestamp("2026-03-31"): {"Total Revenue": 1.11e11, "Net Income": 2.95e10},
-                pd.Timestamp("2025-12-31"): {"Total Revenue": 1.24e11, "Net Income": 3.62e10},
-                pd.Timestamp("2025-09-30"): {"Total Revenue": 9.49e10, "Net Income": 2.49e10},
-                pd.Timestamp("2025-06-30"): {"Total Revenue": 9.40e10, "Net Income": 2.34e10},
-            }
-        )
         # Need at least 5 columns to trigger statement-derived YoY.
         income_df_with_yoy = pd.DataFrame(
             {
@@ -103,7 +103,7 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
         )
         ticker = _build_mock_ticker(info, income_df_with_yoy, cashflow_df, dividends)
 
-        with patch("yfinance.Ticker", return_value=ticker):
+        with patch("yfinance.Ticker", return_value=ticker), _dividend_observed_at("2026-08-11 00:00:00"):
             bundle = YfinanceFundamentalAdapter().get_fundamental_bundle("AAPL")
 
         self.assertEqual(bundle["status"], "partial")
@@ -127,6 +127,7 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
         self.assertAlmostEqual(div["ttm_dividend_yield_pct"], 0.5, places=2)
         self.assertEqual(div["currency"], "USD")
         self.assertEqual(div["events"][0]["ex_dividend_date"], "2026-05-11")
+        self.assertIn("earnings.dividend:yfinance", bundle["source_chain"])
 
         self.assertEqual(
             bundle["belong_boards"],
@@ -135,6 +136,55 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
                 {"name": "Consumer Electronics", "type": "概念"},
             ],
         )
+
+    def test_us_info_valuation_is_current_observation_not_historical_pit(self) -> None:
+        info = {
+            "trailingPE": 25.5,
+            "priceToBook": 8.25,
+            "marketCap": 3.4e12,
+            "currency": "USD",
+        }
+        ticker = _build_mock_ticker(info)
+
+        with patch("yfinance.Ticker", return_value=ticker):
+            bundle = YfinanceFundamentalAdapter().get_fundamental_bundle("AAPL")
+
+        self.assertEqual(bundle["status"], "partial")
+        valuation = bundle["valuation"]
+        self.assertEqual(valuation["pe_ratio"], 25.5)
+        self.assertEqual(valuation["pb_ratio"], 8.25)
+        self.assertEqual(valuation["ratio_unit"], "multiple")
+        self.assertIsNone(valuation["currency"])
+        self.assertIsNone(valuation["source_available_at"])
+        self.assertFalse(valuation["historical_visibility_verified"])
+        self.assertNotIn("total_mv", valuation)
+        self.assertIsNotNone(pd.Timestamp(valuation["observed_at"]).tzinfo)
+        self.assertIn("valuation:yfinance.info", bundle["source_chain"])
+
+    def test_hk_info_does_not_inherit_us_valuation_selection(self) -> None:
+        ticker = _build_mock_ticker({"trailingPE": 20.0, "priceToBook": 3.0, "currency": "HKD"})
+        with patch("yfinance.Ticker", return_value=ticker):
+            bundle = YfinanceFundamentalAdapter().get_fundamental_bundle("HK00700")
+
+        self.assertEqual(bundle.get("valuation"), {})
+        self.assertNotIn("valuation:yfinance.info", bundle["source_chain"])
+
+    def test_explicit_us_suffix_keeps_same_current_valuation_contract(self) -> None:
+        ticker = _build_mock_ticker({"trailingPE": 18.0, "priceToBook": 4.0})
+        with patch("yfinance.Ticker", return_value=ticker):
+            bundle = YfinanceFundamentalAdapter().get_fundamental_bundle("AAPL.US")
+
+        self.assertEqual(bundle["valuation"]["pe_ratio"], 18.0)
+        self.assertEqual(bundle["valuation"]["pb_ratio"], 4.0)
+        self.assertEqual(bundle["valuation"]["period_basis"], "current_info_period_unknown")
+
+    def test_nonfinite_info_ratios_do_not_create_a_valuation_block(self) -> None:
+        ticker = _build_mock_ticker({"trailingPE": float("nan"), "priceToBook": float("inf")})
+        with patch("yfinance.Ticker", return_value=ticker):
+            bundle = YfinanceFundamentalAdapter().get_fundamental_bundle("AAPL")
+
+        self.assertEqual(bundle.get("valuation"), {})
+        self.assertNotIn("valuation:yfinance.info", bundle["source_chain"])
 
     def test_dividends_parsed_from_single_column_dataframe(self) -> None:
         # yfinance 1.2.x returns Ticker.dividends as a single-column DataFrame, not a
@@ -153,7 +203,7 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
             "trailingAnnualDividendRate": 99.0,  # a WRONG fallback we must NOT fall back to
         }
         ticker = _build_mock_ticker(info, dividends=dividends_df)
-        with patch("yfinance.Ticker", return_value=ticker):
+        with patch("yfinance.Ticker", return_value=ticker), _dividend_observed_at("2026-08-11 00:00:00"):
             bundle = YfinanceFundamentalAdapter().get_fundamental_bundle("AAPL")
 
         div = bundle["earnings"]["dividend"]
@@ -161,6 +211,27 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
         self.assertEqual(len(div["events"]), 4)
         # summed TTM (0.26*3 + 0.27 = 1.05), NOT the trailingAnnualDividendRate 99.0 fallback
         self.assertAlmostEqual(div["ttm_cash_dividend_per_share"], 1.05, places=2)
+        self.assertIn("earnings.dividend:yfinance", bundle["source_chain"])
+
+    def test_dividend_at_365_day_boundary_expires_after_one_minute(self) -> None:
+        dividends = pd.Series(
+            [0.26, 0.26, 0.26, 0.27],
+            index=pd.DatetimeIndex(
+                ["2025-08-11", "2025-11-10", "2026-02-09", "2026-05-11"],
+                tz="America/New_York",
+            ),
+            name="Dividends",
+        )
+        ticker = _build_mock_ticker({"currency": "USD", "currentPrice": 210.0}, dividends=dividends)
+
+        with patch("yfinance.Ticker", return_value=ticker), _dividend_observed_at("2026-08-11 00:01:00"):
+            bundle = YfinanceFundamentalAdapter().get_fundamental_bundle("AAPL")
+
+        div = bundle["earnings"]["dividend"]
+        self.assertEqual(div["ttm_event_count"], 3)
+        self.assertEqual(len(div["events"]), 4)
+        self.assertAlmostEqual(div["ttm_cash_dividend_per_share"], 0.79, places=2)
+        self.assertIn("earnings.dividend:yfinance", bundle["source_chain"])
 
     def test_falls_back_to_info_when_statements_only_have_4_quarters(self) -> None:
         """yfinance default is 4 quarters → statement-derived YoY refuses to use QoQ.

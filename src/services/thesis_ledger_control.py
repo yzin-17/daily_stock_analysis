@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ThesisLedger Control Contract V1 的 DSA 侧状态与校验。
+"""ThesisLedger 当前 Control 合同的 DSA 侧状态与校验。
 
 该模块故意不复用主系统的 ``ProviderConfig``。DSA 只在自己的 SQLite 中保存
 Provider 配置投影、Effective Policy、目录 generation 和控制诊断；主系统通过
@@ -20,14 +20,13 @@ import sqlite3
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from src.services.provider_credentials import (
     CredentialValue,
     configured_fields,
-    credential_schema,
     decode_credential_plaintext,
     encode_credential_plaintext,
     merge_credential_patch,
@@ -36,71 +35,38 @@ from src.services.provider_credentials import (
     validate_stored_credential,
 )
 from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
+from src.services.provider_manifest import build_provider_manifest as _manifest
 from src.services.provider_oauth_contract import OAuthStateError, validate_oauth_token
+from src.services.thesis_ledger_akshare_manifest import build_akshare_manifest
+from src.services.thesis_ledger_efinance_manifest import build_efinance_manifest
+from src.services.thesis_ledger_event_v3_adapters import event_adapter_matches
+from src.services.thesis_ledger_market_v3_adapters import (
+    HITHINK_STOCK_HISTORY_SOURCE,
+    market_v3_bar_adapter_reason,
+)
+from src.services.thesis_ledger_market_v3_facts import HITHINK_ETF_HISTORY_SOURCE
+from src.services.thesis_ledger_hithink_dividend_contract_v3 import (
+    HITHINK_DIVIDEND_SOURCE,
+)
+from src.services.thesis_ledger_hithink_quote import (
+    HITHINK_ETF_SNAPSHOT_SOURCE,
+    HITHINK_STOCK_SNAPSHOT_SOURCE,
+)
+from src.services.thesis_ledger_price_route_access import policy_route_admission_reason
+from src.services.thesis_ledger_current_data_route import current_data_adapter_revisions
+from src.services.thesis_ledger_route_admission_v3 import (
+    canonical_route_key_json,
+    normalize_scope_symbols,
+)
 
 logger = logging.getLogger(__name__)
 
-CONTROL_CONTRACT_VERSION = 1
-CONTROL_CONTRACT_V2_VERSION = 2
+CONTROL_CONTRACT_V3_VERSION = 3
 CONSUMER_NAMESPACE = "thesis-ledger"
 CATALOG_JOB_LEASE_SECONDS = 300
 CATALOG_JOB_LEASE_EXPIRED_CODE = "CATALOG_JOB_LEASE_EXPIRED"
 PROVIDER_REQUEST_BUDGET_SECONDS = 600
 
-# The desired Provider Policy remains user-owned and is intentionally kept
-# unchanged.  This projection only describes what the current DSA adapter can
-# execute safely for the ThesisLedger single-symbol boundary.
-UNSAFE_SINGLE_SYMBOL_ROUTES = {
-    ("akshare", "REALTIME_QUOTE", "ETF"),
-}
-
-
-def _apply_runtime_capability_gates(effective: dict[str, Any]) -> dict[str, Any]:
-    """Re-project persisted Effective Policy after an additive runtime upgrade."""
-    projected = json.loads(json.dumps(effective))
-    route_status = projected.get("routeStatus", {})
-    for provider_id, capability, instrument_type in UNSAFE_SINGLE_SYMBOL_ROUTES:
-        status = route_status.get(capability, {}).get(instrument_type)
-        if not isinstance(status, dict):
-            continue
-        if "targets" in status:
-            for entry in status.get("targets", []):
-                if entry.get("providerId") != provider_id:
-                    continue
-                entry["available"] = False
-                entry["eligible"] = False
-                entry["reason"] = "single_symbol_adapter_unavailable"
-            status["eligibleTargets"] = [
-                entry
-                for entry in status.get("eligibleTargets", [])
-                if entry.get("providerId") != provider_id
-            ]
-            if not status["eligibleTargets"] and status.get("targets"):
-                status["reason"] = "NO_ELIGIBLE_PROVIDER"
-        else:
-            for entry in status.get("providers", []):
-                if entry.get("providerId") != provider_id:
-                    continue
-                entry["available"] = False
-                entry["eligible"] = False
-                entry["reason"] = "single_symbol_adapter_unavailable"
-            status["eligibleProviderIds"] = [
-                provider
-                for provider in status.get("eligibleProviderIds", [])
-                if provider != provider_id
-            ]
-            if not status["eligibleProviderIds"]:
-                status["reason"] = "NO_ELIGIBLE_PROVIDER"
-    return projected
-
-CAPABILITIES = (
-    "REALTIME_QUOTE",
-    "DAILY_BAR",
-    "FUND_NAV",
-    "FUND_NAV_HISTORY",
-    "FUND_HOLDINGS",
-    "CHIP_SUMMARY",
-)
 INSTRUMENT_TYPES = (
     "STOCK",
     "ETF",
@@ -112,85 +78,44 @@ INSTRUMENT_TYPES = (
 )
 
 
-def _manifest(
-    provider_id: str,
-    display_name: str,
-    capabilities: dict[str, Iterable[str]],
-    *,
-    requires_credential: bool = False,
-    upstream_sources: Iterable[tuple[str, str]] = (),
-    markets: Iterable[str] = ("CN",),
-    configuration_mode: str = "control",
-) -> dict[str, Any]:
-    declared_sources = tuple(upstream_sources) or ((provider_id, display_name),)
-    source_capabilities = {}
-    for source_id, _ in declared_sources:
-        # 非 direct source 目前只有 DAILY_BAR 有显式 source dispatch；其余
-        # capability 不得借用 provider-wide 声明冒充 source 可执行能力。
-        declared_capabilities = capabilities if source_id == provider_id else {
-            "DAILY_BAR": capabilities.get("DAILY_BAR", ())
-        }
-        source_capabilities[source_id] = {
-            capability: sorted(
-                set(instrument_types)
-                - ({"ETF"} if provider_id == "akshare" and source_id == "sina" and capability == "DAILY_BAR" else set())
-            )
-            for capability, instrument_types in declared_capabilities.items()
-        }
-    return {
-        "providerId": provider_id,
-        "displayName": display_name,
-        "version": 1,
-        "origin": "dsa",
-        "markets": sorted(set(markets)),
-        "configurationMode": configuration_mode,
-        "upstreamSources": [
-            {"sourceId": source_id, "displayName": source_name, "capabilities": source_capabilities[source_id]}
-            for source_id, source_name in declared_sources
-        ],
-        "capabilities": {key: sorted(set(value)) for key, value in capabilities.items()},
-        "requiresCredential": requires_credential,
-        "configSchema": {
-            "credential": {"writeOnly": True, "required": requires_credential},
-            "settings": {},
+def _hithink_manifest() -> dict[str, Any]:
+    manifest = _manifest(
+        "hithink",
+        "HiThink",
+        {
+            "REALTIME_QUOTE": ("ETF", "STOCK"),
+            "DAILY_BAR": ("ETF", "STOCK"),
+            "CASH_DISTRIBUTION": ("ETF",),
         },
-        "credentialSchema": credential_schema(provider_id),
+        requires_credential=True,
+        upstream_sources=(
+            (HITHINK_ETF_HISTORY_SOURCE, "HiThink ETF 历史接口"),
+            (HITHINK_STOCK_HISTORY_SOURCE, "HiThink 股票历史接口"),
+            (HITHINK_STOCK_SNAPSHOT_SOURCE, "HiThink A股行情快照"),
+            (HITHINK_ETF_SNAPSHOT_SOURCE, "HiThink ETF/LOF 场内快照"),
+            (HITHINK_DIVIDEND_SOURCE, "HiThink 场内基金分红"),
+        ),
+        markets=("CN",),
+        configuration_mode="dsa_environment",
+    )
+    # The ETF and stock endpoints have independent adapter and admission
+    # evidence. Do not inherit the provider-wide union for either source.
+    source_capabilities = {
+        HITHINK_ETF_HISTORY_SOURCE: {"DAILY_BAR": ["ETF"]},
+        HITHINK_STOCK_HISTORY_SOURCE: {"DAILY_BAR": ["STOCK"]},
+        HITHINK_STOCK_SNAPSHOT_SOURCE: {"REALTIME_QUOTE": ["STOCK"]},
+        HITHINK_ETF_SNAPSHOT_SOURCE: {"REALTIME_QUOTE": ["ETF"]},
+        HITHINK_DIVIDEND_SOURCE: {"CASH_DISTRIBUTION": ["ETF"]},
     }
+    for source in manifest["upstreamSources"]:
+        source["capabilities"] = source_capabilities[source["sourceId"]]
+    manifest["credentialEnvironmentKey"] = "HITHINK_API_KEY"
+    return manifest
 
 
 PROVIDER_MANIFESTS: dict[str, dict[str, Any]] = {
-    "akshare": _manifest(
-        "akshare",
-        "AKShare",
-        {
-            "REALTIME_QUOTE": ("STOCK", "ETF"),
-            "DAILY_BAR": ("STOCK", "ETF"),
-            "FUND_NAV": ("MUTUAL_FUND",),
-            "FUND_NAV_HISTORY": ("MUTUAL_FUND",),
-            "FUND_HOLDINGS": ("MUTUAL_FUND",),
-            "CHIP_SUMMARY": ("STOCK",),
-        },
-        upstream_sources=(
-            ("akshare", "AKShare"),
-            ("eastmoney", "东方财富"),
-            ("sina", "新浪财经"),
-            ("tencent", "腾讯财经"),
-        ),
-    ),
-    "efinance": _manifest(
-        "efinance",
-        "efinance",
-        {
-            "REALTIME_QUOTE": ("STOCK", "ETF"),
-            "DAILY_BAR": ("STOCK", "ETF"),
-            "FUND_NAV": ("MUTUAL_FUND",),
-            "FUND_NAV_HISTORY": ("MUTUAL_FUND",),
-        },
-        upstream_sources=(
-            ("efinance", "efinance"),
-            ("eastmoney", "东方财富"),
-        ),
-    ),
+    "akshare": build_akshare_manifest(),
+    "efinance": build_efinance_manifest(),
     "tencent": _manifest(
         "tencent",
         "腾讯财经",
@@ -204,7 +129,7 @@ PROVIDER_MANIFESTS: dict[str, dict[str, Any]] = {
         "Tushare Pro",
         {
             "REALTIME_QUOTE": ("STOCK",),
-            "DAILY_BAR": ("STOCK",),
+            "DAILY_BAR": ("STOCK", "ETF"),
             "CHIP_SUMMARY": ("STOCK",),
         },
         requires_credential=True,
@@ -282,6 +207,8 @@ PROVIDER_MANIFESTS: dict[str, dict[str, Any]] = {
         markets=("US",),
         configuration_mode="dsa_environment",
     ),
+    "hithink": _hithink_manifest(),
+    "rqdata": _manifest("rqdata", "RQData", {}, requires_credential=True),
 }
 
 
@@ -296,6 +223,9 @@ def _provider_configured(
 
 
 def _environment_credential_values(provider_id: str) -> dict[str, str]:
+    if provider_id == "hithink":
+        api_key = os.environ.get("HITHINK_API_KEY", "").strip()
+        return {"apiKey": api_key} if api_key else {}
     try:
         from src.config import get_config
 
@@ -367,11 +297,6 @@ def _credential_state(
                     credential.values.get("clientId", ""),
                     credential.values.get("tokenJson", ""),
                 )
-            if credential.legacy and manifest.get("configurationMode") == "dsa_environment":
-                _, environment_configured = _environment_credential_state(provider_id)
-                if environment_configured:
-                    return "environment", configured_fields(provider_id, None), True, None
-                return "none", configured_fields(provider_id, None), False, None
             return "control", configured_fields(provider_id, credential), True, credential.method
         except Exception:
             # A present but unreadable page value blocks environment fallback.
@@ -380,6 +305,7 @@ def _credential_state(
     if environment_configured:
         return "environment", configured_fields(provider_id, None), True, None
     return "none", configured_fields(provider_id, None), False, None
+
 
 # These are only the initial product policy defaults. They are seeded by the
 # ThesisLedger side as Desired revision 1; DSA never silently adds them to a
@@ -495,7 +421,7 @@ class ControlContractError(Exception):
         status_code: int = 422,
         request_id: str | None = None,
         details: dict[str, Any] | None = None,
-        contract_version: int = CONTROL_CONTRACT_VERSION,
+        contract_version: int = CONTROL_CONTRACT_V3_VERSION,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -534,6 +460,25 @@ def _secret_key() -> tuple[str, bytes]:
         )
     version = os.getenv("THESIS_LEDGER_DSA_SECRET_KEY_VERSION", "v1").strip() or "v1"
     return version, hashlib.sha256(raw.encode("utf-8")).digest()
+
+
+def _provider_credential_revision_from_snapshot(
+    snapshot: ProviderCredentialSnapshot,
+) -> str | None:
+    """Return an internal, purpose-separated revision for environment credentials.
+
+    The result is suitable only for comparing against internal route-admission evidence.
+    It must not be included in registry/API responses, logs, or exception messages.
+    """
+
+    from src.services.provider_credential_revision import provider_credential_revision
+
+    try:
+        master_version, master_key = _secret_key()
+    except ControlContractError:
+        return None
+
+    return provider_credential_revision(snapshot, master_version, master_key)
 
 
 def _secret_key_candidates() -> dict[str, bytes]:
@@ -611,249 +556,142 @@ def _validate_provider_id(provider_id: Any, request_id: str) -> str:
     return normalized
 
 
-def _normalize_routes(routes: Any, request_id: str) -> dict[str, dict[str, list[str]]]:
-    if not isinstance(routes, dict):
+def normalize_policy_v3(payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate and canonicalize the versioned, dimensioned V3 route policy."""
+
+    def fail(code: str, message: str, request_id: str = "") -> None:
         raise ControlContractError(
-            "INVALID_POLICY_SCHEMA",
-            "routes 必须是 Capability 到 InstrumentType 的对象",
+            code,
+            message,
             request_id=request_id,
+            contract_version=CONTROL_CONTRACT_V3_VERSION,
         )
-    normalized: dict[str, dict[str, list[str]]] = {}
-    for raw_capability, raw_types in routes.items():
-        capability = str(raw_capability).strip().upper()
-        if capability not in CAPABILITIES:
-            raise ControlContractError(
-                "UNSUPPORTED_CAPABILITY",
-                f"Capability {raw_capability!s} 不支持",
-                request_id=request_id,
-            )
-        if not isinstance(raw_types, dict):
-            raise ControlContractError(
-                "INVALID_POLICY_SCHEMA",
-                f"routes.{capability} 必须是 InstrumentType 对象",
-                request_id=request_id,
-            )
-        normalized_types: dict[str, list[str]] = {}
-        for raw_type, raw_providers in raw_types.items():
-            instrument_type = str(raw_type).strip().upper()
-            if instrument_type not in INSTRUMENT_TYPES:
-                raise ControlContractError(
-                    "UNSUPPORTED_INSTRUMENT_TYPE",
-                    f"InstrumentType {raw_type!s} 不支持",
-                    request_id=request_id,
-                )
-            if not any(
-                instrument_type in manifest.get("capabilities", {}).get(capability, [])
-                for manifest in PROVIDER_MANIFESTS.values()
-            ):
-                raise ControlContractError(
-                    "UNSUPPORTED_ROUTE",
-                    f"没有 Provider 支持 {capability}/{instrument_type}",
-                    request_id=request_id,
-                )
-            if not isinstance(raw_providers, list):
-                raise ControlContractError(
-                    "INVALID_POLICY_SCHEMA",
-                    f"routes.{capability}.{instrument_type} 必须是 Provider ID 数组",
-                    request_id=request_id,
-                )
-            provider_ids: list[str] = []
-            for raw_provider in raw_providers:
-                provider_id = _validate_provider_id(raw_provider, request_id)
-                if provider_id in provider_ids:
-                    raise ControlContractError(
-                        "DUPLICATE_PROVIDER",
-                        f"route {capability}/{instrument_type} 中 Provider 重复",
-                        request_id=request_id,
-                    )
-                if instrument_type not in PROVIDER_MANIFESTS[provider_id]["capabilities"].get(
-                    capability, []
-                ):
-                    raise ControlContractError(
-                        "UNSUPPORTED_ROUTE",
-                        f"Provider {provider_id} 不支持 {capability}/{instrument_type}",
-                        request_id=request_id,
-                    )
-                provider_ids.append(provider_id)
-            normalized_types[instrument_type] = provider_ids
-        normalized[capability] = normalized_types
-    return normalized
 
-
-def _normalize_route_targets(
-    routes: Any,
-    request_id: str,
-) -> dict[str, dict[str, list[dict[str, str]]]]:
-    """Normalize V2 routes and validate the adapter/source pair as one target."""
-    if not isinstance(routes, dict):
-        raise ControlContractError(
-            "INVALID_POLICY_SCHEMA",
-            "routes 必须是 Capability 到 InstrumentType 的对象",
-            request_id=request_id,
-        )
-    normalized: dict[str, dict[str, list[dict[str, str]]]] = {}
-    for raw_capability, raw_types in routes.items():
-        capability = str(raw_capability).strip().upper()
-        if capability not in CAPABILITIES:
-            raise ControlContractError(
-                "UNSUPPORTED_CAPABILITY",
-                f"Capability {raw_capability!s} 不支持",
-                request_id=request_id,
-            )
-        if not isinstance(raw_types, dict):
-            raise ControlContractError(
-                "INVALID_POLICY_SCHEMA",
-                f"routes.{capability} 必须是 InstrumentType 对象",
-                request_id=request_id,
-            )
-        normalized_types: dict[str, list[dict[str, str]]] = {}
-        for raw_type, raw_targets in raw_types.items():
-            instrument_type = str(raw_type).strip().upper()
-            if instrument_type not in INSTRUMENT_TYPES:
-                raise ControlContractError(
-                    "UNSUPPORTED_INSTRUMENT_TYPE",
-                    f"InstrumentType {raw_type!s} 不支持",
-                    request_id=request_id,
-                )
-            if not isinstance(raw_targets, list) or len(raw_targets) > 2:
-                raise ControlContractError(
-                    "INVALID_ROUTE_TARGETS",
-                    f"routes.{capability}.{instrument_type} 必须是最多两个 RouteTarget 的数组",
-                    request_id=request_id,
-                )
-            targets: list[dict[str, str]] = []
-            seen: set[tuple[str, str]] = set()
-            for raw_target in raw_targets:
-                if not isinstance(raw_target, dict):
-                    raise ControlContractError(
-                        "INVALID_ROUTE_TARGET",
-                        "RouteTarget 必须是对象",
-                        request_id=request_id,
-                    )
-                provider_id = _validate_provider_id(raw_target.get("providerId"), request_id)
-                upstream_source = str(raw_target.get("upstreamSource") or "").strip().lower()
-                if not upstream_source:
-                    raise ControlContractError(
-                        "INVALID_ROUTE_TARGET",
-                        "RouteTarget upstreamSource 不能为空",
-                        request_id=request_id,
-                    )
-                manifest = PROVIDER_MANIFESTS[provider_id]
-                if instrument_type not in manifest.get("capabilities", {}).get(capability, []):
-                    raise ControlContractError(
-                        "UNSUPPORTED_ROUTE",
-                        f"Provider {provider_id} 不支持 {capability}/{instrument_type}",
-                        request_id=request_id,
-                    )
-                manifest_sources = {
-                    str(source.get("sourceId") or "").strip().lower()
-                    for source in manifest.get("upstreamSources", [])
-                    if isinstance(source, dict)
-                }
-                if upstream_source not in manifest_sources:
-                    raise ControlContractError(
-                        "UNSUPPORTED_SOURCE",
-                        f"Provider {provider_id} 未声明上游 source {upstream_source}",
-                        request_id=request_id,
-                    )
-                source_manifest = next(
-                    source
-                    for source in manifest.get("upstreamSources", [])
-                    if str(source.get("sourceId") or "").strip().lower() == upstream_source
-                )
-                if instrument_type not in source_manifest.get("capabilities", {}).get(capability, []):
-                    raise ControlContractError(
-                        "UNSUPPORTED_SOURCE",
-                        f"Provider {provider_id} 的 source {upstream_source} 不支持 {capability}/{instrument_type}",
-                        request_id=request_id,
-                    )
-                key = (provider_id, upstream_source)
-                if key in seen:
-                    raise ControlContractError(
-                        "DUPLICATE_ROUTE_TARGET",
-                        f"route {capability}/{instrument_type} 中 RouteTarget 重复",
-                        request_id=request_id,
-                    )
-                seen.add(key)
-                targets.append({"providerId": provider_id, "upstreamSource": upstream_source})
-            normalized_types[instrument_type] = targets
-        normalized[capability] = normalized_types
-    return normalized
-
-
-def normalize_policy(payload: dict[str, Any]) -> dict[str, Any]:
-    request_id = _request_id(payload.get("requestId"))
-    if payload.get("contractVersion") != CONTROL_CONTRACT_VERSION:
-        raise ControlContractError(
-            "CONTROL_CONTRACT_UNSUPPORTED",
-            "Control Contract 版本不兼容",
-            request_id=request_id,
-        )
+    if not isinstance(payload, dict):
+        fail("INVALID_POLICY_SCHEMA", "Policy 必须是 JSON 对象")
+    request_id_value = payload.get("requestId")
+    request_id = request_id_value.strip() if isinstance(request_id_value, str) else ""
+    if set(payload) != {
+        "contractVersion",
+        "consumer",
+        "requestId",
+        "revision",
+        "enabled",
+        "routes",
+    }:
+        fail("INVALID_POLICY_SCHEMA", "V3 Policy 字段不符合严格契约", request_id)
+    if payload.get("contractVersion") != CONTROL_CONTRACT_V3_VERSION:
+        fail("CONTROL_CONTRACT_UNSUPPORTED", "Control Contract V3 版本不兼容", request_id)
     if payload.get("consumer") != CONSUMER_NAMESPACE:
-        raise ControlContractError(
-            "INVALID_CONSUMER",
-            "Control Contract consumer namespace 不正确",
-            request_id=request_id,
-        )
+        fail("INVALID_CONSUMER", "Control Contract consumer namespace 不正确", request_id)
+    if not request_id:
+        fail("INVALID_POLICY_SCHEMA", "requestId 必须是非空字符串", request_id)
     revision = payload.get("revision")
     if not isinstance(revision, int) or isinstance(revision, bool) or revision <= 0:
-        raise ControlContractError(
-            "INVALID_REVISION",
-            "Policy revision 必须是正整数",
-            request_id=request_id,
-        )
+        fail("INVALID_REVISION", "Policy revision 必须是正整数", request_id)
     enabled = payload.get("enabled")
     if not isinstance(enabled, bool):
-        raise ControlContractError(
-            "INVALID_POLICY_SCHEMA",
-            "Policy enabled 必须是布尔值",
-            request_id=request_id,
-        )
+        fail("INVALID_POLICY_SCHEMA", "Policy enabled 必须是布尔值", request_id)
+
+    routes = payload.get("routes")
+    if not isinstance(routes, list):
+        fail("INVALID_POLICY_SCHEMA", "V3 routes 必须是数组", request_id)
+    normalized_routes: list[dict[str, Any]] = []
+    seen_routes: set[tuple[Any, ...]] = set()
+    valid_asset_types = set(INSTRUMENT_TYPES)
+    for route in routes:
+        if not isinstance(route, dict) or set(route) != {"key", "targets"}:
+            fail("INVALID_POLICY_SCHEMA", "V3 route 必须只包含 key 和 targets", request_id)
+        key = route.get("key")
+        if not isinstance(key, dict):
+            fail("INVALID_POLICY_SCHEMA", "V3 route key 必须是对象", request_id)
+        kind = key.get("kind")
+        market = key.get("market")
+        asset_type = key.get("assetType")
+        if (
+            not isinstance(market, str)
+            or market not in {"CN", "HK", "US"}
+            or not isinstance(asset_type, str)
+            or asset_type not in valid_asset_types
+        ):
+            fail("INVALID_POLICY_SCHEMA", "V3 route key 的 market 或 assetType 不受支持", request_id)
+        if kind == "bar":
+            if set(key) != {"kind", "market", "assetType", "capability", "timeframe", "adjustment"}:
+                fail("INVALID_POLICY_SCHEMA", "V3 bar key 字段不符合严格契约", request_id)
+            capability = key.get("capability")
+            timeframe = key.get("timeframe")
+            adjustment = key.get("adjustment")
+            if not isinstance(capability, str) or capability not in {"DAILY_BAR", "MINUTE_BAR"}:
+                fail("INVALID_POLICY_SCHEMA", "V3 bar capability 不受支持", request_id)
+            if not isinstance(timeframe, str) or not isinstance(adjustment, str):
+                fail("INVALID_POLICY_SCHEMA", "V3 timeframe 或 adjustment 不受支持", request_id)
+            if (capability, timeframe) not in {("DAILY_BAR", "1d"), ("MINUTE_BAR", "1m")}:
+                fail("INVALID_POLICY_SCHEMA", "V3 bar capability 与 timeframe 不匹配", request_id)
+            if adjustment not in {"none", "qfq", "hfq"}:
+                fail("INVALID_POLICY_SCHEMA", "V3 adjustment 不受支持", request_id)
+            normalized_key = {
+                "kind": kind,
+                "market": market,
+                "assetType": asset_type,
+                "capability": capability,
+                "timeframe": timeframe,
+                "adjustment": adjustment,
+            }
+            route_identity = (kind, market, asset_type, capability, timeframe, adjustment)
+        elif kind == "data":
+            if set(key) != {"kind", "market", "assetType", "capability"}:
+                fail("INVALID_POLICY_SCHEMA", "V3 data key 字段不符合严格契约", request_id)
+            capability_value = key.get("capability")
+            if not isinstance(capability_value, str) or not capability_value.strip():
+                fail("INVALID_POLICY_SCHEMA", "V3 data capability 必须是非空字符串", request_id)
+            capability = capability_value.strip()
+            if capability in {"DAILY_BAR", "MINUTE_BAR"}:
+                fail("INVALID_POLICY_SCHEMA", "行情能力必须使用带周期和价格口径的 bar key", request_id)
+            normalized_key = {
+                "kind": kind,
+                "market": market,
+                "assetType": asset_type,
+                "capability": capability,
+            }
+            route_identity = (kind, market, asset_type, capability)
+        else:
+            fail("INVALID_POLICY_SCHEMA", "V3 route key kind 不受支持", request_id)
+        if route_identity in seen_routes:
+            fail("INVALID_POLICY_SCHEMA", "V3 routes 中存在重复维度", request_id)
+        seen_routes.add(route_identity)
+
+        raw_targets = route.get("targets")
+        if not isinstance(raw_targets, list) or not 1 <= len(raw_targets) <= 2:
+            fail("INVALID_ROUTE_TARGETS", "每条 V3 route 必须有一至两个 RouteTarget", request_id)
+        normalized_targets: list[dict[str, str]] = []
+        seen_targets: set[tuple[str, str]] = set()
+        for target in raw_targets:
+            if not isinstance(target, dict) or set(target) != {"providerId", "upstreamSource"}:
+                fail("INVALID_ROUTE_TARGET", "V3 RouteTarget 字段不符合严格契约", request_id)
+            provider_value = target.get("providerId")
+            source_value = target.get("upstreamSource")
+            if not isinstance(provider_value, str) or not isinstance(source_value, str):
+                fail("INVALID_ROUTE_TARGET", "V3 RouteTarget 标识必须是字符串", request_id)
+            provider_id = provider_value
+            upstream_source = source_value
+            if not provider_id.strip() or not upstream_source.strip():
+                fail("INVALID_ROUTE_TARGET", "V3 RouteTarget 标识不能为空", request_id)
+            target_identity = (provider_id, upstream_source)
+            if target_identity in seen_targets:
+                fail("INVALID_ROUTE_TARGETS", "V3 RouteTarget 不能重复", request_id)
+            seen_targets.add(target_identity)
+            normalized_targets.append(
+                {"providerId": provider_id, "upstreamSource": upstream_source}
+            )
+        normalized_routes.append({"key": normalized_key, "targets": normalized_targets})
+
     return {
-        "contractVersion": CONTROL_CONTRACT_VERSION,
+        "contractVersion": CONTROL_CONTRACT_V3_VERSION,
         "consumer": CONSUMER_NAMESPACE,
+        "requestId": request_id,
         "revision": revision,
         "enabled": enabled,
-        "routes": _normalize_routes(payload.get("routes", {}), request_id),
-        "requestId": request_id,
-    }
-
-
-def normalize_policy_v2(payload: dict[str, Any]) -> dict[str, Any]:
-    request_id = _request_id(payload.get("requestId"))
-    if payload.get("contractVersion") != CONTROL_CONTRACT_V2_VERSION:
-        raise ControlContractError(
-            "CONTROL_CONTRACT_UNSUPPORTED",
-            "Control Contract V2 版本不兼容",
-            request_id=request_id,
-        )
-    if payload.get("consumer") != CONSUMER_NAMESPACE:
-        raise ControlContractError(
-            "INVALID_CONSUMER",
-            "Control Contract consumer namespace 不正确",
-            request_id=request_id,
-        )
-    revision = payload.get("revision")
-    if not isinstance(revision, int) or isinstance(revision, bool) or revision <= 0:
-        raise ControlContractError(
-            "INVALID_REVISION",
-            "Policy revision 必须是正整数",
-            request_id=request_id,
-        )
-    enabled = payload.get("enabled")
-    if not isinstance(enabled, bool):
-        raise ControlContractError(
-            "INVALID_POLICY_SCHEMA",
-            "Policy enabled 必须是布尔值",
-            request_id=request_id,
-        )
-    return {
-        "contractVersion": CONTROL_CONTRACT_V2_VERSION,
-        "consumer": CONSUMER_NAMESPACE,
-        "revision": revision,
-        "enabled": enabled,
-        "routes": _normalize_route_targets(payload.get("routes", {}), request_id),
-        "requestId": request_id,
+        "routes": normalized_routes,
     }
 
 
@@ -909,6 +747,31 @@ class ThesisLedgerControlStore:
                     created_at TEXT NOT NULL,
                     PRIMARY KEY (consumer, revision)
                 );
+                CREATE TABLE IF NOT EXISTS thesis_ledger_route_admission_v3 (
+                    consumer TEXT NOT NULL,
+                    route_key_json TEXT NOT NULL,
+                    provider_id TEXT NOT NULL,
+                    upstream_source TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('admitted', 'invalid', 'revoked')),
+                    evidence_ref TEXT NOT NULL,
+                    evidence_sha256 TEXT NOT NULL,
+                    scope_symbols_json TEXT NOT NULL,
+                    scope_date_from TEXT NOT NULL,
+                    scope_date_to TEXT NOT NULL,
+                    adapter_revision TEXT NOT NULL,
+                    source_revision TEXT NOT NULL,
+                    credential_revision TEXT NOT NULL,
+                    valid_from TEXT NOT NULL,
+                    valid_until TEXT NOT NULL,
+                    recorded_by TEXT NOT NULL,
+                    record_version INTEGER NOT NULL DEFAULT 1,
+                    recorded_at TEXT NOT NULL,
+                    invalidated_at TEXT,
+                    invalidation_reason TEXT,
+                    PRIMARY KEY (consumer, route_key_json, provider_id, upstream_source)
+                );
+                CREATE INDEX IF NOT EXISTS thesis_ledger_route_admission_v3_validity_idx
+                    ON thesis_ledger_route_admission_v3 (consumer, status, valid_until);
                 CREATE TABLE IF NOT EXISTS thesis_ledger_provider_config (
                     provider_id TEXT PRIMARY KEY,
                     enabled INTEGER NOT NULL DEFAULT 1,
@@ -1038,6 +901,315 @@ class ThesisLedgerControlStore:
             ).fetchall()
         }
 
+    @staticmethod
+    def _route_admission_identity_v3(
+        key: dict[str, Any], target: dict[str, Any], consumer: str = CONSUMER_NAMESPACE
+    ) -> tuple[str, str, str, str]:
+        if consumer != CONSUMER_NAMESPACE:
+            raise ValueError("Unsupported RouteAdmission consumer")
+        if not isinstance(target, dict) or set(target) != {"providerId", "upstreamSource"}:
+            raise ValueError("RouteTarget must contain providerId and upstreamSource")
+        provider_id = target.get("providerId")
+        upstream_source = target.get("upstreamSource")
+        if not all(isinstance(value, str) and value.strip() for value in (provider_id, upstream_source)):
+            raise ValueError("RouteTarget identity values must be non-empty strings")
+        return (
+            consumer,
+            canonical_route_key_json(key),
+            provider_id.strip().lower(),
+            upstream_source.strip().lower(),
+        )
+
+    @staticmethod
+    def _route_admission_payload_v3(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "consumer": str(row["consumer"]),
+            "routeKey": _json_load(row["route_key_json"], {}),
+            "target": {
+                "providerId": str(row["provider_id"]),
+                "upstreamSource": str(row["upstream_source"]),
+            },
+            "status": str(row["status"]),
+            "evidenceRef": str(row["evidence_ref"]),
+            "evidenceSha256": str(row["evidence_sha256"]),
+            "scopeSymbols": _json_load(row["scope_symbols_json"], []),
+            "scopeDateFrom": str(row["scope_date_from"]),
+            "scopeDateTo": str(row["scope_date_to"]),
+            "adapterRevision": str(row["adapter_revision"]),
+            "sourceRevision": str(row["source_revision"]),
+            "credentialRevision": str(row["credential_revision"]),
+            "validFrom": str(row["valid_from"]),
+            "validUntil": str(row["valid_until"]),
+            "recordedBy": str(row["recorded_by"]),
+            "recordVersion": int(row["record_version"]),
+            "recordedAt": str(row["recorded_at"]),
+            "invalidatedAt": row["invalidated_at"],
+            "invalidationReason": row["invalidation_reason"],
+        }
+
+    @staticmethod
+    def _route_admission_state_v3(
+        admission: dict[str, Any] | None, *, now: str | None = None
+    ) -> str:
+        if admission is None:
+            return "pending"
+        status = admission.get("status")
+        if status != "admitted":
+            return str(status)
+        current = _parse_utc(now or _utc_now())
+        valid_from = _parse_utc(admission.get("validFrom"))
+        valid_until = _parse_utc(admission.get("validUntil"))
+        if current is None or valid_from is None or valid_until is None:
+            return "invalid"
+        if current < valid_from:
+            return "not_yet_valid"
+        if current >= valid_until:
+            return "expired"
+        return "admitted"
+
+    def record_route_admission_v3(
+        self,
+        *,
+        key: dict[str, Any],
+        target: dict[str, Any],
+        evidence_ref: str,
+        evidence_sha256: str,
+        scope_symbols: list[str],
+        scope_date_from: str,
+        scope_date_to: str,
+        adapter_revision: str,
+        source_revision: str,
+        credential_revision: str,
+        valid_from: str,
+        valid_until: str,
+        recorded_by: str,
+        consumer: str = CONSUMER_NAMESPACE,
+    ) -> dict[str, Any]:
+        """Explicitly record one evidenced RouteKey × RouteTarget admission.
+
+        This method is intentionally not exposed by the Control HTTP API. Missing
+        rows remain pending; routine configuration and health updates never write
+        admission evidence.
+        """
+        identity = self._route_admission_identity_v3(key, target, consumer)
+        symbols = normalize_scope_symbols(scope_symbols)
+        if not isinstance(scope_date_from, str) or not isinstance(scope_date_to, str):
+            raise ValueError("scope date boundaries must be ISO dates")
+        try:
+            range_start = date.fromisoformat(scope_date_from)
+            range_end = date.fromisoformat(scope_date_to)
+        except ValueError as error:
+            raise ValueError("scope date boundaries must be ISO dates") from error
+        if range_start.isoformat() != scope_date_from or range_end.isoformat() != scope_date_to:
+            raise ValueError("scope date boundaries must be canonical ISO dates")
+        if range_start > range_end:
+            raise ValueError("scope date range is inverted")
+
+        if not isinstance(evidence_ref, str) or not evidence_ref.strip():
+            raise ValueError("evidence_ref is required")
+        normalized_hash = evidence_sha256.strip().lower() if isinstance(evidence_sha256, str) else ""
+        if len(normalized_hash) != 64:
+            raise ValueError("evidence_sha256 must be a SHA-256 hex digest")
+        try:
+            bytes.fromhex(normalized_hash)
+        except ValueError as error:
+            raise ValueError("evidence_sha256 must be a SHA-256 hex digest") from error
+
+        revisions = (adapter_revision, source_revision, credential_revision)
+        if not all(isinstance(value, str) and value.strip() for value in revisions):
+            raise ValueError("adapter, source, and credential revisions are required")
+        if not isinstance(recorded_by, str) or not recorded_by.strip():
+            raise ValueError("recorded_by is required")
+
+        def normalized_instant(value: str, field: str) -> str:
+            if not isinstance(value, str):
+                raise ValueError(f"{field} must be a timezone-aware ISO timestamp")
+            try:
+                parsed = datetime.fromisoformat(value)
+            except ValueError as error:
+                raise ValueError(f"{field} must be a timezone-aware ISO timestamp") from error
+            if parsed.tzinfo is None:
+                raise ValueError(f"{field} must include a timezone")
+            return parsed.astimezone(timezone.utc).isoformat()
+
+        starts_at = normalized_instant(valid_from, "valid_from")
+        expires_at = normalized_instant(valid_until, "valid_until")
+        if _parse_utc(starts_at) >= _parse_utc(expires_at):
+            raise ValueError("valid_until must be later than valid_from")
+
+        values = (
+            *identity,
+            "admitted",
+            evidence_ref.strip(),
+            normalized_hash,
+            _json(symbols),
+            scope_date_from,
+            scope_date_to,
+            adapter_revision.strip(),
+            source_revision.strip(),
+            credential_revision.strip(),
+            starts_at,
+            expires_at,
+            recorded_by.strip(),
+            _utc_now(),
+        )
+        with self._schema_lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                """
+                SELECT * FROM thesis_ledger_route_admission_v3
+                WHERE consumer = ? AND route_key_json = ? AND provider_id = ? AND upstream_source = ?
+                """,
+                identity,
+            ).fetchone()
+            if existing is not None:
+                existing_payload = self._route_admission_payload_v3(existing)
+                unchanged = all(
+                    (
+                        existing_payload["status"] == "admitted",
+                        existing_payload["evidenceRef"] == values[5],
+                        existing_payload["evidenceSha256"] == values[6],
+                        existing_payload["scopeSymbols"] == symbols,
+                        existing_payload["scopeDateFrom"] == scope_date_from,
+                        existing_payload["scopeDateTo"] == scope_date_to,
+                        existing_payload["adapterRevision"] == adapter_revision.strip(),
+                        existing_payload["sourceRevision"] == source_revision.strip(),
+                        existing_payload["credentialRevision"] == credential_revision.strip(),
+                        existing_payload["validFrom"] == starts_at,
+                        existing_payload["validUntil"] == expires_at,
+                        existing_payload["recordedBy"] == recorded_by.strip(),
+                    )
+                )
+                if unchanged:
+                    connection.commit()
+                    return existing_payload
+
+            connection.execute(
+                """
+                INSERT INTO thesis_ledger_route_admission_v3 (
+                    consumer, route_key_json, provider_id, upstream_source, status,
+                    evidence_ref, evidence_sha256, scope_symbols_json,
+                    scope_date_from, scope_date_to, adapter_revision, source_revision,
+                    credential_revision, valid_from, valid_until, recorded_by,
+                    record_version, recorded_at, invalidated_at, invalidation_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NULL, NULL)
+                ON CONFLICT (consumer, route_key_json, provider_id, upstream_source)
+                DO UPDATE SET
+                    status=excluded.status,
+                    evidence_ref=excluded.evidence_ref,
+                    evidence_sha256=excluded.evidence_sha256,
+                    scope_symbols_json=excluded.scope_symbols_json,
+                    scope_date_from=excluded.scope_date_from,
+                    scope_date_to=excluded.scope_date_to,
+                    adapter_revision=excluded.adapter_revision,
+                    source_revision=excluded.source_revision,
+                    credential_revision=excluded.credential_revision,
+                    valid_from=excluded.valid_from,
+                    valid_until=excluded.valid_until,
+                    recorded_by=excluded.recorded_by,
+                    record_version=thesis_ledger_route_admission_v3.record_version + 1,
+                    recorded_at=excluded.recorded_at,
+                    invalidated_at=NULL,
+                    invalidation_reason=NULL
+                """,
+                values,
+            )
+            row = connection.execute(
+                """
+                SELECT * FROM thesis_ledger_route_admission_v3
+                WHERE consumer = ? AND route_key_json = ? AND provider_id = ? AND upstream_source = ?
+                """,
+                identity,
+            ).fetchone()
+            connection.commit()
+        return self._route_admission_payload_v3(row)
+
+    def get_route_admission_v3(
+        self,
+        *,
+        key: dict[str, Any],
+        target: dict[str, Any],
+        consumer: str = CONSUMER_NAMESPACE,
+        now: str | None = None,
+    ) -> dict[str, Any] | None:
+        identity = self._route_admission_identity_v3(key, target, consumer)
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM thesis_ledger_route_admission_v3
+                WHERE consumer = ? AND route_key_json = ? AND provider_id = ? AND upstream_source = ?
+                """,
+                identity,
+            ).fetchone()
+        if row is None:
+            return None
+        payload = self._route_admission_payload_v3(row)
+        payload["admissionState"] = self._route_admission_state_v3(payload, now=now)
+        return payload
+
+    def _set_route_admission_state_v3(
+        self,
+        *,
+        key: dict[str, Any],
+        target: dict[str, Any],
+        status: str,
+        reason: str,
+        consumer: str = CONSUMER_NAMESPACE,
+    ) -> dict[str, Any] | None:
+        if status not in {"invalid", "revoked"}:
+            raise ValueError("RouteAdmission state must be invalid or revoked")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("RouteAdmission invalidation reason is required")
+        identity = self._route_admission_identity_v3(key, target, consumer)
+        with self._schema_lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                UPDATE thesis_ledger_route_admission_v3
+                SET status = ?, invalidated_at = ?, invalidation_reason = ?,
+                    record_version = record_version + 1
+                WHERE consumer = ? AND route_key_json = ? AND provider_id = ? AND upstream_source = ?
+                """,
+                (status, _utc_now(), reason.strip(), *identity),
+            )
+            row = connection.execute(
+                """
+                SELECT * FROM thesis_ledger_route_admission_v3
+                WHERE consumer = ? AND route_key_json = ? AND provider_id = ? AND upstream_source = ?
+                """,
+                identity,
+            ).fetchone()
+            connection.commit()
+        if row is None:
+            return None
+        payload = self._route_admission_payload_v3(row)
+        payload["admissionState"] = status
+        return payload
+
+    def invalidate_route_admission_v3(
+        self,
+        *,
+        key: dict[str, Any],
+        target: dict[str, Any],
+        reason: str,
+        consumer: str = CONSUMER_NAMESPACE,
+    ) -> dict[str, Any] | None:
+        return self._set_route_admission_state_v3(
+            key=key, target=target, status="invalid", reason=reason, consumer=consumer
+        )
+
+    def revoke_route_admission_v3(
+        self,
+        *,
+        key: dict[str, Any],
+        target: dict[str, Any],
+        reason: str,
+        consumer: str = CONSUMER_NAMESPACE,
+    ) -> dict[str, Any] | None:
+        return self._set_route_admission_state_v3(
+            key=key, target=target, status="revoked", reason=reason, consumer=consumer
+        )
+
     def _rotate_provider_credentials(self) -> None:
         """Re-encrypt credentials with the current key when a previous key is retained."""
 
@@ -1105,346 +1277,175 @@ class ThesisLedgerControlStore:
         *,
         upstream_source: str | None = None,
     ) -> sqlite3.Row | None:
-        scope_key = f"{CONSUMER_NAMESPACE}:{provider_id}:{capability}:{instrument_type}"
-        if upstream_source:
-            scope_key = f"{scope_key}:{upstream_source}"
+        scope_key = ":".join(
+            (CONSUMER_NAMESPACE, provider_id, capability, instrument_type, upstream_source)
+        ) if upstream_source else ":".join(
+            (CONSUMER_NAMESPACE, provider_id, capability, instrument_type)
+        )
         return connection.execute(
-            """
-            SELECT * FROM thesis_ledger_provider_health
-            WHERE scope_key = ?
-            """,
+            "SELECT * FROM thesis_ledger_provider_health WHERE scope_key = ?",
             (scope_key,),
         ).fetchone()
 
-    def _effective(
+    def _v3_target_reason(
         self,
         connection: sqlite3.Connection,
         policy: dict[str, Any],
-    ) -> dict[str, Any]:
-        configurations = self._configuration(connection)
-        route_status: dict[str, dict[str, Any]] = {}
-        for capability, type_routes in policy["routes"].items():
-            route_status[capability] = {}
-            for instrument_type, provider_ids in type_routes.items():
-                entries: list[dict[str, Any]] = []
-                eligible: list[str] = []
-                for provider_id in provider_ids:
-                    config = configurations.get(provider_id)
-                    health = self._health(connection, provider_id, capability, instrument_type)
-                    configured = _provider_configured(PROVIDER_MANIFESTS[provider_id], config)
-                    enabled = config is None or bool(config["enabled"])
-                    state = str(health["state"] if health else "unknown")
-                    circuit = str(health["circuit"] if health else "closed")
-                    available = configured and enabled and circuit != "open"
-                    reason = None
-                    if not configured:
-                        reason = "provider_not_configured"
-                    elif not enabled:
-                        reason = "provider_disabled"
-                    elif circuit == "open":
-                        reason = "circuit_open"
-                    elif (provider_id, capability, instrument_type) in UNSAFE_SINGLE_SYMBOL_ROUTES:
-                        available = False
-                        reason = "single_symbol_adapter_unavailable"
-                    else:
-                        eligible.append(provider_id)
-                    entries.append(
-                        {
-                            "providerId": provider_id,
-                            "configured": configured,
-                            "enabled": enabled,
-                            "available": available,
-                            "eligible": available,
-                            "health": state,
-                            "circuit": circuit,
-                            "reason": reason,
-                        }
-                    )
-                route_status[capability][instrument_type] = {
-                    "providers": entries,
-                    "eligibleProviderIds": eligible,
-                    "reason": None if eligible else "NO_ELIGIBLE_PROVIDER",
-                }
-        return {
-            "contractVersion": CONTROL_CONTRACT_VERSION,
-            "consumer": CONSUMER_NAMESPACE,
-            "revision": policy["revision"],
-            "sourceDesiredRevision": policy["revision"],
-            "enabled": policy["enabled"],
-            "routes": policy["routes"],
-            "routeStatus": route_status,
-            "appliedAt": _utc_now(),
-        }
+        key: dict[str, Any],
+        target: dict[str, str],
+        configurations: dict[str, sqlite3.Row],
+    ) -> str | None:
+        provider_id = target["providerId"].strip().lower()
+        upstream_source = target["upstreamSource"].strip().lower()
+        manifest = PROVIDER_MANIFESTS.get(provider_id)
+        if not manifest or key["market"] not in manifest.get("markets", []):
+            return "not_adapted"
+        source_manifest = next(
+            (
+                source
+                for source in manifest.get("upstreamSources", [])
+                if str(source.get("sourceId") or "").strip().lower() == upstream_source
+            ),
+            None,
+        )
+        if source_manifest is None:
+            return "not_adapted"
+        capability = key["capability"]
+        asset_type = key["assetType"]
+        if (
+            key.get("kind") == "data" and capability == "REALTIME_QUOTE"
+            and asset_type == "ETF" and provider_id == "akshare"
+        ):
+            return "not_adapted"
+        is_event = event_adapter_matches(key, target)
+        if (
+            key.get("kind") == "data" and not is_event
+            and provider_id != "hithink"
+            and current_data_adapter_revisions(key, target) is None
+        ):
+            return "not_adapted"
+        if not is_event and asset_type not in source_manifest.get("capabilities", {}).get(capability, []):
+            return "not_adapted"
+        adapter_reason = (
+            market_v3_bar_adapter_reason(key, target)
+            if key.get("kind") == "bar" else None
+        )
+        if adapter_reason is not None:
+            return adapter_reason
+        if not policy["enabled"]:
+            return "disabled"
+        config = configurations.get(provider_id)
+        if config is not None and not bool(config["enabled"]):
+            return "disabled"
+        if not _provider_configured(manifest, config):
+            return "credential_missing"
+        admission_reason = policy_route_admission_reason(
+            self, connection, key, target, policy["consumer"], manifest,
+        )
+        if admission_reason is not None:
+            return admission_reason
+        health = self._health(
+            connection,
+            provider_id,
+            capability,
+            asset_type,
+            upstream_source=upstream_source,
+        )
+        if health and str(health["circuit"] or "closed") == "open":
+            return "upstream_failure"
+        return None
 
-    def _effective_v2(
+    def _effective_v3(
         self,
         connection: sqlite3.Connection,
         policy: dict[str, Any],
     ) -> dict[str, Any]:
-        """Build an Effective Policy with source-pinned, target-level status."""
         configurations = self._configuration(connection)
-        route_status: dict[str, dict[str, Any]] = {}
-        for capability, type_routes in policy["routes"].items():
-            route_status[capability] = {}
-            for instrument_type, targets in type_routes.items():
-                entries: list[dict[str, Any]] = []
-                eligible: list[dict[str, Any]] = []
-                for route_index, target in enumerate(targets):
-                    provider_id = target["providerId"]
-                    upstream_source = target["upstreamSource"]
-                    config = configurations.get(provider_id)
-                    health = self._health(
-                        connection,
-                        provider_id,
-                        capability,
-                        instrument_type,
-                        upstream_source=upstream_source,
-                    )
-                    configured = _provider_configured(PROVIDER_MANIFESTS[provider_id], config)
-                    enabled = config is None or bool(config["enabled"])
-                    state = str(health["state"] if health else "unknown")
-                    circuit = str(health["circuit"] if health else "closed")
-                    available = configured and enabled and circuit != "open"
-                    reason = None
-                    if not configured:
-                        reason = "provider_not_configured"
-                    elif not enabled:
-                        reason = "provider_disabled"
-                    elif circuit == "open":
-                        reason = "circuit_open"
-                    else:
-                        eligible.append({**target, "routeIndex": route_index})
-                    entry = {
+        effective_routes: list[dict[str, Any]] = []
+        for route in policy["routes"]:
+            key = route["key"]
+            targets = []
+            for index, target in enumerate(route["targets"]):
+                reason = self._v3_target_reason(
+                    connection, policy, key, target, configurations
+                )
+                targets.append(
+                    {
                         **target,
-                        "routeIndex": route_index,
-                        "configured": configured,
-                        "enabled": enabled,
-                        "available": available,
-                        "eligible": available,
-                        "health": state,
-                        "circuit": circuit,
+                        "routeIndex": index,
+                        "eligible": reason is None,
                         "reason": reason,
                     }
-                    entries.append(entry)
-                route_status[capability][instrument_type] = {
-                    "targets": entries,
-                    "eligibleTargets": eligible,
-                    "reason": None if eligible else "NO_ELIGIBLE_ROUTE_TARGET",
-                }
+                )
+            route_reason = None
+            if not any(target["eligible"] for target in targets):
+                route_reason = str(targets[0]["reason"] or "not_adapted")
+            effective_routes.append(
+                {"key": key, "targets": targets, "reason": route_reason}
+            )
         return {
-            "contractVersion": CONTROL_CONTRACT_V2_VERSION,
+            "contractVersion": CONTROL_CONTRACT_V3_VERSION,
             "consumer": CONSUMER_NAMESPACE,
             "requestId": policy["requestId"],
             "revision": policy["revision"],
             "sourceDesiredRevision": policy["revision"],
             "enabled": policy["enabled"],
-            "routes": policy["routes"],
-            "routeStatus": route_status,
+            "routes": effective_routes,
             "appliedAt": _utc_now(),
         }
 
-    def _current_state(self, connection: sqlite3.Connection) -> sqlite3.Row | None:
-        return connection.execute(
+    @staticmethod
+    def _current_policy_state(connection: sqlite3.Connection) -> sqlite3.Row | None:
+        current = connection.execute(
             "SELECT * FROM thesis_ledger_policy_state WHERE consumer = ?",
             (CONSUMER_NAMESPACE,),
         ).fetchone()
+        if current is None:
+            return None
+        routes = _json_load(current["routes_json"], None)
+        effective = _json_load(current["effective_json"], None)
+        if (
+            not isinstance(routes, list) or not isinstance(effective, dict)
+            or effective.get("contractVersion") != CONTROL_CONTRACT_V3_VERSION
+        ):
+            raise ControlContractError(
+                "UNSUPPORTED_STORED_POLICY",
+                "数据库中的策略不符合当前合同，请使用开发重建入口处理",
+                status_code=409,
+            )
+        return current
 
-    @staticmethod
-    def _policy_from_state(current: sqlite3.Row) -> dict[str, Any]:
-        return {
+    def _current_v3_effective(self, connection: sqlite3.Connection) -> dict[str, Any] | None:
+        current = self._current_policy_state(connection)
+        if current is None:
+            return None
+        policy = {
+            "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+            "consumer": CONSUMER_NAMESPACE,
+            "requestId": str(current["request_id"]),
             "revision": int(current["revision"]),
             "enabled": bool(current["enabled"]),
-            "routes": _json_load(current["routes_json"], {}),
-            "requestId": str(current["request_id"]),
+            "routes": _json_load(current["routes_json"], []),
         }
+        return self._effective_v3(connection, policy)
 
-    def _effective_for_policy(
-        self,
-        connection: sqlite3.Connection,
-        policy: dict[str, Any],
-    ) -> dict[str, Any]:
-        routes = policy["routes"]
-        is_v2 = any(
-            isinstance(target, dict)
-            for type_routes in routes.values()
-            if isinstance(type_routes, dict)
-            for targets in type_routes.values()
-            if isinstance(targets, list)
-            for target in targets
-        )
-        return (
-            self._effective_v2(connection, policy)
-            if is_v2
-            else self._effective(connection, policy)
-        )
-
-    def apply_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
-        policy = normalize_policy(payload)
+    def apply_policy_v3(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist the current exact route policy under monotonic revision."""
+        policy = normalize_policy_v3(payload)
         request_id = policy["requestId"]
         with self._schema_lock, self._connect() as connection:
             try:
-                # Read, validate and write under the same SQLite writer lock. A
-                # process-local lock cannot protect separate workers or
-                # connections, while BEGIN IMMEDIATE makes the revision check
-                # observe the latest committed policy before any write occurs.
                 connection.execute("BEGIN IMMEDIATE")
-                current = self._current_state(connection)
+                current = self._current_policy_state(connection)
                 if current is not None:
                     current_revision = int(current["revision"])
+                    current_routes = _json_load(current["routes_json"], [])
                     if policy["revision"] < current_revision:
                         raise ControlContractError(
                             "STALE_REVISION",
                             f"Policy revision {policy['revision']} 早于当前 revision {current_revision}",
                             request_id=request_id,
-                        )
-                    if policy["revision"] == current_revision:
-                        same = (
-                            bool(current["enabled"]) == policy["enabled"]
-                            and _json_load(current["routes_json"], {}) == policy["routes"]
-                        )
-                        if not same:
-                            raise ControlContractError(
-                                "REVISION_CONFLICT",
-                                "相同 revision 的 Policy 内容不同",
-                                request_id=request_id,
-                            )
-                        connection.commit()
-                        return {
-                            "status": current["status"],
-                            "idempotent": True,
-                            "desired": {
-                                "contractVersion": CONTROL_CONTRACT_VERSION,
-                                "consumer": CONSUMER_NAMESPACE,
-                                "revision": current_revision,
-                                "enabled": bool(current["enabled"]),
-                                "routes": _json_load(current["routes_json"], {}),
-                            },
-                            "effective": _json_load(current["effective_json"], {}),
-                            "requestId": request_id,
-                        }
-
-                effective = self._effective_for_policy(connection, policy)
-                now = _utc_now()
-                desired_json = _json(policy["routes"])
-                effective_json = _json(effective)
-                connection.execute(
-                    """
-                    INSERT INTO thesis_ledger_policy_state
-                    (consumer, revision, enabled, routes_json, status, effective_json,
-                     last_error_json, request_id, updated_at)
-                    VALUES (?, ?, ?, ?, 'applied', ?, NULL, ?, ?)
-                    ON CONFLICT(consumer) DO UPDATE SET
-                      revision=excluded.revision,
-                      enabled=excluded.enabled,
-                      routes_json=excluded.routes_json,
-                      status=excluded.status,
-                      effective_json=excluded.effective_json,
-                      last_error_json=NULL,
-                      request_id=excluded.request_id,
-                      updated_at=excluded.updated_at
-                    """,
-                    (
-                        CONSUMER_NAMESPACE,
-                        policy["revision"],
-                        int(policy["enabled"]),
-                        desired_json,
-                        effective_json,
-                        request_id,
-                        now,
-                    ),
-                )
-                connection.execute(
-                    """
-                    INSERT INTO thesis_ledger_policy_history
-                    (consumer, revision, enabled, routes_json, status, effective_json,
-                     last_error_json, request_id, created_at)
-                    VALUES (?, ?, ?, ?, 'applied', ?, NULL, ?, ?)
-                    """,
-                    (
-                        CONSUMER_NAMESPACE,
-                        policy["revision"],
-                        int(policy["enabled"]),
-                        desired_json,
-                        effective_json,
-                        request_id,
-                        now,
-                    ),
-                )
-                connection.commit()
-            except ControlContractError:
-                connection.rollback()
-                raise
-            except sqlite3.IntegrityError as error:
-                connection.rollback()
-                raise ControlContractError(
-                    "REVISION_CONFLICT",
-                    "Policy revision 竞争冲突，请重试",
-                    request_id=request_id,
-                ) from error
-            except sqlite3.OperationalError as error:
-                connection.rollback()
-                if "locked" in str(error).lower():
-                    raise ControlContractError(
-                        "POLICY_APPLY_CONFLICT",
-                        "Policy Apply 正在竞争，请重试",
-                        status_code=409,
-                        request_id=request_id,
-                    ) from error
-                raise
-            except Exception:
-                connection.rollback()
-                raise
-            return {
-                "status": "applied",
-                "idempotent": False,
-                "desired": {
-                    "contractVersion": CONTROL_CONTRACT_VERSION,
-                    "consumer": CONSUMER_NAMESPACE,
-                    "revision": policy["revision"],
-                    "enabled": policy["enabled"],
-                    "routes": policy["routes"],
-                },
-                "effective": effective,
-                "requestId": request_id,
-            }
-
-    def policy_projection(self) -> dict[str, Any] | None:
-        with self._connect() as connection:
-            current = self._current_state(connection)
-            if current is None:
-                return None
-            return {
-                "status": current["status"],
-                "desired": {
-                    "contractVersion": CONTROL_CONTRACT_VERSION,
-                    "consumer": CONSUMER_NAMESPACE,
-                    "revision": int(current["revision"]),
-                    "enabled": bool(current["enabled"]),
-                    "routes": _json_load(current["routes_json"], {}),
-                },
-                "effective": _apply_runtime_capability_gates(
-                    _json_load(current["effective_json"], {})
-                ),
-                "lastError": _json_load(current["last_error_json"], None),
-                "updatedAt": current["updated_at"],
-            }
-
-    def apply_policy_v2(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Apply a V2 source-pinned policy into the same durable projection."""
-        policy = normalize_policy_v2(payload)
-        request_id = policy["requestId"]
-        with self._schema_lock, self._connect() as connection:
-            try:
-                connection.execute("BEGIN IMMEDIATE")
-                current = self._current_state(connection)
-                if current is not None:
-                    current_revision = int(current["revision"])
-                    current_routes = _json_load(current["routes_json"], {})
-                    if policy["revision"] < current_revision:
-                        raise ControlContractError(
-                            "STALE_REVISION",
-                            f"Policy revision {policy['revision']} 早于当前 revision {current_revision}",
-                            request_id=request_id,
+                            contract_version=CONTROL_CONTRACT_V3_VERSION,
                         )
                     if policy["revision"] == current_revision:
                         if bool(current["enabled"]) != policy["enabled"] or current_routes != policy["routes"]:
@@ -1452,22 +1453,20 @@ class ThesisLedgerControlStore:
                                 "REVISION_CONFLICT",
                                 "相同 revision 的 Policy 内容不同",
                                 request_id=request_id,
+                                contract_version=CONTROL_CONTRACT_V3_VERSION,
                             )
+                        policy["revision"] = current_revision
+                        effective = self._effective_v3(connection, policy)
                         connection.commit()
-                        projection = self.policy_projection_v2()
                         return {
-                            "status": current["status"],
+                            "status": "applied",
                             "idempotent": True,
-                            "desired": {
-                                **policy,
-                                "revision": current_revision,
-                                "enabled": bool(current["enabled"]),
-                                "routes": current_routes,
-                            },
-                            "effective": projection["effective"] if projection else None,
+                            "desired": policy,
+                            "effective": effective,
                             "requestId": request_id,
                         }
-                effective = self._effective_v2(connection, policy)
+
+                effective = self._effective_v3(connection, policy)
                 now = _utc_now()
                 desired_json = _json(policy["routes"])
                 effective_json = _json(effective)
@@ -1487,7 +1486,15 @@ class ThesisLedgerControlStore:
                       request_id=excluded.request_id,
                       updated_at=excluded.updated_at
                     """,
-                    (CONSUMER_NAMESPACE, policy["revision"], int(policy["enabled"]), desired_json, effective_json, request_id, now),
+                    (
+                        CONSUMER_NAMESPACE,
+                        policy["revision"],
+                        int(policy["enabled"]),
+                        desired_json,
+                        effective_json,
+                        request_id,
+                        now,
+                    ),
                 )
                 connection.execute(
                     """
@@ -1496,7 +1503,15 @@ class ThesisLedgerControlStore:
                      last_error_json, request_id, created_at)
                     VALUES (?, ?, ?, ?, 'applied', ?, NULL, ?, ?)
                     """,
-                    (CONSUMER_NAMESPACE, policy["revision"], int(policy["enabled"]), desired_json, effective_json, request_id, now),
+                    (
+                        CONSUMER_NAMESPACE,
+                        policy["revision"],
+                        int(policy["enabled"]),
+                        desired_json,
+                        effective_json,
+                        request_id,
+                        now,
+                    ),
                 )
                 connection.commit()
             except ControlContractError:
@@ -1508,6 +1523,7 @@ class ThesisLedgerControlStore:
                     "REVISION_CONFLICT",
                     "Policy revision 竞争冲突，请重试",
                     request_id=request_id,
+                    contract_version=CONTROL_CONTRACT_V3_VERSION,
                 ) from error
             except sqlite3.OperationalError as error:
                 connection.rollback()
@@ -1517,6 +1533,7 @@ class ThesisLedgerControlStore:
                         "Policy Apply 正在竞争，请重试",
                         status_code=409,
                         request_id=request_id,
+                        contract_version=CONTROL_CONTRACT_V3_VERSION,
                     ) from error
                 raise
         return {
@@ -1527,68 +1544,30 @@ class ThesisLedgerControlStore:
             "requestId": request_id,
         }
 
-    def policy_projection_v2(self) -> dict[str, Any] | None:
+    def policy_projection_v3(self) -> dict[str, Any] | None:
         with self._connect() as connection:
-            current = self._current_state(connection)
+            current = self._current_policy_state(connection)
             if current is None:
                 return None
-            routes = _json_load(current["routes_json"], {})
-            policy = self._policy_from_state(current)
-            effective = _json_load(current["effective_json"], {})
-            if any(
-                isinstance(target, dict)
-                for type_routes in routes.values()
-                if isinstance(type_routes, dict)
-                for targets in type_routes.values()
-                if isinstance(targets, list)
-                for target in targets
-            ):
-                effective = self._effective_v2(connection, policy)
+            policy = {
+                "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+                "consumer": CONSUMER_NAMESPACE,
+                "requestId": str(current["request_id"]),
+                "revision": int(current["revision"]),
+                "enabled": bool(current["enabled"]),
+                "routes": _json_load(current["routes_json"], []),
+            }
             return {
                 "status": current["status"],
-                "desired": {
-                    "contractVersion": CONTROL_CONTRACT_V2_VERSION,
-                    "consumer": CONSUMER_NAMESPACE,
-                    "requestId": policy["requestId"],
-                    "revision": int(current["revision"]),
-                    "enabled": bool(current["enabled"]),
-                    "routes": routes,
-                },
-                "effective": effective,
+                "desired": policy,
+                "effective": self._effective_v3(connection, policy),
                 "lastError": _json_load(current["last_error_json"], None),
                 "updatedAt": current["updated_at"],
             }
 
-    def effective_policy_v2(self) -> dict[str, Any] | None:
-        projection = self.policy_projection_v2()
+    def effective_policy_v3(self) -> dict[str, Any] | None:
+        projection = self.policy_projection_v3()
         return projection["effective"] if projection else None
-
-    def effective_policy(self) -> dict[str, Any] | None:
-        projection = self.policy_projection()
-        return projection["effective"] if projection else None
-
-    def route(
-        self,
-        capability: str,
-        instrument_type: str,
-        *,
-        include_circuit_open: bool = False,
-    ) -> list[str]:
-        effective = self.effective_policy()
-        if not effective or not effective.get("enabled"):
-            return []
-        status = (
-            effective.get("routeStatus", {})
-            .get(capability.upper(), {})
-            .get(instrument_type.upper(), {})
-        )
-        if not include_circuit_open:
-            return [str(value) for value in status.get("eligibleProviderIds", [])]
-        return [
-            str(entry["providerId"])
-            for entry in status.get("providers", [])
-            if entry.get("configured") and entry.get("enabled")
-        ]
 
     def health(
         self,
@@ -1637,14 +1616,10 @@ class ThesisLedgerControlStore:
         current = time.time() if now is None else float(now)
         duration = max(PROVIDER_REQUEST_BUDGET_SECONDS, int(budget_seconds))
         expires_at = current + duration
-        key_parts = (
-            CONSUMER_NAMESPACE,
-            normalized_provider,
-            normalized_capability,
-            normalized_type,
-            normalized_symbol,
+        request_key = ":".join(
+            (CONSUMER_NAMESPACE, normalized_provider, normalized_capability,
+             normalized_type, normalized_symbol, normalized_source)
         )
-        request_key = ":".join((*key_parts, normalized_source) if normalized_source else key_parts)
         with self._schema_lock, self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
@@ -1745,7 +1720,7 @@ class ThesisLedgerControlStore:
                         "configVersion": int(config["config_version"]) if config else 0,
                         "updatedAt": config["updated_at"] if config else None,
                         "health": {"scopes": health_by_provider.get(provider_id, [])},
-                        "tombstone":
+                        "tombstone": (
                             {
                                 "providerId": provider_id,
                                 "displayName": tombstone["display_name"],
@@ -1753,7 +1728,8 @@ class ThesisLedgerControlStore:
                                 "removedAt": tombstone["removed_at"],
                             }
                             if tombstone
-                            else None,
+                            else None
+                        ),
                     }
                 )
             return result
@@ -1791,14 +1767,13 @@ class ThesisLedgerControlStore:
                         "SECRET_CREDENTIAL_INVALID",
                         "Provider 页面凭证无法安全解析",
                     ) from exc
-                if credential.legacy:
-                    raise ControlContractError(
-                        "SECRET_CREDENTIAL_INVALID",
-                        "历史 Provider 凭证不能作为页面运行时凭证",
-                    )
                 values = dict(credential.values)
             elif source == "environment":
                 values = _environment_credential_values(normalized)
+                if normalized == "tushare" and values:
+                    from data_provider.tushare_endpoint import DEFAULT_TUSHARE_HTTP_URL, _resolve_tushare_http_url
+
+                    values["httpUrl"] = _resolve_tushare_http_url() or DEFAULT_TUSHARE_HTTP_URL
                 if normalized == "longbridge" and (
                     values.get("oauthClientId")
                     or not {"appKey", "appSecret", "accessToken"}.issubset(values)
@@ -1810,6 +1785,7 @@ class ThesisLedgerControlStore:
                         "tickflow": "api_key",
                         "finnhub": "api_key",
                         "alphavantage": "api_key",
+                        "hithink": "api_key",
                         "longbridge": "legacy",
                     }.get(normalized)
             if not configured and manifest.get("requiresCredential", False):
@@ -1873,18 +1849,10 @@ class ThesisLedgerControlStore:
                 """,
                 (provider_id, manifest["displayName"], reason, _json(metadata), now),
             )
-            current = self._current_state(connection)
-            effective = _json_load(current["effective_json"], {}) if current else {}
-            if current:
-                policy = self._policy_from_state(current)
-                effective = self._effective_for_policy(connection, policy)
-                connection.execute(
-                    "UPDATE thesis_ledger_policy_state SET effective_json=?, updated_at=? WHERE consumer=?",
-                    (_json(effective), now, CONSUMER_NAMESPACE),
-                )
+            effective = self._current_v3_effective(connection)
             connection.commit()
         return {
-            "contractVersion": CONTROL_CONTRACT_VERSION,
+            "contractVersion": CONTROL_CONTRACT_V3_VERSION,
             "consumer": CONSUMER_NAMESPACE,
             "providerId": provider_id,
             "removed": True,
@@ -1925,7 +1893,6 @@ class ThesisLedgerControlStore:
                 "Provider settings 必须是对象",
                 request_id=request_id,
             )
-        credential = payload.get("credential")
         credentials_provided = "credentials" in payload
         credential_patch = None
         if credentials_provided:
@@ -1937,12 +1904,6 @@ class ThesisLedgerControlStore:
                     str(exc),
                     request_id=request_id,
                 ) from exc
-            if "credential" in payload:
-                raise ControlContractError(
-                    "INVALID_PROVIDER_CREDENTIALS",
-                    "credential 与 credentials 不能同时提交",
-                    request_id=request_id,
-                )
         clear_credentials = payload.get("clearCredentials", False)
         if not isinstance(clear_credentials, bool):
             raise ControlContractError(
@@ -1954,12 +1915,6 @@ class ThesisLedgerControlStore:
             raise ControlContractError(
                 "INVALID_PROVIDER_CREDENTIALS",
                 "clearCredentials 不能与 credentials 同时提交",
-                request_id=request_id,
-            )
-        if clear_credentials and credential is not None and str(credential).strip():
-            raise ControlContractError(
-                "INVALID_PROVIDER_CREDENTIALS",
-                "clearCredentials 不能与 credential 同时提交",
                 request_id=request_id,
             )
 
@@ -1985,9 +1940,7 @@ class ThesisLedgerControlStore:
                 existing_encrypted = existing["credential_ciphertext"] if existing else None
                 existing_key_version = existing["secret_key_version"] if existing else None
                 existing_credential: CredentialValue | None = None
-                credential_value_update = credentials_provided or (
-                    credential is not None and str(credential).strip()
-                )
+                credential_value_update = credentials_provided
                 if existing_encrypted and credential_value_update:
                     try:
                         decoded_credential = decode_credential_plaintext(
@@ -2026,17 +1979,6 @@ class ThesisLedgerControlStore:
                     credential_changed = existing_credential != merged
                     if credential_changed:
                         key_version, encrypted = _encrypt_secret(encode_credential_plaintext(merged))
-                elif credential is not None and str(credential).strip():
-                    legacy_value = str(credential).strip()
-                    credential_changed = not (
-                        existing_credential is not None
-                        and existing_credential.legacy
-                        and existing_credential.values == {}
-                        and _decrypt_secret(str(existing_key_version or ""), str(existing_encrypted))
-                        == legacy_value
-                    )
-                    if credential_changed:
-                        key_version, encrypted = _encrypt_secret(legacy_value)
                 current_config_version = int(existing["config_version"]) if existing else 0
                 current_credential_version = int(existing["credential_version"]) if existing else 0
                 config_version = current_config_version + 1
@@ -2072,15 +2014,7 @@ class ThesisLedgerControlStore:
                     "DELETE FROM thesis_ledger_provider_tombstone WHERE provider_id = ?",
                     (provider_id,),
                 )
-                current = self._current_state(connection)
-                effective = _json_load(current["effective_json"], {}) if current else {}
-                if current:
-                    policy = self._policy_from_state(current)
-                    effective = self._effective_for_policy(connection, policy)
-                    connection.execute(
-                        "UPDATE thesis_ledger_policy_state SET effective_json=?, updated_at=? WHERE consumer=?",
-                        (_json(effective), now, CONSUMER_NAMESPACE),
-                    )
+                effective = self._current_v3_effective(connection)
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -2096,11 +2030,9 @@ class ThesisLedgerControlStore:
             return {
                 "providerId": provider_id,
                 "enabled": enabled,
-                "configured": (
-                    True
-                    if not PROVIDER_MANIFESTS[provider_id].get("requiresCredential", False)
-                    else credential_configured
-                ),
+                "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+                "consumer": CONSUMER_NAMESPACE,
+                "configured": not PROVIDER_MANIFESTS[provider_id].get("requiresCredential", False) or credential_configured,
                 "credentialConfigured": credential_configured,
                 "credentialSource": credential_source,
                 "credentialFieldsConfigured": credential_fields,
@@ -2126,9 +2058,12 @@ class ThesisLedgerControlStore:
         error_code: str | None = None,
         upstream_source: str | None = None,
     ) -> None:
-        scope_key = f"{CONSUMER_NAMESPACE}:{provider_id}:{capability}:{instrument_type}"
-        if upstream_source:
-            scope_key = f"{scope_key}:{str(upstream_source).strip().lower()}"
+        source = str(upstream_source).strip().lower() if upstream_source else None
+        scope_key = ":".join(
+            (CONSUMER_NAMESPACE, provider_id, capability, instrument_type, source)
+        ) if source else ":".join(
+            (CONSUMER_NAMESPACE, provider_id, capability, instrument_type)
+        )
         with self._connect() as connection:
             connection.execute(
                 """
@@ -2157,14 +2092,6 @@ class ThesisLedgerControlStore:
                     _utc_now(),
                 ),
             )
-            current = self._current_state(connection)
-            if current is not None:
-                policy = self._policy_from_state(current)
-                effective = self._effective_for_policy(connection, policy)
-                connection.execute(
-                    "UPDATE thesis_ledger_policy_state SET effective_json=?, updated_at=? WHERE consumer=?",
-                    (_json(effective), _utc_now(), CONSUMER_NAMESPACE),
-                )
             connection.commit()
 
     def _ensure_catalog(self, connection: sqlite3.Connection) -> sqlite3.Row:
@@ -2187,6 +2114,7 @@ class ThesisLedgerControlStore:
         items = sorted(DEFAULT_CATALOG, key=lambda item: (item["canonicalCode"], item["market"], item["instrumentType"]))
         checksum = hashlib.sha256(_json(items).encode("utf-8")).hexdigest()
         cursor = "generation:1"
+        in_transaction = connection.in_transaction
         connection.execute(
             """
             INSERT INTO thesis_ledger_catalog_generation
@@ -2195,121 +2123,23 @@ class ThesisLedgerControlStore:
             """,
             (checksum, cursor, _json(items), _utc_now()),
         )
-        connection.commit()
+        if not in_transaction:
+            connection.commit()
         return connection.execute(
             "SELECT * FROM thesis_ledger_catalog_generation WHERE generation=1"
         ).fetchone()
 
     def catalog_snapshot(self, cursor: str | None = None) -> dict[str, Any]:
-        with self._connect() as connection:
-            row = self._ensure_catalog(connection)
-            if cursor and cursor not in {"0", "generation:0", row["cursor"]}:
-                raise ControlContractError(
-                    "CATALOG_CURSOR_EXPIRED",
-                    "Catalog cursor 已过期，需要完整 snapshot",
-                    status_code=409,
-                )
-            return {
-                "contractVersion": CONTROL_CONTRACT_VERSION,
-                "generation": int(row["generation"]),
-                "checksum": row["checksum"],
-                "cursor": row["cursor"],
-                "complete": bool(row["complete"]),
-                "items": _json_load(row["items_json"], []),
-            }
+        from src.services.thesis_ledger_catalog_contract import catalog_snapshot
+        return catalog_snapshot(self, cursor)
 
     def catalog_delta(self, cursor: str) -> dict[str, Any]:
-        with self._connect() as connection:
-            latest = self._ensure_catalog(connection)
-            if cursor == latest["cursor"]:
-                return {
-                    "contractVersion": CONTROL_CONTRACT_VERSION,
-                    "generation": int(latest["generation"]),
-                    "checksum": latest["checksum"],
-                    "cursor": latest["cursor"],
-                    "complete": True,
-                    "fromCursor": cursor,
-                    "items": [],
-                    "deleted": [],
-                }
-            if cursor in {"0", "generation:0"}:
-                return {
-                    **self.catalog_snapshot(),
-                    "fromCursor": cursor,
-                    "requiresFullSnapshot": True,
-                }
-            previous = connection.execute(
-                "SELECT * FROM thesis_ledger_catalog_generation WHERE cursor = ?",
-                (cursor,),
-            ).fetchone()
-            if previous is None:
-                raise ControlContractError(
-                    "CATALOG_CURSOR_EXPIRED",
-                    "Catalog cursor 已过期，需要完整 snapshot",
-                    status_code=409,
-                )
-            previous_items = {
-                (item["canonicalCode"], item["market"], item["instrumentType"]): item
-                for item in _json_load(previous["items_json"], [])
-            }
-            latest_items = {
-                (item["canonicalCode"], item["market"], item["instrumentType"]): item
-                for item in _json_load(latest["items_json"], [])
-            }
-            changed = [
-                latest_items[key]
-                for key in sorted(latest_items)
-                if previous_items.get(key) != latest_items[key]
-            ]
-            deleted = [
-                {
-                    "canonicalCode": key[0],
-                    "market": key[1],
-                    "instrumentType": key[2],
-                }
-                for key in sorted(set(previous_items) - set(latest_items))
-            ]
-            return {
-                "contractVersion": CONTROL_CONTRACT_VERSION,
-                "generation": int(latest["generation"]),
-                "checksum": latest["checksum"],
-                "cursor": latest["cursor"],
-                "complete": True,
-                "fromCursor": cursor,
-                "items": changed,
-                "deleted": deleted,
-            }
+        from src.services.thesis_ledger_catalog_contract import catalog_delta
+        return catalog_delta(self, cursor)
 
     def catalog_ack(self, payload: dict[str, Any]) -> dict[str, Any]:
-        snapshot = self.catalog_snapshot()
-        if payload.get("generation") != snapshot["generation"] or payload.get("checksum") != snapshot["checksum"]:
-            raise ControlContractError(
-                "CATALOG_CHECKSUM_MISMATCH",
-                "Catalog generation 或 checksum 不匹配",
-                status_code=409,
-            )
-        with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO thesis_ledger_catalog_ack
-                (consumer, generation, checksum, cursor, acknowledged_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(consumer) DO UPDATE SET
-                  generation=excluded.generation,
-                  checksum=excluded.checksum,
-                  cursor=excluded.cursor,
-                  acknowledged_at=excluded.acknowledged_at
-                """,
-                (
-                    CONSUMER_NAMESPACE,
-                    snapshot["generation"],
-                    snapshot["checksum"],
-                    snapshot["cursor"],
-                    _utc_now(),
-                ),
-            )
-            connection.commit()
-        return {"acknowledged": True, "generation": snapshot["generation"], "cursor": snapshot["cursor"]}
+        from src.services.thesis_ledger_catalog_contract import catalog_ack
+        return catalog_ack(self, payload)
 
     def _catalog_job_owner_value(self, owner: str | None) -> str:
         value = str(owner or "").strip()
@@ -2485,6 +2315,9 @@ class ThesisLedgerControlStore:
                 latest = connection.execute(
                     "SELECT * FROM thesis_ledger_catalog_generation ORDER BY generation DESC LIMIT 1"
                 ).fetchone()
+                if latest is not None:
+                    from src.services.thesis_ledger_catalog_contract import current_catalog_row
+                    current_catalog_row(latest)
                 if latest is not None and latest["checksum"] == checksum:
                     generation = int(latest["generation"])
                     cursor = str(latest["cursor"])
@@ -2643,15 +2476,19 @@ class ThesisLedgerControlStore:
                 connection.rollback()
                 raise
 
-    def trigger_catalog_job(self, *, owner: str | None = None) -> dict[str, Any]:
+    def trigger_catalog_job(self, *, owner: str | None = None, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         """Create or reuse a Catalog Job without waiting for Provider I/O."""
+        if payload is not None:
+            from src.services.thesis_ledger_catalog_contract import require_catalog_request
+            require_catalog_request(payload)
         job_owner = self._catalog_job_owner_value(owner)
         job, claimed = self._claim_catalog_job(job_owner, initial_status="pending")
         if claimed:
             _catalog_job_manager_for(self.database_path).enqueue(
                 str(job["id"]), job_owner
             )
-        return self._job_payload(job)
+        result = self._job_payload(job)
+        return {**result, "requestId": payload["requestId"]} if payload is not None else result
 
     def get_catalog_job(self, job_id: str) -> dict[str, Any]:
         """读取一个 Catalog Job，并在读取时回收已失效的 running lease。"""
@@ -2730,6 +2567,8 @@ class ThesisLedgerControlStore:
         status = str(row["status"])
         current_time = now or _utc_now()
         return {
+            "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+            "consumer": CONSUMER_NAMESPACE,
             "id": row["id"],
             "status": status,
             "generation": int(row["generation"]),

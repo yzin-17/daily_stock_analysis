@@ -43,6 +43,7 @@ from src.llm.backend_registry import (
 )
 from src.llm.generation_backend import GenerationError, GenerationErrorCode
 from src.llm.generation_params import apply_litellm_generation_params, resolve_litellm_wire_model
+from src.llm.prompt_cache_request_boundary import sanitize_prompt_cache_router_deployments
 from src.llm.usage import attach_message_hmacs, extract_usage_payload, normalize_litellm_usage
 from src.llm.provider_cache import (
     build_provider_cache_route_context,
@@ -475,7 +476,7 @@ class LLMToolAdapter:
                 logger.warning("Agent LLM: no Agent-safe channel deployments after Hermes filtering")
                 return
             self._router = Router(
-                model_list=model_list,
+                model_list=sanitize_prompt_cache_router_deployments(model_list),
                 routing_strategy="simple-shuffle",
                 num_retries=2,
             )
@@ -513,7 +514,7 @@ class LLMToolAdapter:
             ]
             self._legacy_router_model_list = legacy_model_list
             self._router = Router(
-                model_list=legacy_model_list,
+                model_list=sanitize_prompt_cache_router_deployments(legacy_model_list),
                 routing_strategy="simple-shuffle",
                 num_retries=2,
             )
@@ -707,7 +708,6 @@ class LLMToolAdapter:
         if tools:
             call_kwargs["tools"] = tools
 
-        # Use Router for primary model (multi-key), direct litellm for others
         use_channel_router = self._has_channel_config()
         resolution = getattr(self, "_route_resolution", None) or resolve_agent_litellm_route(self._config)
         _router_model_names = set(get_configured_llm_models(resolution.model_list))

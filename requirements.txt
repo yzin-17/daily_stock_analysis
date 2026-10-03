@@ -7,7 +7,7 @@ python-dotenv>=1.0.0        # Environment variable configuration
 tenacity>=8.2.0             # Retry support with exponential backoff
 sqlalchemy>=2.0.0           # ORM database access
 schedule>=1.2.0             # Scheduled task runner
-exchange-calendars>=4.13.0   # Trading calendars; 4.5.x is incompatible with pandas 3 Timedelta "T"
+exchange-calendars==4.13.2   # Pinned verified version; rerun coverage and market-closure regressions before upgrading
 
 # Data source dependencies, ordered by fallback priority
 efinance>=0.5.5             # Priority 0: East Money data source https://github.com/Micro-sheep/efinance
@@ -72,3 +72,7 @@ jinja2>=3.1.0               # Jinja2 template engine for report rendering
 fastapi>=0.109.0            # Modern Python Web framework
 uvicorn[standard]>=0.27.0   # ASGI server
 python-multipart>=0.0.6     # FastAPI File/Form upload support
+
+# RQData fund events; installation does not establish account access or source admission
+rqdatac==3.7.1
+rqdatac-fund==1.0.44

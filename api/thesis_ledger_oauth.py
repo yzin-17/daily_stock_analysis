@@ -5,7 +5,7 @@ import os
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 
 from api.thesis_ledger import (
-    _control_envelope,
+    _control_v3_envelope,
     _control_http_error,
     _control_store,
     require_control_token,
@@ -71,7 +71,7 @@ def _error(error: Exception):
     raise HTTPException(
         status_code=status,
         detail={
-            "contractVersion": 1,
+            "contractVersion": 3,
             "code": code,
             "message": "Longbridge 浏览器授权未完成，请检查授权状态。",
         },
@@ -81,10 +81,11 @@ def _error(error: Exception):
 @router.post("/sessions")
 async def create_session(request: Request, payload: dict = Body(...)):
     try:
-        value = _control_envelope(payload)
+        value = _control_v3_envelope(payload)
         if set(value) - {"clientId", "contractVersion", "consumer", "requestId"}:
             raise OAuthStateError("OAUTH_REQUEST_INVALID")
-        return await _manager(request).create(value.get("clientId"))
+        session = await _manager(request).create(value.get("clientId"))
+        return {"contractVersion": 3, "consumer": "thesis-ledger", **session}
     except Exception as error:
         _error(error)
 
@@ -92,7 +93,7 @@ async def create_session(request: Request, payload: dict = Body(...)):
 @router.get("/sessions/current")
 async def current_session(request: Request):
     try:
-        return {"session": _manager(request).current()}
+        return {"contractVersion": 3, "consumer": "thesis-ledger", "session": _manager(request).current()}
     except Exception as error:
         _error(error)
 
@@ -100,14 +101,18 @@ async def current_session(request: Request):
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, request: Request):
     try:
-        return _manager(request).get(session_id)
+        return {"contractVersion": 3, "consumer": "thesis-ledger", **_manager(request).get(session_id)}
     except Exception as error:
         _error(error)
 
 
 @router.post("/sessions/{session_id}/cancel")
-async def cancel_session(session_id: str, request: Request):
+async def cancel_session(session_id: str, request: Request, payload: dict = Body(...)):
     try:
-        return await _manager(request).cancel(session_id)
+        value = _control_v3_envelope(payload)
+        if set(value) != {"contractVersion", "consumer", "requestId"}:
+            raise OAuthStateError("OAUTH_REQUEST_INVALID")
+        session = await _manager(request).cancel(session_id)
+        return {"contractVersion": 3, "consumer": "thesis-ledger", **session}
     except Exception as error:
         _error(error)

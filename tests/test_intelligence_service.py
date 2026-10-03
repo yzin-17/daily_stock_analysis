@@ -214,9 +214,10 @@ class IntelligenceServiceTestCase(unittest.TestCase):
         self.service.create_source({"name": "good-feed", "url": "https://feeds.example.com/rss.xml", "scope_type": "market"})
         bad = self.service.create_source({"name": "bad-feed", "url": "https://bad.example.com/rss.xml", "scope_type": "market"})
 
+        request_kwargs = []
+
         def fake_get(url, **kwargs):
-            self.assertNotIn("trust_env", kwargs)
-            self.assertEqual(kwargs.get("proxies"), {"http": None, "https": None})
+            request_kwargs.append(dict(kwargs))
             if "bad" in url:
                 raise RuntimeError("network token=secret should not leak")
             return self._mock_response()
@@ -228,6 +229,10 @@ class IntelligenceServiceTestCase(unittest.TestCase):
             side_effect=fake_get,
         ):
             result = self.service.fetch_enabled_sources()
+        self.assertEqual(len(request_kwargs), 2)
+        for kwargs in request_kwargs:
+            self.assertNotIn("trust_env", kwargs)
+            self.assertEqual(kwargs.get("proxies"), {"http": None, "https": None})
         self.assertEqual(result["source_count"], 2)
         self.assertEqual(result["saved_count"], 2)
         failures = [item for item in result["results"] if not item["ok"]]
@@ -235,6 +240,37 @@ class IntelligenceServiceTestCase(unittest.TestCase):
         self.assertEqual(failures[0]["source_id"], bad["id"])
         self.assertNotIn("token=secret", failures[0]["error"])
         self.assertNotIn("secret", failures[0]["error"])
+
+    def test_request_proxy_defaults_are_not_mutated_by_requests_environment_merge(self) -> None:
+        source = self.service.create_source({
+            "name": "proxy-isolation-feed",
+            "url": "https://feeds.example.com/rss.xml",
+            "scope_type": "market",
+        })
+        observed_proxies = []
+
+        def fake_get(url, **kwargs):
+            observed_proxies.append(dict(kwargs["proxies"]))
+            with patch.dict(os.environ, {"SOCKS_PROXY": "http://127.0.0.1:7890"}):
+                requests.Session().merge_environment_settings(
+                    url, kwargs["proxies"], None, None, None
+                )
+            return self._mock_response()
+
+        with patch.object(self.service, "_validate_url"), patch(
+            "src.services.intelligence_service.requests.get",
+            side_effect=fake_get,
+        ):
+            self.service.fetch_source(source["id"])
+            self.service.fetch_source(source["id"])
+
+        self.assertEqual(
+            observed_proxies,
+            [
+                {"http": None, "https": None},
+                {"http": None, "https": None},
+            ],
+        )
 
     def test_fetch_enabled_sources_paginates_all_enabled_sources(self) -> None:
         for index in range(150):

@@ -19,6 +19,7 @@ import logging
 import re
 import time
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Optional, Tuple, List, Dict, Any
 
 import pandas as pd
@@ -33,6 +34,12 @@ from tenacity import (
 
 from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS,is_bse_code, is_st_stock, is_kc_cy_stock, normalize_stock_code, _is_hk_market
 from .realtime_types import UnifiedRealtimeQuote, ChipDistribution
+from .sector_rankings_contract import normalize_sector_rankings
+from .tushare_fund_daily import fetch_tushare_fund_daily
+from .tushare_exact_daily import TushareExactDailyMixin
+from .tushare_endpoint import _resolve_tushare_http_url
+from .tushare_fund_adj import TushareFundFactorsMixin
+from .tushare_fund_dividend_reader import TushareFundDividendsMixin
 from src.config import get_config
 import os
 from zoneinfo import ZoneInfo
@@ -72,28 +79,6 @@ def _is_us_code(stock_code: str) -> bool:
     return bool(re.match(r'^[A-Z]{1,5}(\.[A-Z])?$', code))
 
 
-def _resolve_tushare_http_url() -> Optional[str]:
-    """读取 ``TUSHARE_HTTP_URL`` 环境变量并做基本校验。
-
-    - 留空 / 仅空白 / 未设置 → 返回 ``None``，调用方继续走官方默认地址。
-    - 设置则去掉首尾空白后返回，并校验必须是 ``http://`` 或 ``https://`` 前缀，
-      避免有人误填成纯主机名（如 ``api.tushare.pro``）导致 ``requests`` 把它
-      当成相对路径请求失败。
-    """
-    raw = os.getenv("TUSHARE_HTTP_URL")
-    if not raw:
-        return None
-    url = raw.strip()
-    if not url:
-        return None
-    if not (url.startswith("http://") or url.startswith("https://")):
-        raise ValueError(
-            "TUSHARE_HTTP_URL 必须以 http:// 或 https:// 开头，"
-            f"当前值为 {url!r}"
-        )
-    return url
-
-
 class _TushareHttpClient:
     """Lightweight Tushare Pro client that does not require the tushare SDK."""
 
@@ -109,11 +94,14 @@ class _TushareHttpClient:
             "params": kwargs,
             "fields": fields,
         }
-        res = requests.post(self._api_url, json=req_params, timeout=self._timeout)
+        request_options = {"timeout": self._timeout}
+        if getattr(self, "_source_pinned", False):
+            request_options["allow_redirects"] = False
+        res = requests.post(self._api_url, json=req_params, **request_options)
         if res.status_code != 200:
             raise Exception(f"Tushare API HTTP {res.status_code}")
 
-        result = _json.loads(res.text)
+        result = _json.loads(res.text, parse_float=Decimal if api_name in {"fund_adj", "fund_div"} else float)
         if result.get("code") != 0:
             raise Exception(result.get("msg") or f"Tushare API error code {result.get('code')}")
 
@@ -132,7 +120,7 @@ class _TushareHttpClient:
         return caller
 
 
-class TushareFetcher(BaseFetcher):
+class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFundDividendsMixin, BaseFetcher):
     """
     Tushare Pro 数据源实现
     
@@ -158,6 +146,7 @@ class TushareFetcher(BaseFetcher):
         *,
         token: Optional[str] = None,
         request_timeout: int = 30,
+        http_url: Optional[str] = None,
     ):
         """
         初始化 TushareFetcher
@@ -172,6 +161,7 @@ class TushareFetcher(BaseFetcher):
         self._explicit_token = token is not None
         self._token = (token or "").strip() if self._explicit_token else None
         self._request_timeout = int(request_timeout)
+        self._http_url = http_url
         self.date_list: Optional[List[str]] = None  # 交易日列表缓存（倒序，最新日期在前）
         self._date_list_end: Optional[str] = None  # 缓存对应的截止日期，用于跨日刷新
 
@@ -215,9 +205,9 @@ class TushareFetcher(BaseFetcher):
         端点，便于在网络无法直达 ``api.tushare.pro`` 时切换镜像/网关。
         留空或不设置则保持官方默认地址，行为与历史版本完全一致。
         """
-        api_url = _resolve_tushare_http_url()
+        api_url = self._http_url if self._http_url is not None else _resolve_tushare_http_url()
         if api_url:
-            logger.info("Tushare 使用自定义接入地址: %s", api_url)
+            logger.debug("Tushare 使用已配置接入地址")
             client = _TushareHttpClient(
                 token=token,
                 timeout=self._request_timeout,
@@ -502,9 +492,6 @@ class TushareFetcher(BaseFetcher):
         if _is_us_code(stock_code):
             raise DataFetchError(f"TushareFetcher 不支持美股 {stock_code}，请使用 AkshareFetcher 或 YfinanceFetcher")
         
-        # Rate-limit check
-        self._check_rate_limit()
-        
         is_hk = _is_hk_market(stock_code)
          # 判断是否为 ETF / 港股，以选择不同接口
         is_etf = _is_etf_code(stock_code)
@@ -525,6 +512,7 @@ class TushareFetcher(BaseFetcher):
         
         try:
             if is_hk:
+                self._check_rate_limit()
                 # 港股使用 hk_daily 接口
                 df = self._api.hk_daily(
                     ts_code=ts_code,
@@ -532,13 +520,10 @@ class TushareFetcher(BaseFetcher):
                     end_date=ts_end,
                 )
             elif is_etf:
-                # ETF uses fund_daily interface
-                df = self._api.fund_daily(
-                    ts_code=ts_code,
-                    start_date=ts_start,
-                    end_date=ts_end,
-                )
+                df = fetch_tushare_fund_daily(self._api, ts_code, ts_start, ts_end,
+                                             before_call=self._check_rate_limit)
             else:
+                self._check_rate_limit()
                 # Regular A-share stocks use daily interface
                 df = self._api.daily(
                     ts_code=ts_code,
@@ -829,6 +814,7 @@ class TushareFetcher(BaseFetcher):
             return None
 
         from .realtime_types import safe_float
+        from .tushare_index_daily_rows import select_latest_index_daily_row
 
         # 指数映射：Tushare代码 -> 名称
         indices_map = {
@@ -856,22 +842,18 @@ class TushareFetcher(BaseFetcher):
             for ts_code, name in indices_map.items():
                 try:
                     df = self._api.index_daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
-                    if df is not None and not df.empty:
-                        row = df.iloc[0] # 最新一天
-
-                        current = safe_float(row['close'])
-                        prev_close = safe_float(row['pre_close'])
-
+                    row = select_latest_index_daily_row(df, ts_code, start_date, end_date)
+                    if row is not None:
                         results.append({
                             'code': ts_code.split('.')[0], # 兼容 sh000001 格式需转换，这里保持纯数字
                             'name': name,
-                            'current': current,
+                            'current': safe_float(row['close']),
                             'change': safe_float(row['change']),
                             'change_pct': safe_float(row['pct_chg']),
                             'open': safe_float(row['open']),
                             'high': safe_float(row['high']),
                             'low': safe_float(row['low']),
-                            'prev_close': prev_close,
+                            'prev_close': safe_float(row['pre_close']),
                             'volume': safe_float(row['vol']),
                             'amount': safe_float(row['amount']) * 1000, # 千元转元
                             'amplitude': 0.0 # Tushare index_daily 不直接返回振幅
@@ -1100,63 +1082,54 @@ class TushareFetcher(BaseFetcher):
     def get_sector_rankings(self, n: int = 5) -> Optional[Tuple[list, list]]:
         """
         获取行业板块涨跌榜 (Tushare Pro)
-        
+
         数据源优先级：
         1. 同花顺接口 (ts.pro_api().moneyflow_ind_ths)
         2. 东财接口 (ts.pro_api().moneyflow_ind_dc)
         注意：每个接口的行业分类和板块定义不同，会导致结果两者不一致
         """
-        def _get_rank_top_n(df: pd.DataFrame, change_col: str, industry_name: str, n: int) -> Tuple[list, list]:
-            df[change_col] = pd.to_numeric(df[change_col], errors='coerce')
-            df = df.dropna(subset=[change_col])
-
-            # 涨幅前n
-            top = df.nlargest(n, change_col)
-            top_sectors = [
-                {'name': row[industry_name], 'change_pct': row[change_col]}
-                for _, row in top.iterrows()
-            ]
-
-            bottom = df.nsmallest(n, change_col)
-            bottom_sectors = [
-                {'name': row[industry_name], 'change_pct': row[change_col]}
-                for _, row in bottom.iterrows()
-            ]
-            return top_sectors, bottom_sectors
-
-        # 15:30之后才有当天数据
-        start_date = self.get_trade_time(early_time='00:00', late_time='15:30')
+        start_date = self.get_trade_time(early_time="00:00", late_time="15:30")
         if not start_date:
             return None
 
-        # 优先同花顺接口
         logger.info("[Tushare] ts.pro_api().moneyflow_ind_ths 获取板块排行(同花顺)...")
         try:
-            df = self._call_api_with_rate_limit("moneyflow_ind_ths", trade_date=start_date)
-            if df is not None and not df.empty:
-                change_col = 'pct_change'
-                name = 'industry'
-                if change_col in df.columns:
-                    return _get_rank_top_n(df, change_col, name, n)
+            result = normalize_sector_rankings(
+                self._call_api_with_rate_limit(
+                    "moneyflow_ind_ths",
+                    trade_date=start_date,
+                ),
+                name_column="industry",
+                change_column="pct_change",
+                source="tushare/ths:moneyflow_ind_ths",
+                n=n,
+            )
+            if result is not None:
+                return result
         except Exception as e:
             logger.warning(f"[Tushare] 获取同花顺行业板块涨跌榜失败: {e} 尝试东财接口")
 
-        # 同花顺接口失败，降级尝试东财接口
         logger.info("[Tushare] ts.pro_api().moneyflow_ind_dc 获取板块排行(东财)...")
         try:
-            df = self._call_api_with_rate_limit("moneyflow_ind_dc", trade_date=start_date)
-            if df is not None and not df.empty:
-                df = df[df['content_type'] == '行业']  # 过滤出行业板块
-                change_col = 'pct_change'
-                name = 'name'
-                if change_col in df.columns:
-                    return _get_rank_top_n(df, change_col, name, n)
+            frame = self._call_api_with_rate_limit(
+                "moneyflow_ind_dc",
+                trade_date=start_date,
+            )
+            if frame is None or frame.empty:
+                return None
+            if "content_type" not in frame.columns:
+                return None
+            frame = frame[frame["content_type"] == "行业"]
+            return normalize_sector_rankings(
+                frame,
+                name_column="name",
+                change_column="pct_change",
+                source="tushare/eastmoney:moneyflow_ind_dc",
+                n=n,
+            )
         except Exception as e:
             logger.warning(f"[Tushare] 获取东财行业板块涨跌榜失败: {e}")
             return None
-        
-        # 获取为空或者接口调用失败，返回 None
-        return None
     
     
 

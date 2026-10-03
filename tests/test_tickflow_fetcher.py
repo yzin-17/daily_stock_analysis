@@ -144,7 +144,7 @@ def _dated_daily_rows(start, periods, symbol="600519.SH"):
     )
 
 
-def _quote(symbol, *, last_price=11.0, prev_close=10.0, amount=1000.0, volume=100, name="", change_pct=0.1, amplitude=0.2, turnover_rate=0.03):
+def _quote(symbol, *, last_price=11.0, prev_close=10.0, amount=1000.0, volume=100, name="", change_pct=0.1, amplitude=0.2, turnover_rate=0.03, timestamp=1704153600000):
     ext = {"change_pct": change_pct, "amplitude": amplitude, "turnover_rate": turnover_rate}
     if name:
         ext["name"] = name
@@ -157,7 +157,7 @@ def _quote(symbol, *, last_price=11.0, prev_close=10.0, amount=1000.0, volume=10
         "low": 9.0,
         "volume": volume,
         "amount": amount,
-        "timestamp": 1704153600000,
+        "timestamp": timestamp,
         "ext": ext,
     }
 
@@ -355,6 +355,32 @@ class TestTickFlowFetcher(unittest.TestCase):
         self.assertEqual(data[0]["name"], "\u4e0a\u8bc1\u6307\u6570")
         self.assertAlmostEqual(data[0]["change_pct"], 10.0)
 
+        self.assertEqual(data[0]["source"], "tickflow:quotes.get:index")
+        self.assertEqual(data[0]["as_of"], "2024-01-02T00:00:00+00:00")
+        self.assertEqual(data[0]["price_unit"], "index_point")
+        self.assertEqual(data[0]["change_unit"], "index_point")
+        self.assertEqual(data[0]["change_pct_unit"], "percent")
+        self.assertEqual(data[0]["volume_unit"], "unknown")
+        self.assertEqual(data[0]["amount_unit"], "unknown")
+
+    def test_get_main_indices_rejects_duplicate_target_symbol(self):
+        symbols = ["000001.SH", "399001.SZ", "399006.SZ", "000688.SH", "000016.SH", "000300.SH"]
+        rows = [_quote(symbol, last_price=10, prev_close=9) for symbol in symbols]
+        rows.append(_quote("000001.SH", last_price=99, prev_close=9))
+        fetcher = TickFlowFetcher(api_key="sk-test")
+        fetcher._client = _FakeClient(symbols_data=rows)
+
+        self.assertIsNone(fetcher.get_main_indices(region="cn"))
+
+    def test_get_main_indices_rejects_missing_provider_timestamp(self):
+        symbols = ["000001.SH", "399001.SZ", "399006.SZ", "000688.SH", "000016.SH", "000300.SH"]
+        rows = [_quote(symbol, last_price=10, prev_close=9) for symbol in symbols]
+        rows[2]["timestamp"] = None
+        fetcher = TickFlowFetcher(api_key="sk-test")
+        fetcher._client = _FakeClient(symbols_data=rows)
+
+        self.assertIsNone(fetcher.get_main_indices(region="cn"))
+
     def test_get_market_stats_permission_failure_is_negative_cached(self):
         fetcher = TickFlowFetcher(api_key="sk-test")
         fetcher._client = _FakeClient(universe_data=_PermissionLikeError("universe forbidden"))
@@ -393,11 +419,39 @@ class TestTickFlowFetcher(unittest.TestCase):
         self.assertEqual(top[0]["name"], "轻工制造")
         self.assertAlmostEqual(top[0]["change_pct"], 3.0)
         self.assertEqual(top[0]["constituent_count"], 2)
+        self.assertEqual(
+            top[0]["source"],
+            "tickflow/sw1:universes.list+universes.batch+quotes.get",
+        )
+        self.assertEqual(top[0]["classification"], "SW1")
+        self.assertIsNone(top[0]["classification_version"])
+        self.assertEqual(top[0]["as_of"], "2024-01-02T00:00:00+00:00")
         self.assertEqual(bottom[0]["name"], "银行")
         self.assertAlmostEqual(bottom[0]["change_pct"], -1.0)
+        self.assertEqual(bottom[0]["as_of"], top[0]["as_of"])
         self.assertEqual(cached_top, top)
         self.assertEqual(cached_bottom, bottom)
         self.assertEqual(len(fetcher._client.quotes.calls), 1)
+
+    def test_get_sector_rankings_rejects_mixed_quote_timestamps(self):
+        universe_list = [
+            {"id": "CN_Equity_SW1_A", "name": "SW1轻工制造"},
+        ]
+        universe_batch = {
+            "CN_Equity_SW1_A": {"symbols": ["600103.SH", "002078.SZ"]},
+        }
+        quotes = [
+            _quote("600103.SH", change_pct=0.02, timestamp=1704153600000),
+            _quote("002078.SZ", change_pct=0.04, timestamp=1704153601000),
+        ]
+        fetcher = TickFlowFetcher(api_key="sk-test")
+        fetcher._client = _FakeClient(
+            universe_data=quotes,
+            universe_list=universe_list,
+            universe_batch=universe_batch,
+        )
+
+        self.assertIsNone(fetcher.get_sector_rankings(1))
 
     def test_capability_negative_cache_retries_after_ttl(self):
         fetcher = TickFlowFetcher(api_key="sk-test")

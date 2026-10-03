@@ -512,7 +512,7 @@ def apply_prompt_cache_hints(
     config: Any,
 ) -> PromptCacheHintResult:
     """Return request kwargs with safe provider-specific cache hints applied."""
-    new_kwargs = copy.deepcopy(dict(call_kwargs))
+    new_kwargs = copy.deepcopy({key: value for key, value in call_kwargs.items() if key != "prompt_cache_key"})
     caps = resolve_provider_cache_caps(route_context)
     diagnostics_level = normalize_prompt_cache_diagnostics_level(
         getattr(config, "llm_prompt_cache_diagnostics_level", "off")

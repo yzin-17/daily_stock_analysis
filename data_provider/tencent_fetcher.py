@@ -17,6 +17,7 @@ except ImportError:  # pragma: no cover - dependency is present in supported ins
     xcals = None
 
 from .base import BaseFetcher, DataFetchError, STANDARD_COLUMNS, normalize_stock_code, is_bse_code
+from .tencent_native_daily import fetch_tencent_native_daily
 
 logger = logging.getLogger(__name__)
 
@@ -112,13 +113,20 @@ class TencentFetcher(BaseFetcher):
         end_date: Optional[str] = None,
         days: int = 30,
         adjustment: Optional[str] = None,
+        asset_type: Optional[str] = None,
         timeout_seconds: float = 4.5,
     ) -> pd.DataFrame:
         """Fetch one exact Tencent adjustment mode for the ThesisLedger route target."""
         if str(upstream_source or "").strip().lower() != "tencent":
             raise DataFetchError(f"TencentFetcher unsupported source: {upstream_source}")
-        if adjustment not in (None, "none", "qfq"):
+        normalized_asset_type = str(asset_type or "").strip().upper()
+        if adjustment not in (None, "none", "qfq", "hfq"):
             raise DataFetchError(f"TencentFetcher unsupported adjustment: {adjustment}")
+        if adjustment == "hfq" and normalized_asset_type != "ETF":
+            raise DataFetchError("TencentFetcher hfq adjustment is available only for ETF routes")
+        symbol = _to_tencent_symbol(stock_code)
+        if not symbol or symbol.startswith("bj"):
+            raise DataFetchError(f"TencentFetcher unsupported stock code: {stock_code}")
         requested_adjustment = adjustment or "qfq"
         capped_history = start_date is None and days > _MAX_KLINE_BARS
         if end_date is None:
@@ -126,32 +134,22 @@ class TencentFetcher(BaseFetcher):
         if start_date is None:
             calendar_days = int(min(days, _MAX_KLINE_BARS) * 1.45) + 30
             start_date = (datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=calendar_days)).strftime("%Y-%m-%d")
-        raw = self._fetch_raw_data(
-            stock_code,
-            start_date,
-            end_date,
-            adjustment=requested_adjustment,
-            timeout_seconds=timeout_seconds,
+        raw, retrieval = fetch_tencent_native_daily(
+            symbol, start_date, end_date,
+            requested_adjustment, timeout_seconds,
         )
         if raw is None or raw.empty:
             raise DataFetchError(f"TencentFetcher returned no data for {stock_code}")
         normalized = self._normalize_data(raw, stock_code)
-        missing_amount = normalized["amount"].isna()
-        if missing_amount.any():
-            # Tencent's qfqday payload exposes OHLCV but omits historical
-            # turnover.  The ThesisLedger BarSeries contract requires a
-            # finite amount, so use the same deterministic close * volume
-            # normalization already used by the other volume-only adapters.
-            normalized.loc[missing_amount, "amount"] = (
-                normalized.loc[missing_amount, "close"]
-                * normalized.loc[missing_amount, "volume"]
+        if normalized["amount"].isna().any():
+            raise DataFetchError(
+                "TencentFetcher 精确日线缺少原生成交额，不能用收盘价乘成交量补值"
             )
         frame = self._calculate_indicators(self._clean_data(normalized))
         frame.attrs["upstream_source"] = "tencent"
         frame.attrs["has_more_before"] = capped_history
-        frame.attrs["amount_normalization"] = (
-            "close_times_volume" if missing_amount.any() else "provider"
-        )
+        frame.attrs["amount_normalization"] = "provider"
+        frame.attrs["tencentDailyRetrieval"] = retrieval
         return frame
 
     def _normalize_data(self, df: pd.DataFrame, stock_code: str) -> pd.DataFrame:

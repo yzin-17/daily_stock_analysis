@@ -328,7 +328,7 @@ def test_repeated_lowering_from_shared_input_does_not_cross_pollute_results():
     assert original["messages"][0]["content"] == "stable rules"
 
 
-def test_litellm_openai_prompt_cache_key_is_not_passed_through_without_verified_capture():
+def test_analyzer_router_removes_unverified_prompt_cache_key_on_wire():
     sanitized_env = os.environ.copy()
     for key in (
         "OPENAI_API_KEY",
@@ -351,12 +351,16 @@ def test_litellm_openai_prompt_cache_key_is_not_passed_through_without_verified_
         sanitized_env.pop(key, None)
     sanitized_env["NO_PROXY"] = "127.0.0.1,localhost"
     sanitized_env["no_proxy"] = "127.0.0.1,localhost"
+    sanitized_env["LLM_USAGE_HMAC_SECRET"] = "synthetic-cache-secret"
 
     script = textwrap.dedent(
         """
         import json
         import threading
+        from dataclasses import replace
         from http.server import BaseHTTPRequestHandler, HTTPServer
+        from types import SimpleNamespace
+        from unittest.mock import patch
 
         try:
             import litellm
@@ -364,31 +368,46 @@ def test_litellm_openai_prompt_cache_key_is_not_passed_through_without_verified_
             print("LITELLM_MISSING")
             raise SystemExit(77)
 
-        captured = {}
+        from src.analyzer import GeminiAnalyzer
+        from src.llm.provider_cache import PROVIDER_CACHE_REGISTRY
+
+        captured = []
         request_seen = threading.Event()
 
         class CaptureHandler(BaseHTTPRequestHandler):
             def do_POST(self):
                 length = int(self.headers.get("content-length", "0") or "0")
-                captured["body"] = json.loads(self.rfile.read(length).decode("utf-8"))
+                captured.append(json.loads(self.rfile.read(length).decode("utf-8")))
                 request_seen.set()
-                payload = {
-                    "id": "chatcmpl-test",
-                    "object": "chat.completion",
-                    "created": 0,
-                    "model": "test-model",
-                    "choices": [
-                        {
-                            "index": 0,
-                            "message": {"role": "assistant", "content": "ok"},
-                            "finish_reason": "stop",
-                        }
-                    ],
-                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-                }
-                response = json.dumps(payload).encode("utf-8")
+                if captured[-1].get("stream"):
+                    chunk = {
+                        "id": "chatcmpl-test",
+                        "object": "chat.completion.chunk",
+                        "created": 0,
+                        "model": "gpt-4o",
+                        "choices": [{"index": 0, "delta": {"content": "ok"}, "finish_reason": "stop"}],
+                    }
+                    response = ("data: " + json.dumps(chunk) + "\\n\\ndata: [DONE]\\n\\n").encode("utf-8")
+                    content_type = "text/event-stream"
+                else:
+                    payload = {
+                        "id": "chatcmpl-test",
+                        "object": "chat.completion",
+                        "created": 0,
+                        "model": "gpt-4o",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "message": {"role": "assistant", "content": "ok"},
+                                "finish_reason": "stop",
+                            }
+                        ],
+                        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                    }
+                    response = json.dumps(payload).encode("utf-8")
+                    content_type = "application/json"
                 self.send_response(200)
-                self.send_header("content-type", "application/json")
+                self.send_header("content-type", content_type)
                 self.send_header("content-length", str(len(response)))
                 self.end_headers()
                 self.wfile.write(response)
@@ -404,9 +423,10 @@ def test_litellm_openai_prompt_cache_key_is_not_passed_through_without_verified_
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
+            api_base = f"http://127.0.0.1:{server.server_port}/v1"
             litellm.completion(
-                model="openai/test-model",
-                api_base=f"http://127.0.0.1:{server.server_port}/v1",
+                model="openai/gpt-4o",
+                api_base=api_base,
                 api_key="sk-test",
                 messages=[{"role": "user", "content": "hello"}],
                 prompt_cache_key="cache-key",
@@ -416,11 +436,53 @@ def test_litellm_openai_prompt_cache_key_is_not_passed_through_without_verified_
             )
             if not request_seen.wait(timeout=10):
                 raise AssertionError("LiteLLM did not send request to local capture server")
+            config = SimpleNamespace(
+                litellm_model="openai/gpt-4o",
+                litellm_fallback_models=[],
+                llm_model_list=[{
+                    "model_name": "openai/gpt-4o",
+                    "litellm_params": {
+                        "model": "openai/gpt-4o",
+                        "api_base": api_base,
+                        "api_key": "sk-test",
+                        "prompt_cache_key": "configured-cache-key",
+                    },
+                }],
+                llm_temperature=0.7,
+                gemini_api_keys=[],
+                anthropic_api_keys=[],
+                openai_api_keys=[],
+                deepseek_api_keys=[],
+                openai_base_url=None,
+                llm_prompt_cache_hints_enabled=False,
+                llm_prompt_cache_diagnostics_level="off",
+                llm_prompt_cache_telemetry_enabled=True,
+            )
+            analyzer = GeminiAnalyzer(config=config)
+            result = analyzer._call_litellm(
+                "hello", {"max_tokens": 1, "temperature": 0.7},
+            )
+            config.llm_prompt_cache_hints_enabled = True
+            doc_only_result = analyzer._call_litellm(
+                "hello", {"max_tokens": 1, "temperature": 0.7},
+            )
+            stream_result = analyzer._call_litellm(
+                "hello", {"max_tokens": 1, "temperature": 0.7}, stream=True,
+            )
+            verified_caps = replace(PROVIDER_CACHE_REGISTRY[0], verification_status="verified")
+            with patch("src.llm.provider_cache.resolve_provider_cache_caps", return_value=verified_caps):
+                verified_result = analyzer._call_litellm(
+                    "hello", {"max_tokens": 1, "temperature": 0.7},
+                )
+            if any(item[0] != "ok" for item in (result, doc_only_result, stream_result, verified_result)):
+                raise AssertionError("Analyzer did not return the synthetic response")
+            if len(captured) != 5:
+                raise AssertionError(f"Analyzer request count mismatch: count={len(captured)}")
         finally:
             server.shutdown()
             thread.join(timeout=5)
 
-        print("CAPTURED_BODY=" + json.dumps(captured["body"], sort_keys=True))
+        print("CAPTURED_BODIES=" + json.dumps(captured, sort_keys=True))
         """
     )
 
@@ -429,7 +491,7 @@ def test_litellm_openai_prompt_cache_key_is_not_passed_through_without_verified_
         capture_output=True,
         env=sanitized_env,
         text=True,
-        timeout=15,
+        timeout=30,
     )
     if completed.returncode == 77:
         if "LOCAL_SOCKET_UNAVAILABLE" in completed.stdout + completed.stderr:
@@ -439,13 +501,20 @@ def test_litellm_openai_prompt_cache_key_is_not_passed_through_without_verified_
         pytest.skip("local socket creation is not permitted in this environment")
     assert completed.returncode == 0, completed.stdout + completed.stderr
     captured_line = next(
-        (line for line in completed.stdout.splitlines() if line.startswith("CAPTURED_BODY=")),
+        (line for line in completed.stdout.splitlines() if line.startswith("CAPTURED_BODIES=")),
         None,
     )
     assert captured_line, completed.stdout + completed.stderr
-    body = json.loads(captured_line.removeprefix("CAPTURED_BODY="))
-    assert body["messages"] == [{"role": "user", "content": "hello"}]
-    assert "prompt_cache_key" not in body
+    direct_body, disabled_body, doc_only_body, stream_body, verified_body = json.loads(
+        captured_line.removeprefix("CAPTURED_BODIES=")
+    )
+    assert direct_body["prompt_cache_key"] == "cache-key"
+    for body in (disabled_body, doc_only_body, stream_body):
+        assert body["messages"][-1] == {"role": "user", "content": "hello"}
+        assert "prompt_cache_key" not in body
+    assert stream_body["stream"] is True
+    assert len(verified_body["prompt_cache_key"]) == 64
+    assert verified_body["prompt_cache_key"] != "configured-cache-key"
 
 
 def test_domain_hmac_separates_prompt_cache_route_and_deepseek_domains(monkeypatch):

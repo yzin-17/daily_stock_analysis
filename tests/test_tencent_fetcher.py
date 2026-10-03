@@ -398,7 +398,7 @@ def test_thesis_ledger_exact_source_caps_open_ended_history_and_marks_more() -> 
         ]
     )
     fetcher = TencentFetcher()
-    with patch.object(fetcher, "_fetch_raw_data", return_value=raw) as request:
+    with patch("data_provider.tencent_fetcher.fetch_tencent_native_daily", return_value=(raw, {})) as request:
         frame = fetcher.get_daily_data_for_source(
             "510300",
             "tencent",
@@ -408,14 +408,14 @@ def test_thesis_ledger_exact_source_caps_open_ended_history_and_marks_more() -> 
             timeout_seconds=4.5,
         )
 
-    assert request.call_args.kwargs["timeout_seconds"] == 4.5
-    assert request.call_args.args[0] == "510300"
+    assert request.call_args.args[0] == "sh510300"
+    assert request.call_args.args[2:] == ("2026-05-10", "qfq", 4.5)
     assert frame.attrs["upstream_source"] == "tencent"
     assert frame.attrs["has_more_before"] is True
     assert frame.attrs["amount_normalization"] == "provider"
 
 
-def test_thesis_ledger_exact_source_normalizes_missing_tencent_amount() -> None:
+def test_thesis_ledger_exact_source_rejects_missing_tencent_amount() -> None:
     raw = pd.DataFrame(
         [
             {
@@ -430,26 +430,26 @@ def test_thesis_ledger_exact_source_normalizes_missing_tencent_amount() -> None:
         ]
     )
     fetcher = TencentFetcher()
-    with patch.object(fetcher, "_fetch_raw_data", return_value=raw):
-        frame = fetcher.get_daily_data_for_source(
-            "510300",
-            "tencent",
-            end_date="2026-05-10",
-            days=90,
-            adjustment="qfq",
-            timeout_seconds=4.5,
-        )
-
-    assert float(frame.iloc[0]["amount"]) == 4100.0
-    assert frame.attrs["amount_normalization"] == "close_times_volume"
+    with patch("data_provider.tencent_fetcher.fetch_tencent_native_daily", return_value=(raw, {})):
+        with pytest.raises(DataFetchError, match="原生成交额"):
+            fetcher.get_daily_data_for_source(
+                "510300",
+                "tencent",
+                end_date="2026-05-10",
+                days=90,
+                adjustment="qfq",
+                timeout_seconds=4.5,
+            )
 
 
 def test_tencent_exact_source_requests_raw_day_and_accepts_only_day_payload() -> None:
     payload = {
+        "code": 0,
+        "msg": "",
         "data": {
             "sz159516": {
                 "day": [
-                    ["2026-05-06", "1.000", "1.050", "1.060", "0.990", "1000", "105000"],
+                    ["2026-05-06", "1.000", "1.050", "1.060", "0.990", "1000", {}, "1.0", "10.5"],
                 ],
             }
         }
@@ -457,18 +457,19 @@ def test_tencent_exact_source_requests_raw_day_and_accepts_only_day_payload() ->
     captured = {}
 
     class FakeResponse:
+        def __init__(self, text):
+            self.text = text
+
         def raise_for_status(self) -> None:
             return None
-
-        def json(self):
-            return payload
 
     def fake_get(url, **kwargs):
         captured["url"] = url
         captured.update(kwargs)
-        return FakeResponse()
+        import json
+        return FakeResponse(kwargs["params"]["_var"] + "=" + json.dumps(payload))
 
-    with patch("data_provider.tencent_fetcher.requests.get", fake_get):
+    with patch("data_provider.tencent_native_daily.requests.get", fake_get):
         frame = TencentFetcher().get_daily_data_for_source(
             "159516.SZ",
             "tencent",
@@ -477,7 +478,7 @@ def test_tencent_exact_source_requests_raw_day_and_accepts_only_day_payload() ->
             adjustment="none",
         )
 
-    assert captured["params"]["param"].endswith(",none")
+    assert captured["params"]["param"].endswith(",640,")
     assert frame.attrs["upstream_source"] == "tencent"
     assert float(frame.iloc[0]["close"]) == 1.05
     assert float(frame.iloc[0]["amount"]) == 105000.0
@@ -485,22 +486,28 @@ def test_tencent_exact_source_requests_raw_day_and_accepts_only_day_payload() ->
 
 def test_tencent_raw_request_rejects_qfq_payload_shape() -> None:
     payload = {
+        "code": 0,
+        "msg": "",
         "data": {
             "sz159516": {
-                "qfqday": [["2026-05-06", "1.000", "1.050", "1.060", "0.990", "1000"]],
+                "qfqday": [["2026-05-06", "1.000", "1.050", "1.060", "0.990", "1000", {}, "1.0", "10.5"]],
             }
         }
     }
 
     class FakeResponse:
+        def __init__(self, text):
+            self.text = text
+
         def raise_for_status(self) -> None:
             return None
 
-        def json(self):
-            return payload
+    def fake_get(_url, **kwargs):
+        import json
+        return FakeResponse(kwargs["params"]["_var"] + "=" + json.dumps(payload))
 
-    with patch("data_provider.tencent_fetcher.requests.get", return_value=FakeResponse()):
-        with pytest.raises(DataFetchError, match="returned no data"):
+    with patch("data_provider.tencent_native_daily.requests.get", fake_get):
+        with pytest.raises(DataFetchError, match="口径或行结构"):
             TencentFetcher().get_daily_data_for_source(
                 "159516.SZ",
                 "tencent",

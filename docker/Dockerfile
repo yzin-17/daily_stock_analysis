@@ -69,6 +69,9 @@ COPY requirements.txt .
 # 安装 Python 依赖
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 
+# 基金扩展需显式加载；这里只验证安装与接口，不初始化账号或请求数据。
+RUN python -c "import importlib.metadata as m; import rqdatac, rqdatac_fund; assert m.version('rqdatac') == '3.7.1'; assert m.version('rqdatac-fund') == '1.0.44'; assert callable(rqdatac.fund.get_split) and callable(rqdatac.fund.get_dividend)"
+
 COPY --from=sdk-builder /wheels/*.whl /tmp/longbridge-wheels/
 RUN pip install --no-deps --force-reinstall /tmp/longbridge-wheels/*.whl && \
     python -c "from longbridge.openapi import OAuthBuilder; assert OAuthBuilder.THESIS_LEDGER_STORAGE_VERSION == 1" && \
@@ -81,6 +84,7 @@ COPY data_provider/ ./data_provider/
 COPY bot/ ./bot/
 COPY src/ ./src/
 COPY strategies/ ./strategies/
+COPY scripts/admit_nav_research.py ./scripts/admit_nav_research.py
 COPY --from=web-builder /app/static ./static/
 COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 

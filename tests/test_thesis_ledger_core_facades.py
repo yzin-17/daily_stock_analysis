@@ -7,7 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.thesis_ledger import router
+from api.thesis_ledger import router_v3
 from src.services.thesis_ledger_control import PROVIDER_MANIFESTS, ThesisLedgerControlStore
 from src.services.thesis_ledger_provider_runtime import (
     ProviderExecution,
@@ -50,7 +50,7 @@ def _client(monkeypatch) -> TestClient:
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "test-token")
     monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "false")
     app = FastAPI()
-    app.include_router(router, prefix="/api/v1")
+    app.include_router(router_v3, prefix="/api/v3")
     return TestClient(app)
 
 
@@ -60,28 +60,6 @@ class _CoreGateway:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, dict]] = []
         self.quote_value = _Quote()
-        self.bars_value = pd.DataFrame(
-            [
-                {
-                    "date": "2025-01-01",
-                    "open": 99.0,
-                    "high": 102.0,
-                    "low": 98.0,
-                    "close": 100.0,
-                    "volume": 1000.0,
-                    "amount": 100000.0,
-                },
-                {
-                    "date": "2025-01-02",
-                    "open": 100.0,
-                    "high": 103.0,
-                    "low": 99.0,
-                    "close": 101.0,
-                    "volume": 1100.0,
-                    "amount": 110000.0,
-                },
-            ]
-        )
         self.nav_value = pd.DataFrame(
             [{"日期": "2025-01-02", "单位净值": 1.2}]
         )
@@ -113,11 +91,6 @@ class _CoreGateway:
         """返回 fallback Quote。"""
         self.calls.append(("quote", symbol, kwargs))
         return self._result("REALTIME_QUOTE", symbol, self.quote_value)
-
-    def bars(self, symbol: str, **kwargs):
-        """返回完整 fallback Bars 序列。"""
-        self.calls.append(("bars", symbol, kwargs))
-        return self._result("DAILY_BAR", symbol, self.bars_value)
 
     def fund_nav(self, symbol: str, **kwargs):
         """返回 fallback Fund NAV。"""
@@ -156,24 +129,16 @@ def test_core_facades_use_gateway_and_preserve_wire_provenance(monkeypatch):
         "x-request-id": "core-success-request",
     }
 
-    quote = client.get("/api/v1/thesis-ledger/market/quote?symbol=600519.SH", headers=headers)
-    bars = client.get(
-        "/api/v1/thesis-ledger/market/bars?symbol=600519.SH&start=2025-01-01&end=2025-01-02&limit=2",
-        headers=headers,
-    )
-    nav = client.get("/api/v1/thesis-ledger/market/fund-nav?symbol=000001.OF", headers=headers)
+    quote = client.get("/api/v3/thesis-ledger/market/quote?symbol=600519.SH", headers=headers)
+    nav = client.get("/api/v3/thesis-ledger/market/fund-nav?symbol=000001.OF", headers=headers)
     history = client.get(
-        "/api/v1/thesis-ledger/market/fund-nav/history?symbol=000001.OF&limit=2",
+        "/api/v3/thesis-ledger/market/fund-nav/history?symbol=000001.OF&limit=2",
         headers=headers,
     )
 
     assert quote.status_code == 200
     assert quote.json()["provider"] == "efinance"
     assert quote.json()["fallbackUsed"] is True
-    assert bars.status_code == 200
-    assert len(bars.json()) == 2
-    assert {row["provider"] for row in bars.json()} == {"efinance"}
-    assert {row["fallbackUsed"] for row in bars.json()} == {True}
     assert nav.status_code == 200
     assert nav.json()["provider"] == "efinance"
     assert nav.json()["fallbackUsed"] is True
@@ -183,50 +148,19 @@ def test_core_facades_use_gateway_and_preserve_wire_provenance(monkeypatch):
     assert {row["fallbackUsed"] for row in history.json()} == {True}
     assert [call[0] for call in gateway.calls] == [
         "quote",
-        "bars",
         "fund_nav",
         "fund_nav_history",
     ]
-    bars_call = next(call for call in gateway.calls if call[0] == "bars")
-    assert bars_call[2]["start"] == "2025-01-01"
-    assert bars_call[2]["end"] == "2025-01-02"
-    assert bars_call[2]["limit"] == 2
 
 
-def test_indicator_and_chip_facades_use_gateway_without_native_manager(monkeypatch):
-    """Indicator/Chip 必须走 gateway，且保留 Bar/摘要的实际 provenance。"""
+def test_chip_facade_uses_gateway_without_native_manager(monkeypatch):
+    """Chip 必须走 gateway，且保留摘要的实际 provenance。"""
     client = _client(monkeypatch)
     gateway = _CoreGateway()
 
     import src.services.thesis_ledger_provider_runtime as runtime_module
 
     monkeypatch.setattr(runtime_module, "get_thesis_ledger_data_gateway", lambda: gateway)
-
-    class _Analysis:
-        """提供指标 facade 所需的确定性分析结果。"""
-
-        ma5 = 100.0
-        ma10 = 99.0
-        ma20 = 98.0
-        ma60 = 97.0
-        macd_dif = 1.0
-        macd_dea = 0.5
-        macd_bar = 0.5
-        rsi_6 = 55.0
-        rsi_12 = 54.0
-        rsi_24 = 53.0
-
-    import src.stock_analyzer as stock_analyzer
-
-    class _Analyzer(stock_analyzer.StockTrendAnalyzer):
-        """保留既有计算方法，仅替换 scalar 分析断言。"""
-
-        def analyze(self, frame, symbol):
-            assert not frame.empty
-            assert symbol == "600519.SH"
-            return _Analysis()
-
-    monkeypatch.setattr(stock_analyzer, "StockTrendAnalyzer", _Analyzer)
 
     import api.thesis_ledger as contract
 
@@ -241,40 +175,13 @@ def test_indicator_and_chip_facades_use_gateway_without_native_manager(monkeypat
         "x-request-id": "derived-request",
     }
 
-    indicator = client.get(
-        "/api/v1/thesis-ledger/market/indicators/MA?symbol=600519.SH",
-        headers=headers,
-    )
-    chip = client.get("/api/v1/thesis-ledger/market/chip?symbol=600519.SH", headers=headers)
+    chip = client.get("/api/v3/thesis-ledger/market/chip?symbol=600519.SH", headers=headers)
 
-    assert indicator.status_code == 200
-    assert indicator.json()["provider"] == "efinance"
-    assert indicator.json()["fallbackUsed"] is True
-    assert len(indicator.json()["points"]) == 2
-    assert indicator.json()["points"][0]["values"]["ma5"] is None
-    assert len(indicator.json()["points"][0]["inputFingerprint"]) == 24
-    assert indicator.json()["inputProvenance"]["inputFingerprint"]
     assert chip.status_code == 200
     assert chip.json()["provider"] == "efinance"
     assert chip.json()["fallbackUsed"] is True
-    assert [call[0] for call in gateway.calls[-2:]] == ["bars", "chip_summary"]
-    assert gateway.calls[-2][2]["request_id"] == "derived-request"
-    assert gateway.calls[-1][2]["request_id"] == "derived-request"
-
-    bars = client.get(
-        "/api/v1/thesis-ledger/market/bars?symbol=600519.SH&limit=2",
-        headers=headers,
-    )
-    assert bars.status_code == 200
-    assert bars.json()[0]["inputFingerprint"] == indicator.json()["points"][0]["inputFingerprint"]
-
-    unsupported_window = client.get(
-        "/api/v1/thesis-ledger/market/indicators/MACD?symbol=600519.SH"
-        '&limit=90&parameters={"fast":100,"slow":200,"signal":200}',
-        headers=headers,
-    )
-    assert unsupported_window.status_code == 422
-    assert unsupported_window.json()["detail"]["code"] == "invalid_request"
+    assert [call[0] for call in gateway.calls] == ["chip_summary"]
+    assert gateway.calls[0][2]["request_id"] == "derived-request"
 
 
 def test_core_facades_map_no_eligible_gateway_error_to_stable_contract_error(monkeypatch):
@@ -297,10 +204,6 @@ def test_core_facades_map_no_eligible_gateway_error_to_stable_contract_error(mon
             """模拟 Quote 无可用 Provider。"""
             return self._raise("REALTIME_QUOTE", symbol, kwargs["request_id"])
 
-        def bars(self, symbol, **kwargs):
-            """模拟 Bars 无可用 Provider。"""
-            return self._raise("DAILY_BAR", symbol, kwargs["request_id"])
-
         def fund_nav(self, symbol, **kwargs):
             """模拟 Fund NAV 无可用 Provider。"""
             return self._raise("FUND_NAV", symbol, kwargs["request_id"])
@@ -321,16 +224,15 @@ def test_core_facades_map_no_eligible_gateway_error_to_stable_contract_error(mon
         "x-request-id": "known-core-request",
     }
     paths = (
-        "/api/v1/thesis-ledger/market/quote?symbol=600519.SH",
-        "/api/v1/thesis-ledger/market/bars?symbol=600519.SH",
-        "/api/v1/thesis-ledger/market/fund-nav?symbol=000001.OF",
-        "/api/v1/thesis-ledger/market/fund-nav/history?symbol=000001.OF",
-        "/api/v1/thesis-ledger/market/chip?symbol=600519.SH",
+        "/api/v3/thesis-ledger/market/quote?symbol=600519.SH",
+        "/api/v3/thesis-ledger/market/fund-nav?symbol=000001.OF",
+        "/api/v3/thesis-ledger/market/fund-nav/history?symbol=000001.OF",
+        "/api/v3/thesis-ledger/market/chip?symbol=600519.SH",
     )
 
     responses = [client.get(path, headers=headers) for path in paths]
 
-    assert [response.status_code for response in responses] == [503, 503, 503, 503, 503]
+    assert [response.status_code for response in responses] == [503, 503, 503, 503]
     assert {response.json()["detail"]["code"] for response in responses} == {
         "no_eligible_provider"
     }
@@ -355,15 +257,20 @@ def _policy_store_with_provider_state(tmp_path, *, enabled=True, circuit="closed
             circuit=circuit,
             consecutive_failures=3,
             error_code="transient_failure",
+            upstream_source="eastmoney",
         )
-    store.apply_policy(
+    store.apply_policy_v3(
         {
-            "contractVersion": 1,
+            "contractVersion": 3,
             "consumer": "thesis-ledger",
             "requestId": "state-test",
             "revision": 1,
             "enabled": True,
-            "routes": {"REALTIME_QUOTE": {"STOCK": ["akshare"]}},
+            "routes": [{
+                "key": {"kind": "data", "market": "CN", "assetType": "STOCK",
+                        "capability": "REALTIME_QUOTE"},
+                "targets": [{"providerId": "akshare", "upstreamSource": "eastmoney"}],
+            }],
         }
     )
     return store
@@ -415,14 +322,18 @@ def test_gateway_does_not_invoke_unconfigured_provider(tmp_path, monkeypatch):
 
     monkeypatch.setitem(PROVIDER_MANIFESTS["akshare"], "requiresCredential", True)
     store = ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db"))
-    store.apply_policy(
+    store.apply_policy_v3(
         {
-            "contractVersion": 1,
+            "contractVersion": 3,
             "consumer": "thesis-ledger",
             "requestId": "unconfigured-test",
             "revision": 1,
             "enabled": True,
-            "routes": {"REALTIME_QUOTE": {"STOCK": ["akshare"]}},
+            "routes": [{
+                "key": {"kind": "data", "market": "CN", "assetType": "STOCK",
+                        "capability": "REALTIME_QUOTE"},
+                "targets": [{"providerId": "akshare", "upstreamSource": "eastmoney"}],
+            }],
         }
     )
 

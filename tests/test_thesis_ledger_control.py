@@ -1,17 +1,9 @@
-"""Control Contract V1 的原子性、权限和目录 fixture 回归。"""
-
-import sqlite3
-import threading
+"""当前 Control Contract 的权限、配置和目录 fixture 回归。"""
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.thesis_ledger import router
-from src.services.thesis_ledger_control import (
-    PROVIDER_MANIFESTS,
-    ControlContractError,
-    ThesisLedgerControlStore,
-)
+from api.thesis_ledger import router_v3
 
 
 def _client(monkeypatch, tmp_path) -> TestClient:
@@ -21,7 +13,7 @@ def _client(monkeypatch, tmp_path) -> TestClient:
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "0123456789abcdef-secret-key")
     monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "true")
     app = FastAPI()
-    app.include_router(router, prefix="/api/v1")
+    app.include_router(router_v3, prefix="/api/v3")
     return TestClient(app)
 
 
@@ -34,118 +26,29 @@ def _envelope(**values):
     }
 
 
-class _NoopLock:
-    """模拟独立 worker，避免进程内锁掩盖 SQLite 跨连接竞态。"""
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        return False
-
-
-class _CoordinatedControlStore(ThesisLedgerControlStore):
-    """在读取空状态后暂停，以稳定复现旧实现的跨连接竞态。"""
-
-    _schema_lock = _NoopLock()
-
-    def __init__(self, database_path, role, state_read, started, release):
-        self._role = role
-        self._state_read = state_read
-        self._started = started
-        self._release = release
-        super().__init__(database_path)
-
-    def apply_policy(self, payload):
-        self._started.set()
-        return super().apply_policy(payload)
-
-    def _current_state(self, connection):
-        current = super()._current_state(connection)
-        if current is None:
-            self._state_read.set()
-            if not self._release.wait(timeout=5):
-                raise RuntimeError(f"{self._role} test worker timed out")
-        return current
-
-
-def _run_cross_connection_apply_race(tmp_path, lower_payload, upper_payload):
-    database_path = str(tmp_path / "policy-race.db")
-    lower_read = threading.Event()
-    upper_read = threading.Event()
-    lower_started = threading.Event()
-    upper_started = threading.Event()
-    lower_release = threading.Event()
-    upper_release = threading.Event()
-    lower_done = threading.Event()
-    upper_done = threading.Event()
-    lower = _CoordinatedControlStore(
-        database_path, "lower", lower_read, lower_started, lower_release
-    )
-    upper = _CoordinatedControlStore(
-        database_path, "upper", upper_read, upper_started, upper_release
-    )
-    results = {}
-
-    def invoke(role, store, payload, done):
-        try:
-            results[role] = store.apply_policy(payload)
-        except Exception as error:  # noqa: BLE001 - assertions inspect the contract error.
-            results[role] = error
-        finally:
-            done.set()
-
-    lower_thread = threading.Thread(
-        target=invoke, args=("lower", lower, lower_payload, lower_done)
-    )
-    upper_thread = threading.Thread(
-        target=invoke, args=("upper", upper, upper_payload, upper_done)
-    )
-    try:
-        lower_thread.start()
-        assert lower_started.wait(timeout=2)
-        assert lower_read.wait(timeout=2)
-        upper_thread.start()
-        assert upper_started.wait(timeout=2)
-
-        # 旧实现会在 BEGIN IMMEDIATE 之前读到空状态，此时先让 upper
-        # 提交，再放行 lower；修复后的实现会让 upper 阻塞在写锁上。
-        if upper_read.wait(timeout=2):
-            upper_release.set()
-            assert upper_done.wait(timeout=5)
-            lower_release.set()
-        else:
-            lower_release.set()
-            assert lower_done.wait(timeout=5)
-            upper_release.set()
-        assert lower_done.wait(timeout=5)
-        assert upper_done.wait(timeout=5)
-    finally:
-        lower_release.set()
-        upper_release.set()
-        lower_thread.join(timeout=5)
-        upper_thread.join(timeout=5)
-
-    assert not lower_thread.is_alive()
-    assert not upper_thread.is_alive()
-    projection = ThesisLedgerControlStore(database_path).policy_projection()
-    return results, projection
+def _provider_envelope(**values):
+    return {**_envelope(**values), "contractVersion": 3}
 
 
 def test_control_token_is_independent_and_handshake_is_versioned(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
-    response = client.post(
+    assert client.post(
         "/api/v1/thesis-ledger/control/handshake",
+        headers={"authorization": "Bearer control-token"},
+        json={**_envelope(supportedVersions=[3]), "contractVersion": 3},
+    ).status_code == 404
+    response = client.post(
+        "/api/v3/thesis-ledger/control/handshake",
         headers={"authorization": "Bearer data-token"},
-        json=_envelope(supportedVersions=[1]),
+        json={**_envelope(supportedVersions=[3]), "contractVersion": 3},
     )
     assert response.status_code == 401
     assert response.json()["detail"]["code"] == "unauthorized"
 
     response = client.post(
-        "/api/v1/thesis-ledger/control/handshake",
+        "/api/v3/thesis-ledger/control/handshake",
         headers={"authorization": "Bearer control-token"},
-        json=_envelope(supportedVersions=[1]),
+        json={**_envelope(supportedVersions=[3]), "contractVersion": 3},
     )
     assert response.status_code == 200
     assert response.json()["accepted"] is True
@@ -156,7 +59,7 @@ def test_data_routes_reject_missing_or_control_token(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     for headers in ({}, {"authorization": "Bearer control-token"}):
         response = client.get(
-            "/api/v1/thesis-ledger/market/quote?symbol=600519.SH",
+            "/api/v3/thesis-ledger/market/quote?symbol=600519.SH",
             headers=headers,
         )
         assert response.status_code == 401
@@ -166,7 +69,7 @@ def test_data_routes_reject_missing_or_control_token(monkeypatch, tmp_path):
 def test_fund_nav_history_is_ordered_and_uses_of_identity(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     response = client.get(
-        "/api/v1/thesis-ledger/market/fund-nav/history?symbol=000001&limit=5",
+        "/api/v3/thesis-ledger/market/fund-nav/history?symbol=000001&limit=5",
         headers={"authorization": "Bearer data-token"},
     )
     assert response.status_code == 200
@@ -182,82 +85,45 @@ def test_fund_holdings_returns_unscaled_disclosure_weights(monkeypatch, tmp_path
     """基金披露保留未披露仓位，不把已披露持仓归一到 100%。"""
     client = _client(monkeypatch, tmp_path)
     response = client.get(
-        "/api/v1/thesis-ledger/market/fund-holdings?symbol=000001",
+        "/api/v3/thesis-ledger/market/fund-holdings?symbol=000001",
         headers={"authorization": "Bearer data-token"},
     )
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["version"] == 3
     assert payload["fundSymbol"] == "000001.OF"
     assert payload["reportPeriod"] == "2024-Q4"
     assert sum(row["weight"] for row in payload["holdings"]) == 0.14
     assert payload["evidenceVersion"]
 
 
-def test_policy_apply_is_latest_wins_idempotent_and_atomic(monkeypatch, tmp_path):
+def test_policy_apply_rejects_old_contracts_before_writing(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     headers = {"authorization": "Bearer control-token"}
-    config = client.post(
-        "/api/v1/thesis-ledger/control/providers/akshare/config",
-        headers=headers,
-        json=_envelope(credential="fixture-secret", enabled=True, settings={}),
-    )
-    assert config.status_code == 200
-    assert config.json()["credentialConfigured"] is True
-    assert "fixture-secret" not in config.text
-
-    policy = _envelope(
-        revision=1,
-        enabled=True,
-        routes={"REALTIME_QUOTE": {"STOCK": ["akshare", "efinance"]}},
-    )
-    applied = client.post(
-        "/api/v1/thesis-ledger/control/policies/apply", headers=headers, json=policy
-    )
-    assert applied.status_code == 200
-    assert applied.json()["effective"]["sourceDesiredRevision"] == 1
-    assert applied.json()["effective"]["routeStatus"]["REALTIME_QUOTE"]["STOCK"][
-        "eligibleProviderIds"
-    ] == ["akshare", "efinance"]
-
-    repeated = client.post(
-        "/api/v1/thesis-ledger/control/policies/apply", headers=headers, json=policy
-    )
-    assert repeated.status_code == 200
-    assert repeated.json()["idempotent"] is True
-
-    conflict = client.post(
+    assert client.post(
         "/api/v1/thesis-ledger/control/policies/apply",
         headers=headers,
-        json={**policy, "enabled": False},
-    )
-    assert conflict.status_code == 422
-    assert conflict.json()["detail"]["code"] == "REVISION_CONFLICT"
-    assert "UNIQUE" not in conflict.text.upper()
-
-    stale = client.post(
-        "/api/v1/thesis-ledger/control/policies/apply",
-        headers=headers,
-        json={**policy, "revision": 0},
-    )
-    assert stale.status_code == 422
-    assert stale.json()["detail"]["code"] == "INVALID_REVISION"
-
-    invalid = client.post(
-        "/api/v1/thesis-ledger/control/policies/apply",
-        headers=headers,
-        json={
-            **policy,
-            "revision": 2,
-            "routes": {"REALTIME_QUOTE": {"ETF": ["tushare"]}},
-        },
-    )
-    assert invalid.status_code == 422
-    assert invalid.json()["detail"]["code"] == "UNSUPPORTED_ROUTE"
-    effective = client.get(
+        json=_envelope(revision=1, enabled=True, routes=[]),
+    ).status_code == 404
+    assert client.get(
         "/api/v1/thesis-ledger/control/policies/effective", headers=headers
+    ).status_code == 404
+    for policy in (
+        _envelope(revision=1, enabled=True, routes={}),
+        {**_envelope(revision=1, enabled=True, routes={}), "contractVersion": 2},
+    ):
+        rejected = client.post(
+            "/api/v3/thesis-ledger/control/policies/apply", headers=headers, json=policy
+        )
+        assert rejected.status_code == 422
+        assert rejected.json()["detail"]["code"] == "CONTROL_CONTRACT_UNSUPPORTED"
+        assert rejected.json()["detail"]["supportedVersions"] == [3]
+    effective = client.get(
+        "/api/v3/thesis-ledger/control/policies/effective?contractVersion=3", headers=headers
     )
-    assert effective.json()["projection"]["desired"]["revision"] == 1
+    assert effective.status_code == 200
+    assert effective.json()["projection"] is None
 
 
 def test_provider_config_patch_preserves_omitted_fields_and_defaults_new_rows(monkeypatch, tmp_path):
@@ -265,20 +131,20 @@ def test_provider_config_patch_preserves_omitted_fields_and_defaults_new_rows(mo
     headers = {"authorization": "Bearer control-token"}
 
     initial = client.post(
-        "/api/v1/thesis-ledger/control/providers/akshare/config",
+        "/api/v3/thesis-ledger/control/providers/tushare/config",
         headers=headers,
-        json=_envelope(
+        json=_provider_envelope(
             enabled=False,
             settings={"source": "custom"},
-            credential="stored-secret",
+            credentials={"method": "token", "values": {"token": "stored-secret"}},
         ),
     )
     assert initial.status_code == 200
 
     patch = client.post(
-        "/api/v1/thesis-ledger/control/providers/akshare/config",
+        "/api/v3/thesis-ledger/control/providers/tushare/config",
         headers=headers,
-        json=_envelope(enabled=True),
+        json=_provider_envelope(enabled=True),
     )
     assert patch.status_code == 200
     assert patch.json()["enabled"] is True
@@ -287,9 +153,9 @@ def test_provider_config_patch_preserves_omitted_fields_and_defaults_new_rows(mo
     assert "stored-secret" not in patch.text
 
     new_row = client.post(
-        "/api/v1/thesis-ledger/control/providers/efinance/config",
+        "/api/v3/thesis-ledger/control/providers/efinance/config",
         headers=headers,
-        json=_envelope(),
+        json=_provider_envelope(),
     )
     assert new_row.status_code == 200
     assert new_row.json()["enabled"] is True
@@ -301,25 +167,25 @@ def test_provider_config_credential_and_empty_patches_preserve_disabled_state(mo
     headers = {"authorization": "Bearer control-token"}
 
     initial = client.post(
-        "/api/v1/thesis-ledger/control/providers/akshare/config",
+        "/api/v3/thesis-ledger/control/providers/tushare/config",
         headers=headers,
-        json=_envelope(enabled=False, settings={"source": "custom"}),
+        json=_provider_envelope(enabled=False, settings={"source": "custom"}),
     )
     assert initial.status_code == 200
 
     credential_patch = client.post(
-        "/api/v1/thesis-ledger/control/providers/akshare/config",
+        "/api/v3/thesis-ledger/control/providers/tushare/config",
         headers=headers,
-        json=_envelope(credential="stored-secret"),
+        json=_provider_envelope(credentials={"method": "token", "values": {"token": "stored-secret"}}),
     )
     assert credential_patch.status_code == 200
     assert credential_patch.json()["enabled"] is False
     assert credential_patch.json()["settings"] == {"source": "custom"}
 
     empty_patch = client.post(
-        "/api/v1/thesis-ledger/control/providers/akshare/config",
+        "/api/v3/thesis-ledger/control/providers/tushare/config",
         headers=headers,
-        json=_envelope(),
+        json=_provider_envelope(),
     )
     assert empty_patch.status_code == 200
     assert empty_patch.json()["enabled"] is False
@@ -328,137 +194,94 @@ def test_provider_config_credential_and_empty_patches_preserve_disabled_state(mo
     assert "stored-secret" not in empty_patch.text
 
 
-def test_policy_apply_serializes_cross_connection_revision_writes(tmp_path):
-    results, projection = _run_cross_connection_apply_race(
-        tmp_path,
-        _envelope(revision=1, enabled=True, routes={}),
-        _envelope(revision=2, enabled=True, routes={}),
-    )
-
-    assert not isinstance(results["lower"], Exception)
-    assert not isinstance(results["upper"], Exception)
-    assert projection is not None
-    assert projection["desired"]["revision"] == 2
-    assert projection["effective"]["sourceDesiredRevision"] == 2
-
-
-def test_concurrent_same_revision_conflict_is_stable_control_error(tmp_path):
-    results, projection = _run_cross_connection_apply_race(
-        tmp_path,
-        _envelope(revision=1, enabled=True, routes={}),
-        _envelope(revision=1, enabled=False, routes={}),
-    )
-
-    successful = [value for value in results.values() if not isinstance(value, Exception)]
-    conflicts = [
-        value
-        for value in results.values()
-        if isinstance(value, ControlContractError) and value.code == "REVISION_CONFLICT"
-    ]
-    assert len(successful) == 1
-    assert len(conflicts) == 1
-    assert all(not isinstance(value, sqlite3.IntegrityError) for value in results.values())
-    assert projection is not None
-    assert projection["desired"]["revision"] == 1
-
-
-def test_chip_summary_manifest_route_is_explicit_and_unsupported_provider_is_atomic(
-    monkeypatch, tmp_path
-):
-    """CHIP_SUMMARY 只接受 manifest 声明的 Provider，非法 route 不改变旧策略。"""
+def test_provider_write_routes_reject_old_version_and_credential_alias(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     headers = {"authorization": "Bearer control-token"}
-    registry = client.get("/api/v1/thesis-ledger/control/providers", headers=headers)
+    for suffix in ("config", "test", "remove"):
+        old_url = f"/api/v1/thesis-ledger/control/providers/tushare/{suffix}"
+        current_url = f"/api/v3/thesis-ledger/control/providers/tushare/{suffix}"
+        assert client.post(old_url, headers=headers, json=_provider_envelope()).status_code == 404
+        rejected = client.post(current_url, headers=headers, json=_envelope())
+        assert rejected.status_code == 422
+        assert rejected.json()["detail"]["code"] == "CONTROL_CONTRACT_UNSUPPORTED"
+        alias = client.post(current_url, headers=headers, json=_provider_envelope(credential="old"))
+        assert alias.status_code == 422
+        assert alias.json()["detail"]["code"] == "INVALID_PROVIDER_CREDENTIALS"
+    registry = client.get("/api/v3/thesis-ledger/control/providers", headers=headers).json()
+    tushare = next(item for item in registry["providers"] if item["providerId"] == "tushare")
+    assert tushare["credentialConfigured"] is False
+
+
+def test_chip_summary_manifest_declares_exact_provider(monkeypatch, tmp_path):
+    """CHIP_SUMMARY 的 Provider 能力由目录声明。"""
+    client = _client(monkeypatch, tmp_path)
+    headers = {"authorization": "Bearer control-token"}
+    registry = client.get("/api/v3/thesis-ledger/control/providers", headers=headers)
     assert registry.status_code == 200
+    assert registry.json()["contractVersion"] == 3
+    assert client.get("/api/v1/thesis-ledger/control/providers", headers=headers).status_code == 404
     providers = {item["providerId"]: item for item in registry.json()["providers"]}
     assert providers["akshare"]["capabilities"]["CHIP_SUMMARY"] == ["STOCK"]
     assert "CHIP_SUMMARY" not in providers["efinance"]["capabilities"]
 
-    valid = client.post(
-        "/api/v1/thesis-ledger/control/policies/apply",
-        headers=headers,
-        json=_envelope(
-            revision=1,
-            enabled=True,
-            routes={"CHIP_SUMMARY": {"STOCK": ["akshare"]}},
-        ),
-    )
-    assert valid.status_code == 200
-    assert valid.json()["effective"]["routeStatus"]["CHIP_SUMMARY"]["STOCK"][
-        "eligibleProviderIds"
-    ] == ["akshare"]
 
-    invalid = client.post(
-        "/api/v1/thesis-ledger/control/policies/apply",
-        headers=headers,
-        json=_envelope(
-            revision=2,
-            enabled=True,
-            routes={"CHIP_SUMMARY": {"STOCK": ["efinance"]}},
-        ),
-    )
-    assert invalid.status_code == 422
-    assert invalid.json()["detail"]["code"] == "UNSUPPORTED_ROUTE"
-    all_providers = client.post(
-        "/api/v1/thesis-ledger/control/policies/apply",
-        headers=headers,
-        json=_envelope(
-            revision=2,
-            enabled=True,
-            routes={"DAILY_BAR": {"STOCK": list(PROVIDER_MANIFESTS)}},
-        ),
-    )
-    assert all_providers.status_code == 200
-    assert all_providers.json()["effective"]["routes"]["DAILY_BAR"]["STOCK"] == list(
-        PROVIDER_MANIFESTS
-    )
-    unknown = client.post(
-        "/api/v1/thesis-ledger/control/policies/apply",
-        headers=headers,
-        json=_envelope(
-            revision=3,
-            enabled=True,
-            routes={"CHIP_DISTRIBUTION": {"STOCK": ["akshare"]}},
-        ),
-    )
-    assert unknown.status_code == 422
-    assert unknown.json()["detail"]["code"] == "UNSUPPORTED_CAPABILITY"
-    effective = client.get(
-        "/api/v1/thesis-ledger/control/policies/effective", headers=headers
-    )
-    assert effective.json()["projection"]["desired"]["revision"] == 2
-
-
-def test_empty_routes_are_valid_and_disable_all_effective_routes(monkeypatch, tmp_path):
+def test_empty_v3_routes_are_valid(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     headers = {"authorization": "Bearer control-token"}
     response = client.post(
-        "/api/v1/thesis-ledger/control/policies/apply",
+        "/api/v3/thesis-ledger/control/policies/apply",
         headers=headers,
-        json=_envelope(revision=1, enabled=True, routes={}),
+        json={**_envelope(revision=1, enabled=True, routes=[]), "contractVersion": 3},
     )
     assert response.status_code == 200
-    assert response.json()["effective"]["routes"] == {}
+    assert response.json()["effective"]["routes"] == []
 
 
 def test_catalog_snapshot_delta_and_expired_cursor(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     headers = {"authorization": "Bearer data-token"}
-    snapshot = client.get("/api/v1/thesis-ledger/catalog/snapshot", headers=headers)
+    assert client.get("/api/v1/thesis-ledger/catalog/snapshot", headers=headers).status_code == 404
+    snapshot = client.get("/api/v3/thesis-ledger/catalog/snapshot", headers=headers)
     assert snapshot.status_code == 200
     payload = snapshot.json()
     assert payload["complete"] is True
     assert payload["generation"] == 1
     assert payload["checksum"]
+    assert payload["contractVersion"] == 3
+
+    control_headers = {"authorization": "Bearer control-token"}
+    ack_body = {
+        "contractVersion": 3,
+        "consumer": "thesis-ledger",
+        "requestId": "catalog-ack-test",
+        "generation": payload["generation"],
+        "checksum": payload["checksum"],
+    }
+    assert client.post(
+        "/api/v1/thesis-ledger/control/catalog/ack",
+        headers=control_headers, json=ack_body,
+    ).status_code == 404
+    rejected = client.post(
+        "/api/v3/thesis-ledger/control/catalog/ack",
+        headers=control_headers, json={**ack_body, "contractVersion": 1},
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"]["code"] == "CONTROL_CONTRACT_UNSUPPORTED"
+    accepted = client.post(
+        "/api/v3/thesis-ledger/control/catalog/ack",
+        headers=control_headers, json=ack_body,
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["acknowledged"] is True
 
     delta = client.get(
-        f"/api/v1/thesis-ledger/catalog/delta?cursor={payload['cursor']}", headers=headers
+        f"/api/v3/thesis-ledger/catalog/delta?cursor={payload['cursor']}", headers=headers
     )
     assert delta.status_code == 200
     assert delta.json()["items"] == []
 
     expired = client.get(
-        "/api/v1/thesis-ledger/catalog/delta?cursor=generation%3A999", headers=headers
+        "/api/v3/thesis-ledger/catalog/delta?cursor=generation%3A999", headers=headers
     )
     assert expired.status_code == 409
     assert expired.json()["detail"]["code"] == "CATALOG_CURSOR_EXPIRED"
@@ -468,9 +291,9 @@ def test_capability_smoke_does_not_change_policy(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     headers = {"authorization": "Bearer control-token"}
     response = client.post(
-        "/api/v1/thesis-ledger/control/providers/akshare/test",
+        "/api/v3/thesis-ledger/control/providers/akshare/test",
         headers=headers,
-        json=_envelope(capabilities=["REALTIME_QUOTE"]),
+        json=_provider_envelope(capabilities=["REALTIME_QUOTE"]),
     )
     assert response.status_code == 200
     assert response.json()["status"] == "degraded"
@@ -482,7 +305,7 @@ def test_capability_smoke_does_not_change_policy(monkeypatch, tmp_path):
     assert response.json()["capabilityResults"]["FUND_HOLDINGS"]["attempted"] is False
     assert response.json()["capabilityResults"]["CHIP_SUMMARY"]["status"] == "unavailable"
     assert response.json()["capabilityResults"]["CHIP_SUMMARY"]["attempted"] is False
-    registry = client.get("/api/v1/thesis-ledger/control/providers", headers=headers)
+    registry = client.get("/api/v3/thesis-ledger/control/providers", headers=headers)
     assert registry.json()["providers"][0]["credentialConfigured"] is False
 
 
@@ -491,9 +314,9 @@ def test_provider_test_uses_in_memory_structured_draft_without_persisting(monkey
     monkeypatch.delenv("THESIS_LEDGER_FIXTURE_MODE", raising=False)
     headers = {"authorization": "Bearer control-token"}
     saved = client.post(
-        "/api/v1/thesis-ledger/control/providers/tushare/config",
+        "/api/v3/thesis-ledger/control/providers/tushare/config",
         headers=headers,
-        json=_envelope(credentials={"method": "token", "values": {"token": "page-token"}}),
+        json=_provider_envelope(credentials={"method": "token", "values": {"token": "page-token"}}),
     )
     assert saved.status_code == 200
     calls = []
@@ -508,9 +331,9 @@ def test_provider_test_uses_in_memory_structured_draft_without_persisting(monkey
         lambda: _Runtime(),
     )
     response = client.post(
-        "/api/v1/thesis-ledger/control/providers/tushare/test",
+        "/api/v3/thesis-ledger/control/providers/tushare/test",
         headers=headers,
-        json=_envelope(credentials={"method": "token", "values": {"token": ""}}),
+        json=_provider_envelope(credentials={"method": "token", "values": {"token": ""}}),
     )
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
@@ -521,14 +344,14 @@ def test_provider_test_uses_in_memory_structured_draft_without_persisting(monkey
 
     calls.clear()
     saved_response = client.post(
-        "/api/v1/thesis-ledger/control/providers/tushare/test",
+        "/api/v3/thesis-ledger/control/providers/tushare/test",
         headers=headers,
-        json=_envelope(),
+        json=_provider_envelope(),
     )
     assert saved_response.status_code == 200
     assert calls
     assert all(draft_probe is False for _, _, _, draft_probe in calls)
-    assert client.get("/api/v1/thesis-ledger/control/providers", headers=headers).json()["providers"]
+    assert client.get("/api/v3/thesis-ledger/control/providers", headers=headers).json()["providers"]
 
 
 def test_provider_test_draft_does_not_merge_environment_credentials(monkeypatch, tmp_path):
@@ -538,9 +361,9 @@ def test_provider_test_draft_does_not_merge_environment_credentials(monkeypatch,
     )
     client = _client(monkeypatch, tmp_path)
     response = client.post(
-        "/api/v1/thesis-ledger/control/providers/tushare/test",
+        "/api/v3/thesis-ledger/control/providers/tushare/test",
         headers={"authorization": "Bearer control-token"},
-        json=_envelope(credentials={"method": "token", "values": {"token": ""}}),
+        json=_provider_envelope(credentials={"method": "token", "values": {"token": ""}}),
     )
 
     assert response.status_code == 422
@@ -551,18 +374,20 @@ def test_provider_removal_clears_runtime_config_but_keeps_tombstone(monkeypatch,
     client = _client(monkeypatch, tmp_path)
     headers = {"authorization": "Bearer control-token"}
     client.post(
-        "/api/v1/thesis-ledger/control/providers/akshare/config",
+        "/api/v3/thesis-ledger/control/providers/tushare/config",
         headers=headers,
-        json=_envelope(credential="fixture-secret", enabled=True),
+        json=_provider_envelope(
+            credentials={"method": "token", "values": {"token": "fixture-secret"}}, enabled=True,
+        ),
     )
     response = client.post(
-        "/api/v1/thesis-ledger/control/providers/akshare/remove",
+        "/api/v3/thesis-ledger/control/providers/tushare/remove",
         headers=headers,
-        json=_envelope(reason="test-removal"),
+        json=_provider_envelope(reason="test-removal"),
     )
     assert response.status_code == 200
-    assert response.json()["tombstone"]["providerId"] == "akshare"
-    registry = client.get("/api/v1/thesis-ledger/control/providers", headers=headers).json()
-    removed = next(item for item in registry["providers"] if item["providerId"] == "akshare")
+    assert response.json()["tombstone"]["providerId"] == "tushare"
+    registry = client.get("/api/v3/thesis-ledger/control/providers", headers=headers).json()
+    removed = next(item for item in registry["providers"] if item["providerId"] == "tushare")
     assert removed["credentialConfigured"] is False
     assert removed["tombstone"]["reason"] == "test-removal"

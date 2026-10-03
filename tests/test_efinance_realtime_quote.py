@@ -23,12 +23,7 @@ def test_fund_nav_history_normalizes_provider_descending_dates(monkeypatch) -> N
             "单位净值": [1.2, 1.1],
         }
     )
-    fake_fund = types.SimpleNamespace(get_quote_history=lambda _code: frame)
-    monkeypatch.setitem(
-        sys.modules,
-        "efinance",
-        types.SimpleNamespace(fund=fake_fund),
-    )
+    monkeypatch.setattr('data_provider.eastmoney_fund_nav.read_fund_nav', lambda _code: frame)
 
     result = _fetcher().get_fund_nav_history("110022")
 
@@ -109,6 +104,20 @@ def test_snapshot_rejects_code_mismatch() -> None:
     assert EfinanceFetcher._quote_from_snapshot(snapshot, "600519") is None
 
 
+def test_snapshot_rejects_missing_identity() -> None:
+    for code in (None, '', pd.NA):
+        snapshot = pd.Series({'代码': code, '名称': '名称', '最新价': 12.3})
+        assert EfinanceFetcher._quote_from_snapshot(snapshot, '600519') is None
+
+
+def test_snapshot_rejects_multiple_rows_even_when_first_matches() -> None:
+    snapshot = pd.DataFrame([
+        {'代码': '600519', '名称': '贵州茅台', '最新价': 1500},
+        {'代码': '000001', '名称': '平安银行', '最新价': 12},
+    ])
+    assert EfinanceFetcher._quote_from_snapshot(snapshot, '600519') is None
+
+
 def test_snapshot_rejects_missing_price() -> None:
     """缺少最新价时必须返回 None，让上层继续既定 fallback。"""
     snapshot = pd.DataFrame([{"代码": "600519", "名称": "贵州茅台"}])
@@ -166,6 +175,29 @@ def test_full_market_path_reuses_row_normalizer(monkeypatch) -> None:
     assert quote is not None
     assert quote.name == "贵州茅台"
     assert quote.price == 1800.5
+
+
+def test_full_market_fallback_rejects_duplicate_target_rows(monkeypatch) -> None:
+    frame = pd.DataFrame(
+        [
+            {"股票代码": "600519", "股票名称": "贵州茅台", "最新价": 1800.5},
+            {"股票代码": "600519", "股票名称": "贵州茅台", "最新价": 1801.5},
+        ]
+    )
+    monkeypatch.setattr(
+        efinance_module,
+        "_realtime_cache",
+        {"data": frame, "timestamp": efinance_module.time.time(), "ttl": 600},
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "efinance",
+        types.SimpleNamespace(stock=types.SimpleNamespace()),
+    )
+    fetcher = _fetcher()
+    monkeypatch.setattr(fetcher, "_get_realtime_snapshot_quote", lambda _symbol: None)
+
+    assert fetcher.get_realtime_quote("600519") is None
 
 
 def test_etf_prefers_single_symbol_snapshot_over_full_market(monkeypatch) -> None:

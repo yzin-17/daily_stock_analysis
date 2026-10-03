@@ -179,13 +179,18 @@ class TestFinnhubFetcherInit(unittest.TestCase):
         self.assertEqual(f._api_key, 'sk-test-123')
 
     @patch.dict(os.environ, {}, clear=False)
+    @patch('data_provider.finnhub_fetcher.requests.get')
     @patch('src.config.get_config')
-    def test_init_without_key(self, mock_config):
+    def test_init_without_key(self, mock_config, mock_get):
         os.environ.pop('FINNHUB_API_KEY', None)
         mock_config.return_value = MagicMock(finnhub_api_key=None)
         from data_provider.finnhub_fetcher import FinnhubFetcher
+        from data_provider.base import DataFetchError
         f = FinnhubFetcher()
-        self.assertIsNone(f._api_key)
+        self.assertEqual(f._api_key, '')
+        with self.assertRaisesRegex(DataFetchError, 'API key not configured'):
+            f._fetch_raw_data('AAPL', '2024-06-10', '2024-06-11')
+        mock_get.assert_not_called()
 
 
 class TestFinnhubFetcherRegistration(unittest.TestCase):
