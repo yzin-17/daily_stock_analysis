@@ -60,7 +60,7 @@ def assert_redacted(value):
     assert "unused-environment" not in serialized
 
 
-def test_registered_provider_has_only_write_only_account_fields_and_no_routes(runtime):
+def test_registered_event_capabilities_do_not_configure_account_or_routes(runtime):
     client, _store, _database = runtime
     response = client.get("/api/v3/thesis-ledger/control/providers", headers=HEADERS)
     assert response.status_code == 200
@@ -68,8 +68,9 @@ def test_registered_provider_has_only_write_only_account_fields_and_no_routes(ru
     assert provider["requiresCredential"] is True
     assert provider["credentialConfigured"] is False
     assert provider["credentialSource"] == "none"
-    assert provider["capabilities"] == {}
-    assert provider["upstreamSources"][0]["capabilities"] == {}
+    assert provider["capabilities"] == {"CASH_DISTRIBUTION": ["ETF"], "SPLIT_EVENT": ["ETF"]}
+    assert provider["upstreamSources"][0]["capabilities"] == provider["capabilities"]
+    assert _store.policy_projection_v3() is None
     assert provider["credentialSchema"]["methods"] == [{
         "method": "username_password", "fields": [
             {"name": "username", "secret": True, "required": True},
@@ -153,7 +154,6 @@ def test_control_and_environment_account_revisions_are_distinct(runtime):
     environment = ProviderCredentialSnapshot.create("rqdata", "environment", snapshot.method, snapshot.values, 1, 1)
     assert revision(snapshot) != revision(environment)
     for provider_id, method, values in [
-        ("hithink", "api_key", {"apiKey": "synthetic-key"}),
         ("tushare", "token", {"token": "synthetic-token", "httpUrl": "https://synthetic.invalid"}),
     ]:
         assert revision(ProviderCredentialSnapshot.create(provider_id, "control", method, values, 1, 1)) is None

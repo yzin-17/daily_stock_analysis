@@ -117,7 +117,7 @@ def _tencent_frame():
     }
     frame.attrs["thesis_ledger_v3_pagination"] = {
         "status": "complete", "pagesFetched": 2, "continuationPending": False,
-        "protocol": TENCENT_NATIVE_DAILY_PROTOCOL, "maximumRows": 800,
+        "protocol": TENCENT_NATIVE_DAILY_PROTOCOL, "maximumRows": 3650,
         "requestedStart": "2024-12-31", "requestedEnd": "2025-01-02",
     }
     return frame
@@ -134,7 +134,17 @@ def test_tencent_year_partitions_are_counted_but_do_not_prove_market_coverage():
         "status": "complete", "pagesFetched": 2, "continuationPending": False,
     }
     with pytest.raises(MarketPaginationError, match="insufficient_coverage"):
-        proof(frame, **{**args, "expected_session_count": 801})
+        proof(frame, **{**args, "expected_session_count": 3651})
     frame.attrs["tencentDailyRetrieval"]["partitions"][1]["rows"] = 0
     with pytest.raises(MarketPaginationError, match="invalid_response"):
         proof(frame, **args)
+
+
+@pytest.mark.parametrize("adjustment", [None, "unsupported"])
+def test_transport_binding_cannot_be_bypassed_by_missing_or_unknown_adjustment(adjustment):
+    frame = _tencent_frame()
+    frame.attrs["thesis_ledger_v3_pagination"]["pagesFetched"] = 1
+    with pytest.raises(MarketPaginationError, match="invalid_response"):
+        proof(frame, provider="tencent", upstream_source="tencent",
+              requested_start="2024-12-31", requested_end="2025-01-02",
+              requested_adjustment=adjustment)

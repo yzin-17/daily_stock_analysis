@@ -34,8 +34,12 @@ def state(monkeypatch):
                  'recordVersion': 1, 'recordedAt': '2020-01-01T00:00:00Z',
                  'invalidatedAt': None, 'invalidationReason': None, 'recordedBy': 'private-reviewer'}
     store = _CatalogStore({_identity(NAV_KEY, NAV_TARGET): admission})
-    store.providers.append({**PROVIDER_MANIFESTS['efinance'], 'configured': True, 'enabled': True,
-                            'credentialConfigured': False, 'tombstone': None})
+    from src.services.thesis_ledger_exact_route_inventory import exact_route_inventory
+    required = {'efinance'} | {target['providerId'] for _, target, gated in exact_route_inventory() if not gated}
+    present = {provider['providerId'] for provider in store.providers}
+    store.providers.extend({**PROVIDER_MANIFESTS[provider], 'configured': True, 'enabled': True,
+                            'credentialConfigured': False, 'tombstone': None}
+                           for provider in sorted(required - present))
     policy = {'contractVersion': 3, 'enabled': True, 'revision': 5, 'sourceDesiredRevision': 5,
               'routes': [{'key': deepcopy(NAV_KEY), 'targets': [
                   {**NAV_TARGET, 'routeIndex': 0, 'eligible': True, 'reason': None}]}]}

@@ -4,15 +4,11 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.services.thesis_ledger_control import _provider_credential_revision_from_snapshot, _secret_key
+from src.services.thesis_ledger_control import _provider_credential_revision_from_snapshot
 from src.services.thesis_ledger_event_v3_adapters import EVENT_KEY, TUSHARE_TARGET, event_adapter_revisions
 from src.services.thesis_ledger_market_v3_revisions import _market_v3_admission_matches_current
 from src.services.thesis_ledger_mapping_evidence_store import MappingEvidenceStore
-from src.services.thesis_ledger_tushare_mapped_read import read_tushare_mapped_fund_dividends
 from src.services.tushare_fund_identity_evidence import _current_admission, _instant, resolve_tushare_fund_identity
-
-TUSHARE_EVENT_TIMEOUT_SECONDS = 30
-
 
 class TushareEventError(ValueError):
     def __init__(self, code):
@@ -20,8 +16,8 @@ class TushareEventError(ValueError):
         self.code = code
 
 
-def _local_admission(store):
-    admission = deepcopy(store.get_route_admission_v3(key=EVENT_KEY, target=TUSHARE_TARGET))
+def local_admission_record(read_record):
+    admission = deepcopy(read_record())
     if (not isinstance(admission, dict) or admission.get("routeKey") != EVENT_KEY
             or admission.get("target") != TUSHARE_TARGET):
         raise ValueError("missing admission")
@@ -33,10 +29,13 @@ def _local_admission(store):
     return admission
 
 
-def _identity_guard(store, request):
+def _local_admission(store):
+    return local_admission_record(lambda: store.get_route_admission_v3(key=EVENT_KEY, target=TUSHARE_TARGET))
+
+
+def bound_identity_guard(database, read_record, request):
     """只读取请求范围的准入和原文件；此检查不读取账号或授予 ready。"""
-    admission = _local_admission(store)
-    database = store.database_path
+    admission = local_admission_record(read_record)
     if not isinstance(database, str) or not database or database == ":memory:":
         raise ValueError("persistent evidence required")
     content = MappingEvidenceStore(
@@ -66,13 +65,6 @@ def current_tushare_event_admission(store, key, target, manifest):
     return None
 
 
-def _request_guard(store, request):
-    try:
-        return _identity_guard(store, request)
-    except Exception:
-        raise TushareEventError("not_admitted") from None
-
-
 def _response(request, state, mapped, fetched):
     result, identity = mapped.result, mapped.identity
     revision, facts = result["providerRevision"], result["facts"]
@@ -96,38 +88,3 @@ def _response(request, state, mapped, fetched):
             "tushareIdentityEvidence": {"ref": identity.evidence_ref, "sha256": identity.evidence_sha256,
                                         "content": identity.content.decode("utf-8")},
             "coverage": {"complete": False, "reason": "historical_coverage_unverified"}}
-
-
-def execute_tushare_events_v3(runtime, request, *, admitted_state, check_security=None):
-    guard = _request_guard(runtime.store, request)
-    if check_security:
-        check_security()
-    before = admitted_state(runtime, request)
-    if before["admission"] != guard[0] or _request_guard(runtime.store, request) != guard:
-        raise TushareEventError("policy_not_applied")
-    if check_security:
-        check_security()
-    try:
-        mapped = read_tushare_mapped_fund_dividends(
-            request["symbol"], database_path=runtime.store.database_path,
-            start=request["start"], end=request["end"], data_as_of=request["dataAsOf"],
-            read_admission=lambda: runtime._current_market_v3_admission(EVENT_KEY, TUSHARE_TARGET),
-            read_credentials=lambda: runtime.store.provider_credential_snapshot("tushare"),
-            read_master_key=_secret_key,
-            build_fetcher=lambda snapshot: runtime._adapter("tushare", snapshot=snapshot),
-            timeout_seconds=TUSHARE_EVENT_TIMEOUT_SECONDS,
-        )
-    except Exception:
-        raise TushareEventError("upstream_failure") from None
-    if _request_guard(runtime.store, request) != guard or mapped.identity != guard[1]:
-        raise TushareEventError("policy_not_applied")
-    after = admitted_state(runtime, request)
-    if after != before:
-        raise TushareEventError("policy_not_applied")
-    fetched = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    response = _response(request, after, mapped, fetched)
-    if _request_guard(runtime.store, request) != guard:
-        raise TushareEventError("policy_not_applied")
-    if check_security:
-        check_security()
-    return response

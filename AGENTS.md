@@ -6,6 +6,7 @@
 
 ## 1. 硬规则
 
+- 在 ThesisLedger 同级工作区执行任何 Docker 操作前，必须读取并遵守 [`../AGENTS.md`](../AGENTS.md) 的「Docker 操作入口强制约束」：状态变更只能通过仓库维护的脚本执行，只读检查除外。目标部署使用同级 infra 的 `sync-code.sh` 或 `update.sh`，不得直接调用 Docker 命令或另建入口绕过预检；本条也适用于子代理和隔离测试。
 - 遵循现有目录边界：
   - 后端逻辑优先放在 `src/`、`data_provider/`、`api/`、`bot/`
   - Web 前端改动在 `apps/dsa-web/`

@@ -1,4 +1,4 @@
-"""共同 ETF 价格以外的 HiThink 股票能力仍使用独立准入。"""
+"""HiThink 普通股票价格采用当前凭证，旧准入记录只保留审计身份。"""
 
 from __future__ import annotations
 
@@ -77,9 +77,10 @@ def _catalog_state(store):
     return entry["state"]
 
 
-def test_exact_current_admission_can_make_hithink_v3_effective(store):
-    assert _effective_target(store)["reason"] == "not_admitted"
-    assert _catalog_state(store) == "not_admitted"
+def test_current_configured_price_is_effective_without_manual_admission(store):
+    assert store.get_route_admission_v3(key=KEY, target=TARGET) is None
+    assert _effective_target(store)["reason"] is None
+    assert _catalog_state(store) == "ready"
 
     _admit(store)
     assert _catalog_state(store) == "ready"
@@ -94,19 +95,30 @@ def test_exact_current_admission_can_make_hithink_v3_effective(store):
 
 
 @pytest.mark.parametrize("field", ["adapterRevision", "sourceRevision", "credentialRevision"])
-def test_stale_revision_keeps_hithink_v3_policy_denied(store, field):
+def test_stale_legacy_revision_does_not_block_current_price_configuration(store, field):
     _admit(store, **{field: "stale-synthetic-revision"})
-    assert _catalog_state(store) == "not_admitted"
-    assert _effective_target(store)["reason"] == "not_admitted"
+    assert store.get_route_admission_v3(key=KEY, target=TARGET)[field] == "stale-synthetic-revision"
+    assert _catalog_state(store) == "ready"
+    assert _effective_target(store)["reason"] is None
 
 
-def test_credential_rotation_and_revocation_reclose_hithink_v3(store, monkeypatch):
+def test_current_price_credentials_and_legacy_record_revocation_are_independent(store, monkeypatch):
     _admit(store)
     assert _effective_target(store)["eligible"] is True
 
+    original_revision = _provider_credential_revision_from_snapshot(store.provider_credential_snapshot("hithink"))
     monkeypatch.setenv("HITHINK_API_KEY", "synthetic-hithink-key-v2")
-    assert _catalog_state(store) == "not_admitted"
-    assert _effective_target(store)["reason"] == "not_admitted"
+    current_revision = _provider_credential_revision_from_snapshot(store.provider_credential_snapshot("hithink"))
+    assert current_revision and current_revision != original_revision
+    assert _catalog_state(store) == "ready"
+    assert _effective_target(store)["reason"] is None
+    store.revoke_route_admission_v3(key=KEY, target=TARGET, reason="fixture revoke")
+    assert store.get_route_admission_v3(key=KEY, target=TARGET)["admissionState"] == "revoked"
+    assert _catalog_state(store) == "ready"
+
+    monkeypatch.delenv("HITHINK_API_KEY")
+    assert _catalog_state(store) == "credential_missing"
+    assert _effective_target(store)["reason"] == "credential_missing"
     adapter = _NeverCallAdapter()
     runtime = ThesisLedgerProviderRuntime(store, adapters={"hithink": adapter})
     request = ThesisLedgerDataRequest(
@@ -121,15 +133,10 @@ def test_credential_rotation_and_revocation_reclose_hithink_v3(store, monkeypatc
     assert error.value.code == "NO_ELIGIBLE_PROVIDER"
     assert adapter.calls == 0
 
-    monkeypatch.setenv("HITHINK_API_KEY", "synthetic-hithink-key-v1")
-    store.revoke_route_admission_v3(key=KEY, target=TARGET, reason="fixture revoke")
-    assert _catalog_state(store) == "not_admitted"
-    assert _effective_target(store)["reason"] == "not_admitted"
-
-
-def test_missing_revision_secret_keeps_hithink_v3_denied(store, monkeypatch):
+def test_missing_audit_secret_does_not_disable_current_price_credentials(store, monkeypatch):
     _admit(store)
     monkeypatch.delenv("THESIS_LEDGER_DSA_SECRET_KEY")
     monkeypatch.delenv("DSA_SECRET_KEY", raising=False)
-    assert _catalog_state(store) == "not_admitted"
-    assert _effective_target(store)["reason"] == "not_admitted"
+    assert _provider_credential_revision_from_snapshot(store.provider_credential_snapshot("hithink")) is None
+    assert _catalog_state(store) == "ready"
+    assert _effective_target(store)["reason"] is None

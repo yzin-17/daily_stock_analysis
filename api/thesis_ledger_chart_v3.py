@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+import logging
 from datetime import datetime
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo
@@ -10,10 +11,12 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from api.thesis_ledger_source_basis import native_field_units, native_source_basis
+from api.thesis_ledger_exact_bar_fields import chart_bar_point
+from src.services.thesis_ledger_market_errors_v3 import market_runtime_error
 
 from api.thesis_ledger import (
     MARKET_DATA_V3_METHOD_VERSION,
-    MARKET_DATA_V3_SUPPORTED_PROVIDER_IDS,
+    market_v3_bar_provider_ids,
     _bar_series_fingerprint,
     _bar_series_point,
     _iso_timestamp,
@@ -25,6 +28,7 @@ from api.thesis_ledger import (
 )
 
 router = APIRouter(prefix="/thesis-ledger", tags=["ThesisLedger Market Contract V3"])
+logger = logging.getLogger(__name__)
 
 
 def chart_request(payload: Any, request_id: str) -> dict[str, Any]:
@@ -34,8 +38,7 @@ def chart_request(payload: Any, request_id: str) -> dict[str, Any]:
     parsed = _market_data_v3_request(base, request_id)
     if "routeTarget" not in parsed:
         _market_data_v3_error("invalid_response", 422, parsed["requestId"])
-    # Current native adapters and completion clock only cover CN daily bars.
-    if parsed["routeKey"]["timeframe"] != "1d" or parsed["routeKey"]["market"] != "CN":
+    if parsed["routeKey"]["timeframe"] != "1d":
         _market_data_v3_error("unsupported_price_basis", 422, parsed["requestId"])
     return parsed
 
@@ -52,7 +55,7 @@ def chart_response(request: Mapping[str, Any], execution: Any) -> dict[str, Any]
     revision = provenance["effectivePolicyRevision"]
     if (
         any(provenance[key] != value for key, value in target.items())
-        or provenance["providerId"] not in MARKET_DATA_V3_SUPPORTED_PROVIDER_IDS
+        or provenance["providerId"] not in market_v3_bar_provider_ids()
         or isinstance(provenance["routeIndex"], bool)
         or not isinstance(revision, int) or isinstance(revision, bool) or revision <= 0
     ):
@@ -63,33 +66,22 @@ def chart_response(request: Mapping[str, Any], execution: Any) -> dict[str, Any]
     dates: set[str] = set()
     try:
         for _, row in frame.iterrows():
-            timestamp = _iso_timestamp(row.get("date"))
-            trading_date = datetime.fromisoformat(timestamp).astimezone(
-                ZoneInfo("Asia/Shanghai")
-            ).date().isoformat()
+            point = chart_bar_point(row, request["routeKey"]["market"], fetched_at, _number)
+            trading_date = datetime.fromisoformat(point["timestamp"]).date().isoformat()
             if trading_date in dates or not request["start"] <= trading_date <= request["end"]:
                 raise ValueError("invalid date")
             dates.add(trading_date)
-            prices = {key: _number(row.get(key), key) for key in (
-                "open", "high", "low", "close", "volume", "amount"
-            )}
-            if (
-                any(value < 0 for value in prices.values())
-                or prices["high"] < max(prices["open"], prices["close"], prices["low"])
-                or prices["low"] > min(prices["open"], prices["close"], prices["high"])
-            ):
-                raise ValueError("invalid prices")
-            points.append(_bar_series_point(
-                {"timestamp": timestamp, **prices},
-                fetched_at=fetched_at, observed_availability=True,
-            ))
+            points.append(point)
         attrs = frame.attrs
         units = native_field_units(attrs, request["routeKey"],
                                    provenance["providerId"], provenance["upstreamSource"], request)
         has_more_before = attrs.get("has_more_before", False)
         if not isinstance(has_more_before, bool) or len(points) > 100_000:
             raise ValueError("invalid coverage")
-    except Exception:
+    except Exception as error:
+        if provenance["providerId"] == "futu":
+            logger.warning("富途图表投影校验失败 symbol=%s points=%s errorType=%s",
+                           request["symbol"], len(points), type(error).__name__)
         _market_data_v3_error("invalid_response", 502, request_id)
     points.sort(key=lambda point: point["timestamp"])
     key = request["routeKey"]
@@ -99,7 +91,7 @@ def chart_response(request: Mapping[str, Any], execution: Any) -> dict[str, Any]
         **units,
     })
     complete_dates = [
-        datetime.fromisoformat(point["timestamp"]).astimezone(ZoneInfo("Asia/Shanghai"))
+        datetime.fromisoformat(point["timestamp"])
         .date().isoformat()
         for point in points if point["completionStatus"] == "complete"
     ]
@@ -137,17 +129,15 @@ def market_chart_bars(request: Request, payload: Any = Body(...)) -> dict[str, A
                     timeframe=key["timeframe"], start=parsed["start"], end=parsed["end"],
                     instrument_type=key["assetType"], adjustment=key["adjustment"],
                     request_id=parsed["requestId"],
+                    parameters={"interactive_chart": True},
                 ), key, route_target=parsed["routeTarget"],
             )
         except Exception as error:
             code = str(getattr(error, "code", ""))
-            mapped, status = {
-                "unsupported_adjustment": ("unsupported_price_basis", 422),
-                "not_covered": ("insufficient_coverage", 422),
-                "insufficient_coverage": ("insufficient_coverage", 422),
-                "invalid_response": ("invalid_response", 502),
-                "upstream_invalid_response": ("invalid_response", 502),
-            }.get(code, ("upstream_failure", 503))
+            if parsed["routeTarget"]["providerId"] == "futu":
+                logger.warning("富途日线执行失败 symbol=%s adjustment=%s code=%s error=%s",
+                               parsed["symbol"], key["adjustment"], code, str(error)[:160])
+            mapped, status = market_runtime_error(error)
             _market_data_v3_error(mapped, status, parsed["requestId"])
         return chart_response(parsed, execution)
     except HTTPException as error:

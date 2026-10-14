@@ -5,14 +5,12 @@ from datetime import date, datetime, timezone
 import re
 from typing import Any, Callable
 
-from data_provider.eastmoney_fund_dividend_reader import fetch_fund_dividend_observations
 from src.services.thesis_ledger_event_v3_adapters import event_adapter_matches
-from src.services.thesis_ledger_event_admission_v3 import event_admission_snapshot
-from src.services.thesis_ledger_split_event_reader_v3 import read_mapped_split_events
 from src.services.thesis_ledger_route_admission_v3 import route_admission_scope_applies
-from src.services.thesis_ledger_rqdata_event_v3 import read_rqdata_events_v3
-from src.services.thesis_ledger_tushare_event_v3 import TushareEventError, execute_tushare_events_v3
-from src.services.thesis_ledger_hithink_event_v3 import HiThinkEventError, execute_hithink_events_v3
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+from src.services.thesis_ledger_capability_registry import EventBinding
+from src.services.thesis_ledger_capability_contracts import CapabilityContractError, ReadContext
+from src.services.thesis_ledger_event_execution_context_v1 import EventExecutionContext, EventCredentialContext
 
 
 class EventV3Error(ValueError):
@@ -115,66 +113,32 @@ def execute_event_request(
     runtime: Any, payload: Any, *, reader: Callable[..., dict[str, Any]] | None = None, check_security=None,
 ) -> dict[str, Any]:
     request = parse_event_request(payload)
-    if request["routeTarget"]["providerId"] == "tushare":
-        try:
-            return execute_tushare_events_v3(runtime, request, admitted_state=_admitted_state, check_security=check_security)
-        except TushareEventError as error:
-            raise EventV3Error(error.code) from None
-    if request["routeTarget"]["providerId"] == "hithink":
-        try:
-            return execute_hithink_events_v3(
-                runtime, request, admitted_state=_admitted_state,
-                check_security=check_security, fetch=reader,
+    binding = CAPABILITY_SOURCES.resolve(request['routeKey'], request['routeTarget'])
+    if isinstance(binding, EventBinding):
+        source = CAPABILITY_SOURCES.source(request['routeTarget']['providerId'])
+        credentials = None
+        if source.credentials:
+            from src.services.thesis_ledger_control import _secret_key
+            identity = {name: request['routeTarget'][name] for name in ('providerId', 'upstreamSource')}
+            def build_adapter(snapshot):
+                if source.factory_scope == 'provider':
+                    return runtime._adapter(source.provider_id, snapshot=snapshot)
+                return source.factory(ReadContext(None, snapshot=snapshot, database_path=runtime.store.database_path))
+            credentials = EventCredentialContext(
+                runtime.store.database_path,
+                lambda: runtime._current_market_v3_admission(request['routeKey'], identity),
+                lambda: runtime.store.provider_credential_snapshot(source.provider_id), _secret_key,
+                build_adapter,
+                lambda: runtime.store.get_route_admission_v3(key=request['routeKey'], target=identity),
             )
-        except HiThinkEventError as error:
-            raise EventV3Error(error.code) from None
-    before = _admitted_state(runtime, request)
-    try:
-        if request["routeTarget"]["providerId"] == "rqdata":
-            result = read_rqdata_events_v3(runtime, request)
-        elif request["routeKey"]["capability"] == "SPLIT_EVENT":
-            result = read_mapped_split_events(runtime.store.database_path, request, before["admission"], reader=reader)
-        else:
-            read = reader or fetch_fund_dividend_observations
-            result = read(request["symbol"], start=request["start"], end=request["end"])
-    except Exception:
-        raise EventV3Error("upstream_failure") from None
-    after = _admitted_state(runtime, request)
-    if after != before:
-        raise EventV3Error("policy_not_applied")
-    fetched = datetime.now(timezone.utc)
-    try:
-        admission = event_admission_snapshot(after["admission"], observed_at=fetched)
-    except (ValueError, TypeError):
-        raise EventV3Error("invalid_response") from None
-    as_of = datetime.fromisoformat(request["dataAsOf"].replace("Z", "+00:00"))
-    facts = result.get("facts")
-    if not isinstance(facts, list) or any(not isinstance(fact, dict) for fact in facts):
-        raise EventV3Error("invalid_response")
-    revisions = {fact.get("providerRevision") for fact in facts}
-    if len(revisions) > 1:
-        raise EventV3Error("invalid_response")
-    for fact in facts:
+        context = EventExecutionContext(
+            lambda: source.factory(ReadContext(None, database_path=runtime.store.database_path)),
+            lambda: _admitted_state(runtime, request), check_security, reader, credentials,
+            database_path=getattr(runtime.store, 'database_path', None),
+        )
         try:
-            available = datetime.fromisoformat(fact["availableAt"].replace("Z", "+00:00"))
-            if (fact["symbol"] != request["symbol"] or fact["market"] != "CN"
-                    or fact["instrumentType"] != "ETF"
-                    or fact["type"] not in ({"SPLIT", "REVERSE_SPLIT"}
-                                            if request["routeKey"]["capability"] == "SPLIT_EVENT" else {"CASH_DIVIDEND"})
-                    or fact["provider"] != request["routeTarget"]["providerId"]
-                    or not request["start"] <= fact["effectiveDate"] <= request["end"]
-                    or available > as_of or available > fetched):
-                raise ValueError()
-        except (KeyError, TypeError, ValueError):
-            raise EventV3Error("invalid_response") from None
-    revision = next(iter(revisions), None) or result.get("providerRevision")
-    if not isinstance(revision, str) or not revision.strip():
-        raise EventV3Error("invalid_response")
-    evidence = {}
-    if request["routeTarget"]["providerId"] == "rqdata":
-        evidence = {"identityEvidence": result["identityEvidence"]}
-    elif request["routeKey"]["capability"] == "SPLIT_EVENT":
-        evidence = {"dateMappingEvidence": result["dateMappingEvidence"]}
-    return {**request, "fetchedAt": fetched.isoformat().replace("+00:00", "Z"),
-            "providerRevision": revision, "facts": facts, "admission": admission,
-            **evidence, "coverage": {"complete": False, "reason": "historical_coverage_unverified"}}
+            result = CAPABILITY_SOURCES.query(binding.contract, request, request['routeKey'], request['routeTarget'], context)
+            return binding.wire_project(result)
+        except CapabilityContractError as error:
+            raise EventV3Error(error.code) from None
+    raise EventV3Error('not_adapted')

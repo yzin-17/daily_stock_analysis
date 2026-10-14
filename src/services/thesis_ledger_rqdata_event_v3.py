@@ -8,9 +8,6 @@ from src.services.thesis_ledger_control import (
     ControlContractError, _provider_credential_revision_from_snapshot, _secret_key,
 )
 from src.services.thesis_ledger_market_v3_revisions import _market_v3_admission_matches_current
-from src.services.thesis_ledger_rqdata_mapped_read import read_rqdata_mapped_fund_event
-
-RQDATA_EVENT_TIMEOUT_SECONDS = 30
 
 
 def current_rqdata_event_admission(store, key, target, manifest):
@@ -32,15 +29,3 @@ def current_rqdata_event_admission(store, key, target, manifest):
     except (AttributeError, ControlContractError, TypeError, ValueError):
         return None
     return None
-
-
-def read_rqdata_events_v3(runtime, request):
-    key = request["routeKey"]
-    return read_rqdata_mapped_fund_event(
-        "split" if key["capability"] == "SPLIT_EVENT" else "dividend", request["symbol"],
-        database_path=runtime.store.database_path, start=request["start"], end=request["end"],
-        data_as_of=request["dataAsOf"],
-        read_admission=lambda: runtime._current_market_v3_admission(key, RQDATA_TARGET),
-        read_credentials=lambda: runtime.store.provider_credential_snapshot("rqdata"),
-        read_master_key=_secret_key, timeout_seconds=RQDATA_EVENT_TIMEOUT_SECONDS,
-    )

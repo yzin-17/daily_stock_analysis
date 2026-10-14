@@ -21,6 +21,7 @@ from src.services.thesis_ledger_market_v3_adapters import (
 from src.services.thesis_ledger_market_v3_facts import market_calendar_evidence_v3
 from src.services.thesis_ledger_provider_runtime import (
     ProviderCallError,
+    ThesisLedgerGatewayError,
     ThesisLedgerDataRequest,
     ThesisLedgerProviderRuntime,
     market_v3_current_route_revisions,
@@ -49,10 +50,10 @@ def _target(source: str = HITHINK_STOCK_HISTORY_SOURCE) -> dict[str, str]:
     return {"providerId": "hithink", "upstreamSource": source}
 
 
-def _snapshot(api_key: str = TEST_API_KEY) -> ProviderCredentialSnapshot:
+def _snapshot(api_key: str = TEST_API_KEY, source="environment") -> ProviderCredentialSnapshot:
     return ProviderCredentialSnapshot.create(
         "hithink",
-        "environment",
+        source,
         "api_key",
         {"apiKey": api_key} if api_key else {},
         config_version=0,
@@ -165,7 +166,7 @@ class _Store:
             if self.on_second_snapshot:
                 self.on_second_snapshot()
             if self.second_snapshot is not None:
-                return self.second_snapshot
+                self.snapshot = self.second_snapshot
         return self.snapshot
 
     def get_route_admission_v3(self, *, key, target):
@@ -184,13 +185,17 @@ class _Store:
 
     def provider_registry(self):
         result = []
-        for provider_id in ("akshare", "tencent", "hithink"):
+        from src.services.thesis_ledger_exact_route_inventory import exact_route_inventory
+        providers = {'akshare', 'tencent', 'hithink'} | {
+            target['providerId'] for _, target, gated in exact_route_inventory() if not gated
+        }
+        for provider_id in sorted(providers):
             manifest = PROVIDER_MANIFESTS[provider_id]
             result.append(
                 {
                     **manifest,
-                    "configured": True,
-                    "enabled": True,
+                    "configured": provider_id in {'akshare', 'tencent', 'hithink'},
+                    "enabled": provider_id in {'akshare', 'tencent', 'hithink'},
                     "credentialConfigured": provider_id == "hithink",
                     "configVersion": 0,
                     "tombstone": None,
@@ -235,14 +240,14 @@ def test_hithink_stock_routes_are_exact_gated_inventory_only():
     ) == "not_adapted"
 
 
-@pytest.mark.parametrize("adjustment", ["none", "qfq", "hfq"])
+@pytest.mark.parametrize("adjustment,source", [(a, s) for a in ("none", "qfq", "hfq") for s in ("environment", "control")])
 def test_hithink_stock_catalog_and_pinned_data_use_one_exact_adjustment(
-    monkeypatch, adjustment
+    monkeypatch, adjustment, source
 ):
     _set_synthetic_master(monkeypatch)
     route_key = _route_key(adjustment)
     target = _target()
-    snapshot = _snapshot()
+    snapshot = _snapshot(source=source)
     admission = _admission(route_key, target, snapshot)
     store = _Store(route_key, target, snapshot, {_identity(route_key, target): admission})
 
@@ -318,7 +323,7 @@ def test_hithink_stock_catalog_and_pinned_data_use_one_exact_adjustment(
     }
 
 
-def test_hithink_stock_catalog_stays_not_admitted_without_current_g0(monkeypatch):
+def test_hithink_stock_catalog_uses_configured_credentials_without_manual_g0(monkeypatch):
     _set_synthetic_master(monkeypatch)
     for adjustment in ("none", "qfq", "hfq"):
         route_key = _route_key(adjustment)
@@ -330,7 +335,7 @@ def test_hithink_stock_catalog_stays_not_admitted_without_current_g0(monkeypatch
             for row in catalog["entries"]
             if row["key"] == route_key and row["target"] == target
         )
-        assert entry["state"] == "not_admitted"
+        assert entry["state"] == "ready"
 
 
 @pytest.mark.parametrize(
@@ -343,7 +348,7 @@ def test_hithink_stock_catalog_stays_not_admitted_without_current_g0(monkeypatch
         ({"scopeDateTo": "2026-05-19"}, "ready", "insufficient_coverage"),
     ],
 )
-def test_hithink_stock_catalog_and_data_reject_stale_or_narrow_admission(
+def test_hithink_stock_ignores_stale_or_narrow_legacy_admission(
     monkeypatch, admission_changes, catalog_state, error_code
 ):
     _set_synthetic_master(monkeypatch)
@@ -360,7 +365,7 @@ def test_hithink_stock_catalog_and_data_reject_stale_or_narrow_admission(
         for row in catalog["entries"]
         if row["key"] == route_key and row["target"] == target
     )
-    assert catalog_route["state"] == catalog_state
+    assert catalog_route["state"] == "ready"
 
     calls = []
     from src.services import thesis_ledger_hithink_stock as hithink_stock
@@ -374,18 +379,15 @@ def test_hithink_stock_catalog_and_data_reject_stale_or_narrow_admission(
             return _frame()
 
     monkeypatch.setattr(hithink_stock, "HiThinkStockHistoricalAdapter", _FakeStockAdapter)
-    with pytest.raises(ProviderCallError) as caught:
-        runtime.execute_market_bars_v3(
-            _request("qfq"),
-            route_key,
-            route_target={**target, "routeIndex": 0},
-        )
-    assert caught.value.code == error_code
-    assert calls == []
+    result = runtime.execute_market_bars_v3(
+        _request("qfq"), route_key, route_target={**target, "routeIndex": 0},
+    )
+    assert result.provider == "hithink"
+    assert calls == [True]
 
 
 @pytest.mark.parametrize("rotation", ["api_key", "master_key", "master_version"])
-def test_hithink_stock_rechecks_current_credential_before_adapter_call(monkeypatch, rotation):
+def test_hithink_stock_rejects_late_api_key_rotation_but_not_audit_key_rotation(monkeypatch, rotation):
     _set_synthetic_master(monkeypatch)
     route_key = _route_key("qfq")
     target = _target()
@@ -421,15 +423,19 @@ def test_hithink_stock_rechecks_current_credential_before_adapter_call(monkeypat
 
     monkeypatch.setattr(hithink_stock, "HiThinkStockHistoricalAdapter", _FakeStockAdapter)
 
-    with pytest.raises(ProviderCallError):
-        runtime.execute_market_bars_v3(
-            _request("qfq"),
-            route_key,
-            route_target={**target, "routeIndex": 0},
+    if rotation == "api_key":
+        with pytest.raises(ThesisLedgerGatewayError) as caught:
+            runtime.execute_market_bars_v3(
+                _request("qfq"), route_key, route_target={**target, "routeIndex": 0},
+            )
+        assert caught.value.code == "credential_missing"
+    else:
+        result = runtime.execute_market_bars_v3(
+            _request("qfq"), route_key, route_target={**target, "routeIndex": 0},
         )
-
+        assert result.provider == "hithink"
     assert store.snapshot_reads == 2
-    assert calls == []
+    assert calls == ["initialized", "fetched"]
 
 
 def test_hithink_stock_pinned_failure_does_not_fallback_to_secondary_target(monkeypatch):

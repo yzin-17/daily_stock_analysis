@@ -32,9 +32,25 @@ def read_event_page(session: requests.Session, *, year: int, page: int,
         response.raise_for_status()
         if response.status_code != 200:
             raise ValueError("基金事件响应状态无效")
-        chunks = bytearray()
-        for chunk in response.iter_content(chunk_size=16384):
-            chunks.extend(chunk)
-            if len(chunks) > max_bytes:
-                raise ValueError("基金事件响应超过大小上限")
-        return chunks.decode("utf-8-sig")
+        return _response_text(response, max_bytes)
+
+
+def _response_text(response, max_bytes):
+    chunks = bytearray()
+    for chunk in response.iter_content(chunk_size=16384):
+        chunks.extend(chunk)
+        if len(chunks) > max_bytes:
+            raise ValueError("基金事件响应超过大小上限")
+    return chunks.decode("utf-8-sig")
+
+
+def read_fund_distribution_page(session, code, *, max_bytes=1024 * 1024):
+    """AKShare 同源单基金页面；一次有界只读，不跟随重定向或执行脚本。"""
+    if not re.fullmatch(r"[0-9]{6}", code):
+        raise ValueError("基金代码无效")
+    with session.get(f"https://fundf10.eastmoney.com/fhsp_{code}.html",
+                     timeout=(3, 7), allow_redirects=False, stream=True) as response:
+        response.raise_for_status()
+        if response.status_code != 200:
+            raise ValueError("基金事件响应状态无效")
+        return _response_text(response, max_bytes)

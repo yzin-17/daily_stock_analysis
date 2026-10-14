@@ -1,4 +1,4 @@
-"""G0 RouteTarget admission persistence and fail-closed V3 Effective gates."""
+"""独立事件准入持久化与拒绝门禁；普通价格按当前配置读取。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from src.services.thesis_ledger_control import (
     ThesisLedgerControlStore,
 )
 from src.services.thesis_ledger_market_v3_adapters import iter_market_v3_bar_adapters
+from src.services.thesis_ledger_event_v3_adapters import EVENT_KEY, EVENT_TARGET, EVENT_REVISIONS
 from src.services.thesis_ledger_route_admission_v3 import route_admission_scope_applies
 
 
@@ -42,9 +43,9 @@ def _admit(store, key, target, *, valid_from=None, valid_until=None):
         scope_symbols=["159516.SZ"],
         scope_date_from="2026-05-16",
         scope_date_to="2026-08-09",
-        adapter_revision="test-adapter-v1",
-        source_revision="test-source-v1",
-        credential_revision="test-credential-v1",
+        adapter_revision=EVENT_REVISIONS["adapterRevision"],
+        source_revision=EVENT_REVISIONS["sourceRevision"],
+        credential_revision=EVENT_REVISIONS["credentialRevision"],
         valid_from=starts_at,
         valid_until=expires_at,
         recorded_by="test-fixture",
@@ -52,7 +53,7 @@ def _admit(store, key, target, *, valid_from=None, valid_until=None):
 
 
 def _single_route(key=None, target=None):
-    default_key, default_target = next(iter_market_v3_bar_adapters())
+    default_key, default_target = dict(EVENT_KEY), dict(EVENT_TARGET)
     return [{"key": key or default_key, "targets": [target or default_target]}]
 
 
@@ -61,7 +62,7 @@ def _effective_for(store, key, target):
     return store.effective_policy_v3()["routes"][0]["targets"][0]
 
 
-def test_basic_tencent_routes_are_ready_while_other_adapters_start_pending(tmp_path):
+def test_supported_price_adapters_do_not_require_manual_admission(tmp_path):
     store = ThesisLedgerControlStore(str(tmp_path / "route-admission-pending.db"))
     policy = {"consumer": CONSUMER_NAMESPACE, "enabled": True}
 
@@ -73,8 +74,7 @@ def test_basic_tencent_routes_are_ready_while_other_adapters_start_pending(tmp_p
         ]
 
     assert len(reasons) == 17
-    assert reasons.count(None) == 3
-    assert reasons.count("not_admitted") == 14
+    assert reasons == [None] * 17
 
 
 def test_tencent_etf_hfq_is_ready_without_manual_adjustment_admission(tmp_path):
@@ -101,7 +101,7 @@ def test_tencent_etf_hfq_is_ready_without_manual_adjustment_admission(tmp_path):
 def test_explicit_scoped_evidence_admits_only_its_exact_route_target(tmp_path):
     database_path = tmp_path / "route-admission-explicit.db"
     store = ThesisLedgerControlStore(str(database_path))
-    key, target = next(iter_market_v3_bar_adapters())
+    key, target = dict(EVENT_KEY), dict(EVENT_TARGET)
     store.apply_policy_v3(_policy(_single_route(key, target)))
 
     first = _admit(store, key, target)
@@ -139,7 +139,7 @@ def test_invalid_or_revoked_admission_fails_effective_closed(
     tmp_path, operation, expected_state, expected_reason
 ):
     store = ThesisLedgerControlStore(str(tmp_path / f"route-admission-{expected_state}.db"))
-    key, target = next(iter_market_v3_bar_adapters())
+    key, target = dict(EVENT_KEY), dict(EVENT_TARGET)
     _effective_for(store, key, target)
     _admit(store, key, target)
 
@@ -171,7 +171,7 @@ def test_expired_and_not_yet_valid_admissions_fail_effective_closed(tmp_path):
     ]
     for name, starts_at, expires_at, expected_state in cases:
         store = ThesisLedgerControlStore(str(tmp_path / f"route-admission-{name}.db"))
-        key, target = next(iter_market_v3_bar_adapters())
+        key, target = dict(EVENT_KEY), dict(EVENT_TARGET)
         _effective_for(store, key, target)
         _admit(store, key, target, valid_from=starts_at, valid_until=expires_at)
 
@@ -185,11 +185,11 @@ def test_expired_and_not_yet_valid_admissions_fail_effective_closed(tmp_path):
 
 def test_circuit_state_is_execution_only_and_does_not_replace_g0_admission(tmp_path):
     store = ThesisLedgerControlStore(str(tmp_path / "route-admission-circuit.db"))
-    key, target = next(iter_market_v3_bar_adapters())
+    key, target = dict(EVENT_KEY), dict(EVENT_TARGET)
     _effective_for(store, key, target)
     store.record_health(
         target["providerId"],
-        "DAILY_BAR",
+        key["capability"],
         key["assetType"],
         state="degraded",
         circuit="open",
@@ -208,10 +208,10 @@ def test_circuit_state_is_execution_only_and_does_not_replace_g0_admission(tmp_p
 
 def test_wrong_route_identity_does_not_reuse_admission_and_scope_is_bounded(tmp_path):
     store = ThesisLedgerControlStore(str(tmp_path / "route-admission-identity.db"))
-    key, target = next(iter_market_v3_bar_adapters())
+    key, target = dict(EVENT_KEY), dict(EVENT_TARGET)
     _effective_for(store, key, target)
     admission = _admit(store, key, target)
-    wrong_key = {**key, "adjustment": "hfq"}
+    wrong_key = {**key, "capability": "SPLIT_EVENT"}
 
     assert store.get_route_admission_v3(key=wrong_key, target=target) is None
     assert store.get_route_admission_v3(
@@ -239,7 +239,7 @@ def test_wrong_route_identity_does_not_reuse_admission_and_scope_is_bounded(tmp_
 
 def test_admission_metadata_is_required_and_scope_rejects_open_ended_ranges(tmp_path):
     store = ThesisLedgerControlStore(str(tmp_path / "route-admission-validation.db"))
-    key, target = next(iter_market_v3_bar_adapters())
+    key, target = dict(EVENT_KEY), dict(EVENT_TARGET)
     now = datetime.now(timezone.utc)
     base = {
         "key": key,

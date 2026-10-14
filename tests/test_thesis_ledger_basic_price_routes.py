@@ -25,7 +25,6 @@ def test_basic_price_scope_is_exact(provider, source, adjustment, expected):
     key = {**KEY, "adjustment": adjustment}
     target = {"providerId": provider, "upstreamSource": source}
     assert basic_market_price_route(key, target) is expected
-    assert not basic_market_price_route({**key, "assetType": "STOCK"}, target)
     assert not basic_market_price_route({**key, "timeframe": "1m"}, target)
 
 
@@ -45,9 +44,26 @@ def test_basic_prices_do_not_read_manual_symbol_or_window_admission(symbol, star
         assert price_route_admission(unexpected_read, request, KEY, target) == (None, None)
 
 
-def test_other_price_source_still_uses_its_existing_admission():
+def test_other_exact_price_source_uses_configuration_without_manual_admission():
     request = SimpleNamespace(symbol="159516.SZ", start="2026-01-01", end="2026-10-01")
     target = {"providerId": "akshare", "upstreamSource": "eastmoney"}
-    assert price_route_admission(lambda *args, **kwargs: None, request, KEY, target) == (
-        None, "NO_ELIGIBLE_PROVIDER",
-    )
+    assert price_route_admission(lambda *args, **kwargs: None, request, KEY, target) == (None, None)
+
+
+@pytest.mark.parametrize("provider,source,adjustment,market,expected", [
+    ("tencent", "tencent", "none", "CN", True),
+    ("tencent", "tencent", "qfq", "CN", True),
+    ("tencent", "tencent", "hfq", "CN", False),
+    ("tencent", "eastmoney", "none", "CN", False),
+    ("hithink", "hithink-financial-api", "none", "CN", True),
+    ("tencent", "tencent", "none", "HK", False),
+])
+def test_stock_basic_price_uses_only_exact_supported_adapters(provider, source, adjustment, market, expected):
+    key = {**KEY, "assetType": "STOCK", "adjustment": adjustment, "market": market}
+    target = {"providerId": provider, "upstreamSource": source}
+    assert basic_market_price_route(key, target) is expected
+    if expected:
+        request = SimpleNamespace(symbol="600000.SH", start="2023-08-23", end="2023-08-29")
+        def unexpected_read(*args, **kwargs):
+            pytest.fail("已实现的基础股票价格不应读取人工窗口准入")
+        assert price_route_admission(unexpected_read, request, key, target) == (None, None)

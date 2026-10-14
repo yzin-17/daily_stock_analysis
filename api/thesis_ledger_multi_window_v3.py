@@ -1,34 +1,15 @@
-"""固定 HiThink ETF 目标的多窗口调度；全部子请求沿用生产准入检查。"""
+"""精确日线绑定的多窗口调度；全部子请求沿用生产准入检查。"""
 
 from copy import deepcopy
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 import time
 from typing import Callable
 from zoneinfo import ZoneInfo
 
-from src.services.thesis_ledger_hithink_etf import _add_calendar_years
 from src.services.thesis_ledger_multi_window_response import build_multi_window_response
-
-
-def plan_hithink_windows(start: str, end: str, sessions: list[str], max_requests: int) -> list[tuple[str, str]]:
-    first, last = date.fromisoformat(start), date.fromisoformat(end)
-    if first > last or not isinstance(max_requests, int) or isinstance(max_requests, bool) or max_requests < 1:
-        raise ValueError("多窗口请求预算或日期非法")
-    if sessions != sorted(set(sessions)):
-        raise ValueError("交易日必须升序且唯一")
-    windows = []
-    while first <= last:
-        if len(windows) >= max_requests:
-            raise ValueError("多窗口请求次数超限")
-        boundary = min(_add_calendar_years(first, 5), last)
-        windows.append((first.isoformat(), boundary.isoformat()))
-        if boundary == last:
-            return windows
-        overlap = [day for day in sessions if first.isoformat() < day <= boundary.isoformat()]
-        if not overlap:
-            raise ValueError("窗口分界缺少交易日交集")
-        first = date.fromisoformat(overlap[-1])
-    return windows
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+from src.services.thesis_ledger_capability_registry import DailyBinding
+from src.services.thesis_ledger_daily_window_contract import DailyWindowPlanningContext, validate_window_plan
 
 
 def execute_market_window_v3(request_data: dict, runtime, timeout_seconds: float | None = None):
@@ -47,7 +28,7 @@ def execute_market_window_v3(request_data: dict, runtime, timeout_seconds: float
     return runtime.execute_market_bars_v3(request, key)
 
 
-def try_hithink_multi_window_v3(
+def try_daily_multi_window_v3(
     request_data: dict, coverage_context: dict, runtime,
     render: Callable, coverage: Callable, *, max_requests: int, timeout_seconds: float,
     monotonic: Callable[[], float] = time.monotonic,
@@ -56,16 +37,21 @@ def try_hithink_multi_window_v3(
 
     target = request_data.get("routeTarget", {})
     key = request_data["routeKey"]
-    if (target.get("providerId") != "hithink" or target.get("upstreamSource") != "fund-market-historical"
-            or key.get("assetType") != "ETF" or key.get("adjustment") != "qfq"
-            or key.get("timeframe") != "1d"):
+    binding = CAPABILITY_SOURCES.resolve(key, target)
+    if not isinstance(binding, DailyBinding) or binding.window_planner is None:
         return None
     sessions = [day for day in coverage_context["calendar"]["expectedSessionDates"]
                 if day >= coverage_context["listing"]["firstTradingDate"]]
+    context = DailyWindowPlanningContext(request_data['start'], request_data['end'], tuple(sessions), max_requests)
     try:
-        windows = plan_hithink_windows(request_data["start"], request_data["end"], sessions, max_requests)
+        raw_plan = binding.window_planner(context)
     except ValueError as error:
         raise ProviderCallError("insufficient_coverage", str(error)) from None
+    try:
+        plan = validate_window_plan(raw_plan, context)
+    except ValueError:
+        raise ProviderCallError('invalid_response', '来源窗口计划无效') from None
+    windows = [(window.start, window.end) for window in plan.windows]
     if len(windows) == 1:
         return None
     children = []

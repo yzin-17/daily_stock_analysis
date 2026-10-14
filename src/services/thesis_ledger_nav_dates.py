@@ -31,33 +31,3 @@ def validate_nav_history(rows) -> None:
             raise ValueError('Provider 响应字段 unitNav 非法') from exc
         if isinstance(nav_value, bool) or not math.isfinite(nav) or nav <= 0:
             raise ValueError('Provider 响应字段 unitNav 非法')
-
-
-def select_nav_rows(frame, *, start=None, end=None, limit=None, latest_only=False):
-    """先校验完整来源序列，再选出可交给当前请求的净值行。"""
-    date_column = next(
-        (column for column in ('净值日期', '日期', 'date', 'nav_date') if column in frame.columns),
-        None,
-    )
-    if date_column is None:
-        raise ValueError('Provider 净值响应缺少日期字段')
-    dated = [
-        (position, nav_datetime(row.get(date_column)), str(row.get(date_column)).strip()[:10])
-        for position, (_, row) in enumerate(frame.iterrows())
-    ]
-    selected = [
-        item for item in dated
-        if (start is None or item[2] >= start) and (end is None or item[2] <= end)
-    ]
-    if latest_only and selected:
-        selected = [max(selected, key=lambda item: item[1])]
-    elif limit is not None:
-        selected = selected[-limit:]
-    if not selected:
-        raise ValueError('Provider 净值未覆盖请求窗口')
-    positions = [position for position, _, _ in selected]
-    if positions == list(range(len(dated))):
-        return frame
-    if not hasattr(frame, 'iloc'):
-        raise ValueError('Provider 净值响应无法按请求窗口截取')
-    return frame.iloc[positions].copy()

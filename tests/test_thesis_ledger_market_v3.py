@@ -532,6 +532,7 @@ _DEFAULT_ADMISSION = object()
 class _RuntimeStore:
     def __init__(self, policy, admission=_DEFAULT_ADMISSION):
         self.policy = policy
+        self.policy.setdefault("sourceDesiredRevision", policy.get("revision"))
         if admission is _DEFAULT_ADMISSION:
             admission = {
                 "admissionState": "admitted",
@@ -543,7 +544,7 @@ class _RuntimeStore:
             admission = {
                 "consumer": "thesis-ledger",
                 "adapterRevision": "dsa-v3-etf-tencent-qfq-adapter-v2",
-                "sourceRevision": "tencent-newfqkline-year-partitions-v2",
+                "sourceRevision": "tencent-newfqkline-year-partitions-v3",
                 "credentialRevision": "not-required",
                 **admission,
             }
@@ -654,8 +655,8 @@ def test_runtime_uses_exact_v3_policy_target_and_preserves_backup_index():
         "continuationPending": False,
         "requestedStart": "2025-01-06",
         "requestedEnd": "2025-01-07",
-        "protocol": "tencent-newfqkline-year-partitions-v2",
-        "maximumRows": 800,
+        "protocol": "tencent-newfqkline-year-partitions-v3",
+        "maximumRows": 3650,
     }
     assert store.health_updates
     assert len(store.admission_reads) == 0
@@ -835,7 +836,7 @@ def _catalog_provider(provider_id: str, **overrides):
 
 
 def test_route_catalog_fails_closed_for_duplicate_inventory_and_provider_states(monkeypatch):
-    import src.services.thesis_ledger_provider_runtime as provider_runtime_module
+    import src.services.thesis_ledger_exact_route_inventory as route_catalog_module
 
     store = _CatalogStore(
         [
@@ -847,6 +848,10 @@ def test_route_catalog_fails_closed_for_duplicate_inventory_and_provider_states(
     )
     runtime = ThesisLedgerProviderRuntime(store)
 
+    # 独立状态/日期已增加无门禁精确目标；缺少其 Provider 状态必须保持 partial。
+    assert runtime.market_route_catalog_v3()["integrity"] == "partial"
+    store.providers.extend(_catalog_provider(provider, enabled=False)
+                           for provider in PROVIDER_MANIFESTS if provider not in {"akshare", "tencent"})
     catalog = runtime.market_route_catalog_v3()
     state_by_target = {
         (entry["target"]["providerId"], entry["target"]["upstreamSource"]): entry["state"]
@@ -856,9 +861,9 @@ def test_route_catalog_fails_closed_for_duplicate_inventory_and_provider_states(
     assert state_by_target[("akshare", "eastmoney")] == "not_admitted"
     assert state_by_target[("tencent", "tencent")] == "credential_missing"
 
-    exact_route = next(provider_runtime_module.iter_market_v3_bar_adapters())
+    exact_route = next(route_catalog_module.iter_market_v3_bar_adapters())
     monkeypatch.setattr(
-        provider_runtime_module,
+        route_catalog_module,
         "iter_market_v3_bar_adapters",
         lambda: iter([exact_route, exact_route]),
     )

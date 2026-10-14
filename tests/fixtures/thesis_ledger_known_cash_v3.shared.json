@@ -1,0 +1,154 @@
+{
+  "说明": "主仓共享契约的测试发布副本；规则变更同步原样例与此副本，不独立定义语义。",
+  "exchange": {
+    "request": {
+      "contractVersion": 3,
+      "protocolVersion": "known-cash-observations-v1",
+      "requestId": "known-cash-fixture",
+      "symbol": "510300.SH",
+      "routeKey": {
+        "kind": "data",
+        "market": "CN",
+        "assetType": "ETF",
+        "capability": "CASH_DISTRIBUTION"
+      },
+      "routeTarget": {
+        "providerId": "hithink",
+        "upstreamSource": "fund-corporate-actions-dividends",
+        "routeIndex": 0
+      },
+      "desiredRevision": 1,
+      "effectivePolicyRevision": 1,
+      "catalogRevision": 1,
+      "start": "2025-06-01",
+      "end": "2025-06-30",
+      "dataAsOf": "2026-10-09T14:00:00Z",
+      "currency": "CNY",
+      "researchPolicy": {
+        "version": "known-announced-cash-events-v1",
+        "entitlement": "settled-record-date-holdings",
+        "receivable": "ex-date",
+        "settlement": "assume-scheduled-payment-date",
+        "missingEvents": "excluded-with-unknown-coverage",
+        "usage": "accounting-only",
+        "splitEvents": "not-modelled",
+        "historicalAvailability": "notVerified"
+      }
+    },
+    "response": {
+      "contractVersion": 3,
+      "protocolVersion": "known-cash-observations-v1",
+      "requestId": "known-cash-fixture",
+      "symbol": "510300.SH",
+      "routeKey": {
+        "kind": "data",
+        "market": "CN",
+        "assetType": "ETF",
+        "capability": "CASH_DISTRIBUTION"
+      },
+      "routeTarget": {
+        "providerId": "hithink",
+        "upstreamSource": "fund-corporate-actions-dividends",
+        "routeIndex": 0
+      },
+      "desiredRevision": 1,
+      "effectivePolicyRevision": 1,
+      "catalogRevision": 1,
+      "start": "2025-06-01",
+      "end": "2025-06-30",
+      "dataAsOf": "2026-10-09T14:00:00Z",
+      "currency": "CNY",
+      "researchPolicy": {
+        "version": "known-announced-cash-events-v1",
+        "entitlement": "settled-record-date-holdings",
+        "receivable": "ex-date",
+        "settlement": "assume-scheduled-payment-date",
+        "missingEvents": "excluded-with-unknown-coverage",
+        "usage": "accounting-only",
+        "splitEvents": "not-modelled",
+        "historicalAvailability": "notVerified"
+      },
+      "fetchedAt": "2026-10-09T13:01:00Z",
+      "source": {
+        "target": {
+          "providerId": "hithink",
+          "upstreamSource": "fund-corporate-actions-dividends",
+          "routeIndex": 0
+        },
+        "controlIdentity": {
+          "providerConfigVersion": 3,
+          "credentialRevision": "hmac-sha256-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "providerRevision": "fixture-response-v1",
+        "adapterRevision": "fixture-adapter-v1",
+        "normalizationRevision": "fixture-normalizer-v1",
+        "responseSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "observedAt": "2026-10-09T13:00:00Z",
+        "queryIdentity": {
+          "kind": "request-bound-query-v1",
+          "requestedSymbol": "510300.SH",
+          "queryIdentifier": "510300.SH",
+          "currencyBasis": "explicit-research-scope",
+          "historicalIdentity": "notVerified"
+        }
+      },
+      "coverage": {
+        "complete": false,
+        "reason": "historical_coverage_unverified"
+      },
+      "ignoredEmptyRows": 0,
+      "records": [
+        {
+          "symbol": "510300.SH",
+          "announcementDate": "2025-06-11",
+          "recordDate": "2025-06-17",
+          "effectiveDate": "2025-06-18",
+          "paymentDate": "2025-06-27",
+          "amountPerFundUnit": "0.088",
+          "currency": "CNY",
+          "planStatus": "implementation-plan-announced",
+          "statusBasis": "research-assumption",
+          "sourcePlanStatus": "2",
+          "sourceSemanticsRevision": "hithink-plan-announced-v1",
+          "sourceAmount": {
+            "value": "0.88",
+            "unit": "per-ten-fund-units"
+          }
+        }
+      ]
+    }
+  },
+  "failureReasons": [
+    "credential_missing",
+    "provider_unavailable",
+    "dependency_missing",
+    "route_not_configured",
+    "policy_version_mismatch",
+    "policy_unavailable",
+    "catalog_version_mismatch",
+    "configuration_changed",
+    "research_protocol_not_supported",
+    "invalid_research_request",
+    "invalid_research_scope",
+    "invalid_source_response",
+    "invalid_control_or_source_response",
+    "source_unavailable",
+    "permission_denied",
+    "authentication_failed",
+    "rate_limited",
+    "transport_error",
+    "upstream_failure",
+    "symbol_not_found",
+    "data_not_ready",
+    "range_exceeded",
+    "response_too_large",
+    "count_mismatch",
+    "invalid_clock",
+    "invalid_response",
+    "invalid_request",
+    "http_error",
+    "provider_error",
+    "unsupported_capability",
+    "missing_credentials"
+  ]
+}

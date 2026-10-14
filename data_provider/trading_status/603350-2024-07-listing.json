@@ -1,0 +1,127 @@
+{
+  "datasetId": "cn-603350-initial-listing-2024-07-v1",
+  "symbol": "603350.SH",
+  "upstreamSource": "cn-stock-initial-listing",
+  "coverage": {
+    "start": "2024-07-02",
+    "end": "2024-07-11"
+  },
+  "sourceDocuments": [
+    {
+      "id": "annada-ipo-2024",
+      "title": "安乃达首次公开发行股票主板上市公告书",
+      "url": "https://static.cninfo.com.cn/finalpage/2024-07-02/1220512925.PDF",
+      "publishedDate": "2024-07-02",
+      "kind": "issuerDisclosure",
+      "sha256": "546014a6a533bed4cdc3b556be43f6a7c54d7433f57ff056e16895c16efff0d2",
+      "observedAt": "2026-10-07T13:20:29.003464+00:00"
+    }
+  ],
+  "days": [
+    {
+      "date": "2024-07-02",
+      "state": "unknown",
+      "listingPhase": "notListed",
+      "sourceDocumentIds": [
+        "annada-ipo-2024"
+      ]
+    },
+    {
+      "date": "2024-07-03",
+      "state": "unknown",
+      "listingPhase": "initialListing",
+      "sourceDocumentIds": [
+        "annada-ipo-2024"
+      ],
+      "noDailyPriceLimit": {
+        "reason": "主板首次公开发行上市后的前5个交易日不设价格涨跌幅限制"
+      }
+    },
+    {
+      "date": "2024-07-04",
+      "state": "unknown",
+      "listingPhase": "initialListing",
+      "sourceDocumentIds": [
+        "annada-ipo-2024"
+      ],
+      "noDailyPriceLimit": {
+        "reason": "主板首次公开发行上市后的前5个交易日不设价格涨跌幅限制"
+      }
+    },
+    {
+      "date": "2024-07-05",
+      "state": "unknown",
+      "listingPhase": "initialListing",
+      "sourceDocumentIds": [
+        "annada-ipo-2024"
+      ],
+      "noDailyPriceLimit": {
+        "reason": "主板首次公开发行上市后的前5个交易日不设价格涨跌幅限制"
+      }
+    },
+    {
+      "date": "2024-07-06",
+      "state": "unknown",
+      "listingPhase": "initialListing",
+      "sourceDocumentIds": [
+        "annada-ipo-2024"
+      ]
+    },
+    {
+      "date": "2024-07-07",
+      "state": "unknown",
+      "listingPhase": "initialListing",
+      "sourceDocumentIds": [
+        "annada-ipo-2024"
+      ]
+    },
+    {
+      "date": "2024-07-08",
+      "state": "unknown",
+      "listingPhase": "initialListing",
+      "sourceDocumentIds": [
+        "annada-ipo-2024"
+      ],
+      "noDailyPriceLimit": {
+        "reason": "主板首次公开发行上市后的前5个交易日不设价格涨跌幅限制"
+      }
+    },
+    {
+      "date": "2024-07-09",
+      "state": "unknown",
+      "listingPhase": "initialListing",
+      "sourceDocumentIds": [
+        "annada-ipo-2024"
+      ],
+      "noDailyPriceLimit": {
+        "reason": "主板首次公开发行上市后的前5个交易日不设价格涨跌幅限制"
+      }
+    },
+    {
+      "date": "2024-07-10",
+      "state": "unknown",
+      "listingPhase": "listed",
+      "sourceDocumentIds": [
+        "annada-ipo-2024"
+      ],
+      "dailyPriceLimit": {
+        "reference": "previousRawClose",
+        "maxUpRatio": "0.1",
+        "maxDownRatio": "0.1"
+      }
+    },
+    {
+      "date": "2024-07-11",
+      "state": "unknown",
+      "listingPhase": "listed",
+      "sourceDocumentIds": [
+        "annada-ipo-2024"
+      ],
+      "dailyPriceLimit": {
+        "reference": "previousRawClose",
+        "maxUpRatio": "0.1",
+        "maxDownRatio": "0.1"
+      }
+    }
+  ]
+}

@@ -7,6 +7,7 @@ python-dotenv>=1.0.0        # Environment variable configuration
 tenacity>=8.2.0             # Retry support with exponential backoff
 sqlalchemy>=2.0.0           # ORM database access
 schedule>=1.2.0             # Scheduled task runner
+pypdf==6.19.0
 exchange-calendars==4.13.2   # Pinned verified version; rerun coverage and market-closure regressions before upgrading
 
 # Data source dependencies, ordered by fallback priority

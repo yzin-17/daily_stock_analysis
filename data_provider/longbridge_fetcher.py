@@ -33,6 +33,7 @@ from typing import Optional, Dict, Any
 
 import pandas as pd
 
+from .longbridge_credentials import _longbridge_credentials, _has_legacy_credentials, _has_oauth_credentials
 from .base import BaseFetcher, STANDARD_COLUMNS
 from .realtime_types import UnifiedRealtimeQuote, RealtimeSource, safe_float
 from .us_index_mapping import is_us_stock_code, is_us_index_code
@@ -320,39 +321,6 @@ def _oauth_sdk_unavailable_error() -> RuntimeError:
         "当前安装的 longbridge SDK 不支持 OAuth 2.0（缺少 OAuthBuilder/Config.from_oauth）。"
         "请在支持该 SDK 版本的平台安装 longbridge>=4.0.0，或继续使用 Legacy 三件套。"
     )
-
-
-def _longbridge_credentials(config: Any = None) -> Dict[str, Optional[str]]:
-    """Collect Longbridge auth inputs from Config/env without exposing secrets."""
-    app_key = _clean_optional(getattr(config, "longbridge_app_key", None))
-    app_secret = _clean_optional(getattr(config, "longbridge_app_secret", None))
-    access_token = _clean_optional(getattr(config, "longbridge_access_token", None))
-    oauth_client_id = _clean_optional(getattr(config, "longbridge_oauth_client_id", None))
-
-    app_key = app_key or _clean_optional(os.getenv("LONGBRIDGE_APP_KEY"))
-    app_secret = app_secret or _clean_optional(os.getenv("LONGBRIDGE_APP_SECRET"))
-    access_token = access_token or _clean_optional(os.getenv("LONGBRIDGE_ACCESS_TOKEN"))
-    oauth_client_id = oauth_client_id or _clean_optional(os.getenv("LONGBRIDGE_OAUTH_CLIENT_ID"))
-
-    # Some Longbridge pages label the OAuth public client id as "App Key".
-    # Use it as a compatibility alias only when no Legacy access token exists.
-    if not oauth_client_id and app_key and not access_token:
-        oauth_client_id = app_key
-
-    return {
-        "app_key": app_key,
-        "app_secret": app_secret,
-        "access_token": access_token,
-        "oauth_client_id": oauth_client_id,
-    }
-
-
-def _has_legacy_credentials(creds: Dict[str, Optional[str]]) -> bool:
-    return bool(creds.get("app_key") and creds.get("app_secret") and creds.get("access_token"))
-
-
-def _has_oauth_credentials(creds: Dict[str, Optional[str]]) -> bool:
-    return bool(creds.get("oauth_client_id"))
 
 
 def _is_us_code(stock_code: str) -> bool:
@@ -808,8 +776,11 @@ class LongbridgeFetcher(BaseFetcher):
     # get_realtime_quote
     # ------------------------------------------------------------------
 
-    def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
-        """Fetch realtime quote from Longbridge, computing derived fields."""
+    def get_realtime_quote(self, stock_code: str, *, strict_source: bool = False, instrument_type: Optional[str] = None) -> Optional[UnifiedRealtimeQuote]:
+        """Fetch quotes; exact reads preserve identity and missing fields."""
+        if strict_source:
+            from data_provider.exact_foreign_quotes import longbridge_quote
+            return longbridge_quote(self, stock_code)
         if not self.is_available_for_request("realtime_quote"):
             return None
 

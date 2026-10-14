@@ -11,6 +11,7 @@ from api.thesis_ledger_events_v3 import router
 from src.services.thesis_ledger_event_v3 import execute_event_request, EventV3Error
 from src.services.thesis_ledger_event_v3_adapters import EVENT_KEY, EVENT_TARGET, EVENT_REVISIONS
 from src.services.thesis_ledger_provider_runtime import ThesisLedgerProviderRuntime
+from src.services.thesis_ledger_control import PROVIDER_MANIFESTS
 from tests.test_thesis_ledger_market_v3_admission_runtime import _CatalogStore, _identity
 
 
@@ -26,6 +27,11 @@ def state():
         "invalidatedAt": None, "invalidationReason": None, "recordedBy": "private-reviewer",
     }
     store = _CatalogStore({_identity(EVENT_KEY, EVENT_TARGET): admission})
+    # 原事件入口要求完整目录，夹具必须覆盖当前真实供应商集合。
+    known = {provider['providerId'] for provider in store.providers}
+    store.providers.extend({**manifest, 'configured': True, 'enabled': True,
+                            'credentialConfigured': False, 'tombstone': None}
+                           for provider_id, manifest in PROVIDER_MANIFESTS.items() if provider_id not in known)
     policy = {
         "contractVersion": 3, "enabled": True, "revision": 5, "sourceDesiredRevision": 5,
         "routes": [{"key": EVENT_KEY, "targets": [
@@ -115,7 +121,7 @@ def test_http_authentication_prevents_execution(state, monkeypatch):
 
 
 def test_authenticated_http_uses_the_admitted_runtime(state, monkeypatch):
-    import src.services.thesis_ledger_event_v3 as service
+    import data_provider.eastmoney_cash_capability as service
     import src.services.thesis_ledger_provider_runtime as module
     runtime, request, read, *_ = state
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "test-token")

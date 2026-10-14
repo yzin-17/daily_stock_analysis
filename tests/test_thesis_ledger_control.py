@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import pytest
 
 from api.thesis_ledger import router_v3
 
@@ -124,6 +125,47 @@ def test_policy_apply_rejects_old_contracts_before_writing(monkeypatch, tmp_path
     )
     assert effective.status_code == 200
     assert effective.json()["projection"] is None
+
+
+@pytest.mark.parametrize("version", [-1, 1.5, True, "1", None, 9007199254740992])
+def test_provider_config_rejects_invalid_expected_version(monkeypatch, tmp_path, version):
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/v3/thesis-ledger/control/providers/efinance/config",
+                           headers={"authorization": "Bearer control-token"},
+                           json=_provider_envelope(enabled=False, expectedConfigVersion=version))
+    assert response.status_code == 422
+
+
+def test_provider_config_cas_preserves_concurrent_config_and_credentials(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    path = "/api/v3/thesis-ledger/control/providers/tushare/config"
+    headers = {"authorization": "Bearer control-token"}
+    initial = client.post(path, headers=headers, json=_provider_envelope(
+        enabled=True, expectedConfigVersion=0, settings={"source": "custom"},
+        credentials={"method": "token", "values": {"token": "stored-secret"}},
+    ))
+    assert initial.status_code == 200
+    version = initial.json()["configVersion"]
+    disabled = client.post(path, headers=headers, json=_provider_envelope(enabled=False, expectedConfigVersion=version))
+    assert disabled.status_code == 200
+    assert disabled.json()["credentialConfigured"] is True
+    assert disabled.json()["settings"] == initial.json()["settings"]
+    version = disabled.json()["configVersion"]
+    concurrent = client.post(path, headers=headers, json=_provider_envelope(settings={"source": "concurrent"}))
+    assert concurrent.status_code == 200
+    stale = client.post(path, headers=headers, json=_provider_envelope(enabled=True, expectedConfigVersion=version))
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["code"] == "PROVIDER_CONFIG_VERSION_CONFLICT"
+    current = client.get("/api/v3/thesis-ledger/control/providers", headers=headers)
+    provider = next(value for value in current.json()["providers"] if value["providerId"] == "tushare")
+    assert provider["enabled"] is False
+    assert provider["configVersion"] == concurrent.json()["configVersion"]
+    assert provider["credentialConfigured"] is True
+    restored = client.post(path, headers=headers, json=_provider_envelope(
+        enabled=True, expectedConfigVersion=provider["configVersion"]))
+    assert restored.status_code == 200
+    assert restored.json()["settings"] == {"source": "concurrent"}
+    assert "stored-secret" not in current.text + stale.text + restored.text
 
 
 def test_provider_config_patch_preserves_omitted_fields_and_defaults_new_rows(monkeypatch, tmp_path):
@@ -293,7 +335,7 @@ def test_capability_smoke_does_not_change_policy(monkeypatch, tmp_path):
     response = client.post(
         "/api/v3/thesis-ledger/control/providers/akshare/test",
         headers=headers,
-        json=_provider_envelope(capabilities=["REALTIME_QUOTE"]),
+        json=_provider_envelope(),
     )
     assert response.status_code == 200
     assert response.json()["status"] == "degraded"
@@ -321,15 +363,11 @@ def test_provider_test_uses_in_memory_structured_draft_without_persisting(monkey
     assert saved.status_code == 200
     calls = []
 
-    class _Runtime:
-        def smoke(self, provider_id, capability, *, credential_snapshot, draft_probe):
-            calls.append((provider_id, capability, credential_snapshot, draft_probe))
-            return {"status": "healthy", "readOnly": True, "attempted": True}
+    def precise(_runtime, key, target, snapshot):
+        calls.append((target["providerId"], key["capability"], snapshot))
+        return {"symbol": "600519.SH", "start": "2026-09-28", "end": "2026-09-30"}
 
-    monkeypatch.setattr(
-        "src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime",
-        lambda: _Runtime(),
-    )
+    monkeypatch.setattr("src.services.thesis_ledger_provider_exact_checks.read_exact_probe", precise)
     response = client.post(
         "/api/v3/thesis-ledger/control/providers/tushare/test",
         headers=headers,
@@ -339,8 +377,7 @@ def test_provider_test_uses_in_memory_structured_draft_without_persisting(monkey
     assert response.json()["status"] == "healthy"
     assert response.json()["capabilityResults"]["REALTIME_QUOTE"]["attempted"] is True
     assert calls
-    assert all(snapshot.values["token"] == "page-token" for _, _, snapshot, _ in calls)
-    assert all(draft_probe is True for _, _, _, draft_probe in calls)
+    assert all(snapshot.values["token"] == "page-token" for _, _, snapshot in calls)
 
     calls.clear()
     saved_response = client.post(
@@ -350,7 +387,7 @@ def test_provider_test_uses_in_memory_structured_draft_without_persisting(monkey
     )
     assert saved_response.status_code == 200
     assert calls
-    assert all(draft_probe is False for _, _, _, draft_probe in calls)
+    assert all(snapshot.values["token"] == "page-token" for _, _, snapshot in calls)
     assert client.get("/api/v3/thesis-ledger/control/providers", headers=headers).json()["providers"]
 
 

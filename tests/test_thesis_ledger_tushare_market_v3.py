@@ -71,14 +71,10 @@ def entry(runtime):
     return next(row for row in runtime.market_route_catalog_v3()["entries"] if row["key"] == KEY and row["target"] == TARGET)
 
 
-def test_default_denied_then_explicit_current_admission_returns_calendar_proven_raw(setup, monkeypatch):
+def test_configured_source_returns_calendar_proven_raw_without_manual_admission(setup, monkeypatch):
     store, runtime, client, _ = setup
     post = Mock(return_value=response())
     monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", post)
-    assert entry(runtime)["state"] == "not_admitted"
-    assert read(client).status_code != 200
-    post.assert_not_called()
-    admit(store)
     assert entry(runtime)["state"] == "ready"
     result = read(client)
     assert result.status_code == 200, result.text
@@ -95,14 +91,14 @@ def test_default_denied_then_explicit_current_admission_returns_calendar_proven_
 
 
 @pytest.mark.parametrize("field", ["adapterRevision", "sourceRevision", "credentialRevision"])
-def test_stale_admission_never_calls_provider(setup, monkeypatch, field):
+def test_stale_manual_record_does_not_block_configured_price_source(setup, monkeypatch, field):
     store, runtime, client, _ = setup
     admit(store, **{field: "stale-fixture-revision"})
     post = Mock(return_value=response())
     monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", post)
-    assert entry(runtime)["state"] == "not_admitted"
-    assert read(client).status_code != 200
-    post.assert_not_called()
+    assert entry(runtime)["state"] == "ready"
+    assert read(client).status_code == 200
+    post.assert_called_once()
 
 
 @pytest.mark.parametrize("change", ["token", "endpoint", "revoke"])
@@ -122,9 +118,12 @@ def test_inflight_rotation_or_revocation_rejects_late_result(setup, monkeypatch,
     post = Mock(side_effect=changed_response)
     monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", post)
     result = read(client)
-    assert result.status_code != 200
-    assert "bars" not in result.json()
-    assert entry(runtime)["state"] == "not_admitted"
+    if change == "revoke":
+        assert result.status_code == 200
+    else:
+        assert result.status_code != 200
+        assert "bars" not in result.json()
+    assert entry(runtime)["state"] == "ready"
     post.assert_called_once()
 
 

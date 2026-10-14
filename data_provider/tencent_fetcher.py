@@ -40,6 +40,12 @@ class TencentFetcher(BaseFetcher):
     def __init__(self) -> None:
         self.priority = _read_tencent_priority()
 
+    def get_realtime_quote_single_symbol(self, symbol: str) -> dict[str, Any]:
+        """ETF 基础 Quote 独立于日线与股票量额启发式。"""
+        from .tencent_etf_quote import fetch_tencent_etf_quote
+
+        return fetch_tencent_etf_quote(symbol)
+
     def _fetch_raw_data(
         self,
         stock_code: str,

@@ -9,6 +9,8 @@ from typing import Any, Callable, Mapping
 
 import requests
 
+from .thesis_ledger_quote_values import optional_quote_number
+
 
 HITHINK_STOCK_SNAPSHOT_SOURCE = "a-share-prices-snapshot"
 HITHINK_ETF_SNAPSHOT_SOURCE = "fund-market-snapshot"
@@ -186,14 +188,10 @@ class HiThinkSnapshotAdapter:
             "high": _number(item.get("high_price"), "high_price"),
             "low": _number(item.get("low_price"), "low_price"),
             "pre_close": _number(item.get("prev_price"), "prev_price"),
-            "volume": _number(item.get("volume"), "volume"),
-            "amount": _number(item.get("turnover"), "turnover"),
-            "change_amount": _number(item.get("price_change"), "price_change", signed=True),
-            "change_pct": _number(
-                item.get("price_change_ratio_pct"),
-                "price_change_ratio_pct",
-                signed=True,
-            ),
+            "volume": optional_quote_number(item.get("volume")),
+            "amount": optional_quote_number(item.get("turnover")),
+            "change_amount": optional_quote_number(item.get("price_change"), signed=True),
+            "change_pct": optional_quote_number(item.get("price_change_ratio_pct"), signed=True),
             "provider_timestamp": _provider_time(data.get("timestamp")),
             "fetched_at": self._observed_at(),
             "source": f"hithink/{source}",

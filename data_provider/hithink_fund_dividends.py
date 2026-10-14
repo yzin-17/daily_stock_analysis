@@ -1,21 +1,16 @@
 """HiThink 基金分红字段标准化；历史覆盖与来源准入由调用方证明。"""
 
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException, localcontext
 import re
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from data_provider.hithink_fund_dividend_semantics import (
+    DATE_FIELDS, PLAN_ANNOUNCED_LABEL, is_empty_dividend_row,
+    normalize_dividend_progress, research_observation_metadata, validate_research_semantics,
+)
 
-DATE_FIELDS = {
-    "publish_date_ms": "announcementDate",
-    "registration_date_ms": "recordDate",
-    "ex_dividend_date_ms": "effectiveDate",
-    "payment_date_ms": "paymentDate",
-    "reinvestment_date_ms": "reinvestmentDate",
-    "profit_base_date_ms": "profitBaseDate",
-    "in_dividend_date_ms": "inDividendDate",
-}
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -38,12 +33,18 @@ def _per_unit_cash(value: Any, *, allow_zero: bool = False) -> str:
     if isinstance(value, bool) or value is None:
         raise ValueError("HiThink 分红税前金额无效")
     try:
-        amount = Decimal(str(value)) / Decimal(10)
-    except (InvalidOperation, ValueError) as exc:
+        original = Decimal(str(value))
+        if len(str(value)) > 256 or abs(original.as_tuple().exponent) > 256:
+            raise ValueError("HiThink 分红金额超出十进制存储预算")
+        with localcontext() as context:
+            context.prec = max(28, len(str(value)) + 2)
+            amount = original / Decimal(10)
+    except (DecimalException, ValueError, TypeError) as exc:
         raise ValueError("HiThink 分红税前金额无效") from exc
     if not amount.is_finite() or amount < 0 or (amount == 0 and not allow_zero):
         raise ValueError("HiThink 分红金额必须为有限非负数，税前金额必须大于零")
-    return format(amount.normalize(), "f")
+    text = format(amount, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
 
 
 def normalize_hithink_fund_dividends(
@@ -56,8 +57,10 @@ def normalize_hithink_fund_dividends(
     end: str,
     observed_at: datetime,
     provider_revision: str,
+    research_semantics: str | None = None,
 ) -> dict[str, Any]:
     """标准化官方 item[]；币种/身份已核验才由调用方传入。"""
+    validate_research_semantics(research_semantics)
     if not isinstance(symbol, str) or not re.fullmatch(r"[0-9]{6}\.(SH|SZ|OF)", symbol):
         raise ValueError("HiThink 分红需要完整基金代码")
     if instrument_type not in {"ETF", "NAV_FUND"} or (instrument_type == "ETF" and symbol.endswith(".OF")):
@@ -80,20 +83,26 @@ def normalize_hithink_fund_dividends(
     fetched = observed_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
     observations: list[dict[str, Any]] = []
     facts: dict[str, dict[str, Any]] = {}
-    implemented_observations: dict[str, dict[str, Any]] = {}
+    resolved_observations: dict[str, dict[str, Any]] = {}
+    ignored_empty_rows = 0
     for item in items:
         if not isinstance(item, dict):
             raise ValueError("HiThink 分红记录格式无效")
+        if research_semantics is not None and is_empty_dividend_row(item):
+            ignored_empty_rows += 1
+            continue
         dates = {output: _date_ms(item.get(source), source) for source, output in DATE_FIELDS.items()}
-        progress = item.get("progress")
-        if not isinstance(progress, str) or not progress.strip():
-            raise ValueError("HiThink 分红进度缺失")
-        progress = progress.strip()
-        if progress not in {"实施", "预案"}:
-            raise ValueError("HiThink 分红进度口径未经核验")
+        progress = normalize_dividend_progress(item.get("progress"), research_semantics)
         effective = dates["effectiveDate"]
-        if progress == "实施" and effective is None:
+        if progress in {"实施", PLAN_ANNOUNCED_LABEL} and effective is None:
+            if progress == PLAN_ANNOUNCED_LABEL:
+                raise ValueError("HiThink 已公布分红方案缺少除息日")
             raise ValueError("HiThink 已实施分红缺少除息日")
+        if progress == PLAN_ANNOUNCED_LABEL and dates["announcementDate"] is None:
+            raise ValueError("HiThink 已公布分红方案缺少公告日")
+        if (progress == PLAN_ANNOUNCED_LABEL
+                and dates["announcementDate"] > observed_at.astimezone(SHANGHAI).date().isoformat()):
+            raise ValueError("HiThink 分红方案公告日晚于观察时点")
         if effective is not None and not start <= effective <= end:
             continue
         cash = None
@@ -102,7 +111,9 @@ def normalize_hithink_fund_dividends(
         after_tax_cash = None
         if item.get("per_ten_cash_after_tax") is not None:
             after_tax_cash = _per_unit_cash(item["per_ten_cash_after_tax"], allow_zero=True)
-        if progress == "实施" and cash is None:
+        if progress in {"实施", PLAN_ANNOUNCED_LABEL} and cash is None:
+            if progress == PLAN_ANNOUNCED_LABEL:
+                raise ValueError("HiThink 已公布分红方案缺少税前金额")
             raise ValueError("HiThink 已实施分红缺少税前金额")
         if effective is not None and (
             (dates["recordDate"] and dates["recordDate"] > effective)
@@ -117,13 +128,17 @@ def normalize_hithink_fund_dividends(
             "observedAt": fetched, "endpoint": "/api/fund/corporate-actions/dividends",
             "upstreamSource": "hithink",
         }
+        if research_semantics is not None:
+            observation.update(research_observation_metadata(item, research_semantics))
         if observation not in observations:
             observations.append(observation)
+        if progress not in {"实施", PLAN_ANNOUNCED_LABEL}:
+            continue
+        if effective in resolved_observations and resolved_observations[effective] != observation:
+            raise ValueError("HiThink 同一除息日存在冲突分红记录")
+        resolved_observations[effective] = observation
         if progress != "实施":
             continue
-        if effective in implemented_observations and implemented_observations[effective] != observation:
-            raise ValueError("HiThink 同一除息日存在冲突分红记录")
-        implemented_observations[effective] = observation
         fact = {
             "symbol": symbol, "market": "CN", "instrumentType": instrument_type,
             "type": "CASH_DIVIDEND", "effectiveDate": effective,
@@ -138,10 +153,15 @@ def normalize_hithink_fund_dividends(
             raise ValueError("HiThink 同一除息日存在冲突分红记录")
         facts[effective] = fact
 
-    if any(item["effectiveDate"] in facts and item["planProgress"] != "实施" for item in observations):
+    if any(item["effectiveDate"] in resolved_observations
+           and item["planProgress"] != resolved_observations[item["effectiveDate"]]["planProgress"]
+           for item in observations):
         raise ValueError("HiThink 同一除息日进度冲突，需要修订证据")
     observations.sort(key=lambda item: (item["effectiveDate"] or "", item["announcementDate"] or "", item["planProgress"]))
-    return {
+    result = {
         "facts": [facts[key] for key in sorted(facts)], "observations": observations,
         "coverage": {"start": start, "end": end, "complete": False},
     }
+    if research_semantics is not None:
+        result.update({"researchSemantics": research_semantics, "ignoredEmptyRows": ignored_empty_rows})
+    return result

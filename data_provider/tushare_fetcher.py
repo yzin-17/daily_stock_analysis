@@ -14,12 +14,10 @@ TushareFetcher - 备用数据源 1 (Priority 2)
 3. 使用 tenacity 实现指数退避重试
 """
 
-import json as _json
 import logging
 import re
 import time
 from datetime import datetime, timedelta
-from decimal import Decimal
 from typing import Optional, Tuple, List, Dict, Any
 
 import pandas as pd
@@ -38,6 +36,7 @@ from .sector_rankings_contract import normalize_sector_rankings
 from .tushare_fund_daily import fetch_tushare_fund_daily
 from .tushare_exact_daily import TushareExactDailyMixin
 from .tushare_endpoint import _resolve_tushare_http_url
+from .tushare_http_client import _TushareHttpClient
 from .tushare_fund_adj import TushareFundFactorsMixin
 from .tushare_fund_dividend_reader import TushareFundDividendsMixin
 from src.config import get_config
@@ -77,47 +76,6 @@ def _is_us_code(stock_code: str) -> bool:
     """
     code = stock_code.strip().upper()
     return bool(re.match(r'^[A-Z]{1,5}(\.[A-Z])?$', code))
-
-
-class _TushareHttpClient:
-    """Lightweight Tushare Pro client that does not require the tushare SDK."""
-
-    def __init__(self, token: str, timeout: int = 30, api_url: str = "http://api.tushare.pro") -> None:
-        self._token = token
-        self._timeout = timeout
-        self._api_url = api_url
-
-    def query(self, api_name: str, fields: str = "", **kwargs) -> pd.DataFrame:
-        req_params = {
-            "api_name": api_name,
-            "token": self._token,
-            "params": kwargs,
-            "fields": fields,
-        }
-        request_options = {"timeout": self._timeout}
-        if getattr(self, "_source_pinned", False):
-            request_options["allow_redirects"] = False
-        res = requests.post(self._api_url, json=req_params, **request_options)
-        if res.status_code != 200:
-            raise Exception(f"Tushare API HTTP {res.status_code}")
-
-        result = _json.loads(res.text, parse_float=Decimal if api_name in {"fund_adj", "fund_div"} else float)
-        if result.get("code") != 0:
-            raise Exception(result.get("msg") or f"Tushare API error code {result.get('code')}")
-
-        data = result.get("data") or {}
-        columns = data.get("fields") or []
-        items = data.get("items") or []
-        return pd.DataFrame(items, columns=columns)
-
-    def __getattr__(self, api_name: str):
-        if api_name.startswith("_"):
-            raise AttributeError(api_name)
-
-        def caller(**kwargs) -> pd.DataFrame:
-            return self.query(api_name, **kwargs)
-
-        return caller
 
 
 class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFundDividendsMixin, BaseFetcher):

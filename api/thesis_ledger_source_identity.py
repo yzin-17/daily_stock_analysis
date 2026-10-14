@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 from typing import Any
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 
 
-def upstream_source(value: Any) -> str | None:
+def upstream_source(value: Any, provider_id: str) -> str | None:
     """只归一已确认的适配器别名；未知来源不伪造身份。"""
     raw = getattr(value, "value", value)
     normalized = str(raw or "").strip().lower()
-    aliases = {
-        "eastmoney": "eastmoney", "akshare_em": "eastmoney", "efinance": "eastmoney",
-        "sina": "sina", "akshare_sina": "sina",
-        "akshare_qq": "tencent", "tencent": "tencent",
-        "hithink/a-share-prices-snapshot": "a-share-prices-snapshot",
-        "hithink/fund-market-snapshot": "fund-market-snapshot",
-    }
-    return aliases.get(normalized)
+    source = CAPABILITY_SOURCES.source(provider_id)
+    return dict(source.quote_source_aliases).get(normalized) if source is not None else None

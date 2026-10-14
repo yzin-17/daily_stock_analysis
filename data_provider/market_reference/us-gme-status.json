@@ -1,0 +1,49 @@
+{
+  "market": "US",
+  "symbol": "GME.US",
+  "upstreamSource": "nyse-gme-halt-observations",
+  "datasetId": "us-gme-three-observed-luld-pauses-2024-05-v1",
+  "coverage": {
+    "start": "2024-05-10",
+    "end": "2024-05-24"
+  },
+  "timezone": "America/New_York",
+  "observationScope": "实际成功读取74110行，05-13匹配9条；当前仅保存工具输出中的3条完整记录，不能声明全部暂停已覆盖。observedAt为实际读取完成记录的工具观察时间。其余日期和未保留的记录未知。",
+  "days": [
+    {
+      "date": "2024-05-13",
+      "state": "unknown",
+      "intradayHalts": [
+        {
+          "startedAt": "2024-05-13T10:12:46-04:00",
+          "endedAt": "2024-05-13T10:17:46-04:00",
+          "reason": "LULD pause（仅已保存的三条观察记录）"
+        },
+        {
+          "startedAt": "2024-05-13T10:20:06-04:00",
+          "endedAt": "2024-05-13T10:25:06-04:00",
+          "reason": "LULD pause（仅已保存的三条观察记录）"
+        },
+        {
+          "startedAt": "2024-05-13T10:39:59-04:00",
+          "endedAt": "2024-05-13T10:44:59-04:00",
+          "reason": "LULD pause（仅已保存的三条观察记录）"
+        }
+      ],
+      "sourceDocumentIds": [
+        "nyse-historical-20261007"
+      ]
+    }
+  ],
+  "sourceDocuments": [
+    {
+      "id": "nyse-historical-20261007",
+      "title": "NYSE历史停牌CSV（仅保存GME三条已观察记录）",
+      "url": "https://www.nyse.com/api/trade-halts/historical/download",
+      "publishedDate": null,
+      "kind": "exchangePublication",
+      "sha256": "9ee2c59fc05fefc2888774725b40380e140a01b0231f1c686395de217e7ec0f9",
+      "observedAt": "2026-10-07T06:10:07.006Z"
+    }
+  ]
+}

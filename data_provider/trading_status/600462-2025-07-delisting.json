@@ -1,0 +1,144 @@
+{
+  "datasetId": "cn-600462-delisting-2025-07-v1",
+  "symbol": "600462.SH",
+  "upstreamSource": "cn-stock-delisting-period",
+  "coverage": {
+    "start": "2025-07-10",
+    "end": "2025-07-22"
+  },
+  "sourceDocuments": [
+    {
+      "id": "jiuyou-delisting-period-2025",
+      "title": "九有股份进入退市整理期交易首日的风险提示公告",
+      "url": "https://static.cninfo.com.cn/finalpage/2025-06-24/1223956705.PDF",
+      "publishedDate": "2025-06-24",
+      "kind": "issuerDisclosure",
+      "sha256": "3ace88e84dca6b7f22331782ce283969aa8b34120320e94a1276af46d01a3d83",
+      "observedAt": "2026-10-07T13:24:35.205808+00:00"
+    },
+    {
+      "id": "jiuyou-delisted-2025",
+      "title": "退市九有股票终止上市暨摘牌公告",
+      "url": "https://static.cninfo.com.cn/finalpage/2025-07-15/1224162347.PDF",
+      "publishedDate": "2025-07-15",
+      "kind": "issuerDisclosure",
+      "sha256": "90662f92cb491b542d528ae03561c377fbbaea19ca689040646ab436a0f2971f",
+      "observedAt": "2026-10-07T13:24:35.073505+00:00"
+    }
+  ],
+  "days": [
+    {
+      "date": "2025-07-10",
+      "state": "unknown",
+      "sourceDocumentIds": [
+        "jiuyou-delisting-period-2025"
+      ],
+      "listingPhase": "delistingPeriod",
+      "dailyPriceLimit": {
+        "reference": "previousRawClose",
+        "maxUpRatio": "0.1",
+        "maxDownRatio": "0.1"
+      }
+    },
+    {
+      "date": "2025-07-11",
+      "state": "unknown",
+      "sourceDocumentIds": [
+        "jiuyou-delisting-period-2025"
+      ],
+      "listingPhase": "delistingPeriod",
+      "dailyPriceLimit": {
+        "reference": "previousRawClose",
+        "maxUpRatio": "0.1",
+        "maxDownRatio": "0.1"
+      }
+    },
+    {
+      "date": "2025-07-12",
+      "state": "unknown",
+      "sourceDocumentIds": [
+        "jiuyou-delisting-period-2025"
+      ],
+      "listingPhase": "delistingPeriod"
+    },
+    {
+      "date": "2025-07-13",
+      "state": "unknown",
+      "sourceDocumentIds": [
+        "jiuyou-delisting-period-2025"
+      ],
+      "listingPhase": "delistingPeriod"
+    },
+    {
+      "date": "2025-07-14",
+      "state": "unknown",
+      "sourceDocumentIds": [
+        "jiuyou-delisting-period-2025"
+      ],
+      "listingPhase": "delistingPeriod",
+      "dailyPriceLimit": {
+        "reference": "previousRawClose",
+        "maxUpRatio": "0.1",
+        "maxDownRatio": "0.1"
+      }
+    },
+    {
+      "date": "2025-07-15",
+      "state": "suspended",
+      "sourceDocumentIds": [
+        "jiuyou-delisted-2025"
+      ]
+    },
+    {
+      "date": "2025-07-16",
+      "state": "suspended",
+      "sourceDocumentIds": [
+        "jiuyou-delisted-2025"
+      ]
+    },
+    {
+      "date": "2025-07-17",
+      "state": "suspended",
+      "sourceDocumentIds": [
+        "jiuyou-delisted-2025"
+      ]
+    },
+    {
+      "date": "2025-07-18",
+      "state": "suspended",
+      "sourceDocumentIds": [
+        "jiuyou-delisted-2025"
+      ]
+    },
+    {
+      "date": "2025-07-19",
+      "state": "suspended",
+      "sourceDocumentIds": [
+        "jiuyou-delisted-2025"
+      ]
+    },
+    {
+      "date": "2025-07-20",
+      "state": "suspended",
+      "sourceDocumentIds": [
+        "jiuyou-delisted-2025"
+      ]
+    },
+    {
+      "date": "2025-07-21",
+      "state": "unknown",
+      "sourceDocumentIds": [
+        "jiuyou-delisted-2025"
+      ],
+      "listingPhase": "delisted"
+    },
+    {
+      "date": "2025-07-22",
+      "state": "unknown",
+      "sourceDocumentIds": [
+        "jiuyou-delisted-2025"
+      ],
+      "listingPhase": "delisted"
+    }
+  ]
+}

@@ -82,6 +82,12 @@ def add_error_handlers(app) -> None:
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
         """处理 HTTP 异常"""
+        # 标准 Data V3 的嵌套错误必须保留请求关联；协议校验仍由生产端/消费者负责。
+        if (isinstance(exc.detail, dict) and exc.detail.get("contractVersion") == 3
+                and isinstance(exc.detail.get("requestId"), str)
+                and isinstance(exc.detail.get("error"), dict)
+                and {"code", "message"}.issubset(exc.detail["error"])):
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         # ThesisLedger Data/Control Contract errors must remain structured under
         # ``detail`` so clients can branch on the stable error code.
         if (

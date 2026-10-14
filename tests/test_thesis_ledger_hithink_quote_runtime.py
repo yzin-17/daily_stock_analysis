@@ -95,17 +95,25 @@ def _catalog_target_state(store, asset_type, source):
     )
 
 
-def test_exact_quote_catalog_requires_current_admission(route):
+@pytest.mark.parametrize("credential_source", ["environment", "control"])
+def test_exact_quote_catalog_uses_current_credentials_without_manual_admission(route, credential_source):
     store, asset_type, symbol, source = route
-    assert _catalog_target_state(store, asset_type, source) == "not_admitted"
+    if credential_source == "control":
+        store.save_provider_config("hithink", {"requestId": "page-quote-key", "credentials": {
+            "method": "api_key", "values": {"apiKey": "synthetic-page-quote-key"},
+        }})
+    assert _catalog_target_state(store, asset_type, source) == "ready"
     _admit(store, asset_type, symbol, source)
     assert _catalog_target_state(store, asset_type, source) == "ready"
+    from src.services.thesis_ledger_hithink_quote_runtime import current_hithink_quote_guard
+    assert current_hithink_quote_guard(store, asset_type=asset_type, source=source, symbol=symbol,
+                                      expected_policy_revision=1) is not None
     store.revoke_route_admission_v3(
         key=hithink_quote_route_key(asset_type),
         target={"providerId": "hithink", "upstreamSource": source},
         reason="test",
     )
-    assert _catalog_target_state(store, asset_type, source) == "not_admitted"
+    assert _catalog_target_state(store, asset_type, source) == "ready"
 
 
 class _QuoteAdapter:
@@ -138,23 +146,12 @@ def _request(asset_type, symbol):
     return ThesisLedgerDataRequest("REALTIME_QUOTE", symbol, instrument_type=asset_type)
 
 
-def test_missing_then_exact_admission_and_out_of_scope(route):
+def test_exact_configured_quote_preserves_source_and_request_budget(route):
     store, asset_type, symbol, source = route
     adapter = _QuoteAdapter()
     runtime = ThesisLedgerProviderRuntime(store, adapters={"hithink": adapter})
-    assert _target_state(store, asset_type)["reason"] == "not_admitted"
-    with pytest.raises(ThesisLedgerGatewayError) as denied:
-        runtime.execute_request(_request(asset_type, symbol))
-    assert denied.value.code == "NO_ELIGIBLE_PROVIDER"
-    assert adapter.calls == []
-
-    _admit(store, asset_type, symbol, source)
+    assert _target_state(store, asset_type)["reason"] is None
     assert _target_state(store, asset_type)["eligible"] is True
-    with pytest.raises(ThesisLedgerGatewayError) as outside:
-        runtime.execute_request(_request(asset_type, "000001.SZ"))
-    assert outside.value.code == "not_admitted"
-    assert adapter.calls == []
-
     result = runtime.execute_request(_request(asset_type, symbol))
     assert adapter.calls == [(symbol, asset_type)]
     assert result.upstream_source == source
@@ -168,7 +165,7 @@ def test_missing_then_exact_admission_and_out_of_scope(route):
         assert adapter.calls == [(symbol, asset_type)]
 
 
-@pytest.mark.parametrize("mutation", ["revoke", "credential", "policy"])
+@pytest.mark.parametrize("mutation", ["credential", "policy"])
 def test_late_state_change_rejects_quote(route, monkeypatch, mutation):
     store, asset_type, symbol, source = route
     _admit(store, asset_type, symbol, source)
@@ -176,9 +173,7 @@ def test_late_state_change_rejects_quote(route, monkeypatch, mutation):
     target = {"providerId": "hithink", "upstreamSource": source}
 
     def change():
-        if mutation == "revoke":
-            store.revoke_route_admission_v3(key=key, target=target, reason="test")
-        elif mutation == "credential":
+        if mutation == "credential":
             monkeypatch.setenv("HITHINK_API_KEY", "synthetic-quote-key-v2")
         else:
             store.apply_policy_v3(_policy(asset_type, source, revision=2))
@@ -225,7 +220,7 @@ def test_current_source_catalog_removal_rejects_before_adapter(route, monkeypatc
     assert adapter.calls == []
 
 
-def test_authenticated_quote_http_uses_exact_runtime_and_revocation(route, monkeypatch):
+def test_authenticated_quote_http_uses_configuration_and_survives_legacy_record_revocation(route, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from api.thesis_ledger import router_v3 as router
@@ -247,13 +242,6 @@ def test_authenticated_quote_http_uses_exact_runtime_and_revocation(route, monke
         path = "/thesis-ledger/market/quote"
         assert client.get(path, params={"symbol": symbol}).status_code == 401
         headers = {"Authorization": "Bearer synthetic-quote-contract-token"}
-        denied = client.get(path, params={"symbol": symbol}, headers=headers)
-        assert denied.status_code == 503
-        assert denied.json()["detail"]["code"] == "no_eligible_provider"
-        assert denied.json()["detail"]["contractVersion"] == 3
-        assert adapter.calls == []
-
-        _admit(store, asset_type, symbol, source)
         accepted = client.get(path, params={"symbol": symbol}, headers=headers)
         assert accepted.status_code == 200
         assert accepted.json()["symbol"] == symbol
@@ -263,12 +251,53 @@ def test_authenticated_quote_http_uses_exact_runtime_and_revocation(route, monke
             "share" if asset_type == "STOCK" else "unknown"
         )
 
+        _admit(store, asset_type, symbol, source)
         store.revoke_route_admission_v3(
             key=hithink_quote_route_key(asset_type),
             target={"providerId": "hithink", "upstreamSource": source},
             reason="test-revoke",
         )
-        revoked = client.get(path, params={"symbol": symbol}, headers=headers)
-        assert revoked.status_code == 503
-        assert revoked.json()["detail"]["code"] == "no_eligible_provider"
+        assert _catalog_target_state(store, asset_type, source) == "ready"
         assert adapter.calls == [(symbol, asset_type)]
+
+@pytest.mark.parametrize("optional", [None, "--", -1, float("inf"), 0, 123.45])
+def test_partial_quote_real_adapter_gateway_and_http(route, monkeypatch, optional):
+    from types import SimpleNamespace
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from api.thesis_ledger import router_v3
+    from src.services.thesis_ledger_hithink_quote import HiThinkSnapshotAdapter
+
+    store, asset_type, symbol, source = route
+    _admit(store, asset_type, symbol, source)
+    monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "synthetic-quote-contract-token")
+    monkeypatch.delenv("THESIS_LEDGER_FIXTURE_MODE", raising=False)
+    item = {"thscode": symbol, "last_price": 10, "open_price": 10,
+            "high_price": 11, "low_price": 9, "prev_price": 9.5,
+            "volume": optional, "turnover": optional}
+    payload = {"code": 0, "data": {"timestamp": None, "item": [item]}}
+    adapter = HiThinkSnapshotAdapter(
+        api_key="synthetic-quote-key", http_get=lambda *_a, **_k: SimpleNamespace(
+            status_code=200, json=lambda: payload,
+        ),
+    )
+    gateway = ThesisLedgerDataGateway(ThesisLedgerProviderRuntime(store, adapters={"hithink": adapter}))
+    monkeypatch.setattr(
+        "src.services.thesis_ledger_provider_runtime.get_thesis_ledger_data_gateway", lambda: gateway,
+    )
+    app = FastAPI()
+    app.include_router(router_v3)
+    with TestClient(app) as client:
+        response = client.get("/thesis-ledger/market/quote", params={"symbol": symbol}, headers={
+            "Authorization": "Bearer synthetic-quote-contract-token",
+        })
+    assert response.status_code == 200, response.text
+    body = response.json()
+    expected = optional if optional in (0, 123.45) else None
+    assert body["volume"] == expected
+    assert body["amount"] == expected
+    assert body["price"] == 10
+    assert body["symbol"] == symbol
+    assert body["upstreamSource"] == source
+    assert body["marketTime"] is None
+    assert body["freshness"] == "unknown"

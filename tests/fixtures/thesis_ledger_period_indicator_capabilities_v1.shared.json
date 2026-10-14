@@ -1,0 +1,69 @@
+{
+  "contractVersion": 3,
+  "engineVersion": "dsa-indicator-v3",
+  "calculation": "provided-points",
+  "periodProtocol": "market-period-indicator-v1",
+  "nativeTimeframes": ["1m", "1d"],
+  "periods": [
+    {
+      "timeframe": "5d",
+      "kind": "derived",
+      "maxInputPoints": 3650,
+      "parameterRange": {
+        "minimum": 2,
+        "maximum": 200
+      },
+      "indicators": ["MA", "MACD", "RSI"],
+      "warmupRules": {
+        "MA": "max(period,60)-1",
+        "MACD": "slow+signal",
+        "RSI": "max(short,mid,long)+1"
+      }
+    },
+    {
+      "timeframe": "1w",
+      "kind": "derived",
+      "maxInputPoints": 3650,
+      "parameterRange": {
+        "minimum": 2,
+        "maximum": 200
+      },
+      "indicators": ["MA", "MACD", "RSI"],
+      "warmupRules": {
+        "MA": "max(period,60)-1",
+        "MACD": "slow+signal",
+        "RSI": "max(short,mid,long)+1"
+      }
+    },
+    {
+      "timeframe": "1mo",
+      "kind": "derived",
+      "maxInputPoints": 3650,
+      "parameterRange": {
+        "minimum": 2,
+        "maximum": 200
+      },
+      "indicators": ["MA", "MACD", "RSI"],
+      "warmupRules": {
+        "MA": "max(period,60)-1",
+        "MACD": "slow+signal",
+        "RSI": "max(short,mid,long)+1"
+      }
+    },
+    {
+      "timeframe": "1y",
+      "kind": "derived",
+      "maxInputPoints": 3650,
+      "parameterRange": {
+        "minimum": 2,
+        "maximum": 200
+      },
+      "indicators": ["MA", "MACD", "RSI"],
+      "warmupRules": {
+        "MA": "max(period,60)-1",
+        "MACD": "slow+signal",
+        "RSI": "max(short,mid,long)+1"
+      }
+    }
+  ]
+}

@@ -1,0 +1,135 @@
+{
+  "market": "US",
+  "symbol": "GME.US",
+  "upstreamSource": "us-stock-public-fees",
+  "datasetId": "us-gme-section31-taf-exchange-t2-2024-05-v1",
+  "coverage": {
+    "start": "2024-05-10",
+    "end": "2024-05-24"
+  },
+  "exchange": "XNYS",
+  "tradingMethod": "exchangeTrading",
+  "calculationSettings": "executionModel",
+  "coverageDescription": "纳入Section31卖侧费及TAF实际股数卖侧费。Section31沿用交易所结算日T+2口径，2024-05-20成交起切换费率；TAF以2020规划及2024现行表交叉核对，每股0.000166美元、每笔上限8.30美元，成交价低于每股费率豁免。只适用于已核实实际股数的普通二级市场股票成交，逐笔舍入为显式研究模型；FINRA汇缴、券商转嫁和其他费用未纳入，非完整账单。",
+  "chargeDatePolicy": {
+    "basis": "exchangeSettlement",
+    "settlementLagSessions": 2,
+    "rateChangeChargeDate": "2024-05-22",
+    "effectiveTradeDate": "2024-05-20"
+  },
+  "segments": [
+    {
+      "range": {
+        "start": "2024-05-10",
+        "endExclusive": "2024-05-20"
+      },
+      "charges": [
+        {
+          "code": "regulatoryFee",
+          "side": "sell",
+          "currency": "USD",
+          "rate": "0.000008",
+          "basis": "turnover",
+          "sourceDocumentIds": [
+            "finra-050124",
+            "sec-31-charge-date",
+            "finra-24-04"
+          ]
+        },
+        {
+          "code": "tradingActivityFee",
+          "side": "sell",
+          "currency": "USD",
+          "rate": "0.000166",
+          "basis": "actualShares",
+          "maximumAmount": "8.30",
+          "lowPriceExemption": "belowPerShareRate",
+          "sourceDocumentIds": [
+            "finra-taf-2020-schedule",
+            "govinfo-taf-2024-current"
+          ]
+        }
+      ]
+    },
+    {
+      "range": {
+        "start": "2024-05-20",
+        "endExclusive": "2024-05-25"
+      },
+      "charges": [
+        {
+          "code": "regulatoryFee",
+          "side": "sell",
+          "currency": "USD",
+          "rate": "0.0000278",
+          "basis": "turnover",
+          "sourceDocumentIds": [
+            "finra-050124",
+            "sec-31-charge-date",
+            "finra-24-04"
+          ]
+        },
+        {
+          "code": "tradingActivityFee",
+          "side": "sell",
+          "currency": "USD",
+          "rate": "0.000166",
+          "basis": "actualShares",
+          "maximumAmount": "8.30",
+          "lowPriceExemption": "belowPerShareRate",
+          "sourceDocumentIds": [
+            "finra-taf-2020-schedule",
+            "govinfo-taf-2024-current"
+          ]
+        }
+      ]
+    }
+  ],
+  "sourceDocuments": [
+    {
+      "id": "finra-050124",
+      "title": "Section31 2024费率通知（引用SEC费率公告）",
+      "url": "https://www.finra.org/sites/default/files/2024-05/Information-Notice-050124.pdf",
+      "publishedDate": "2024-05-01",
+      "kind": "officialPublication",
+      "sha256": "db7c520c952e0c7cc91ad305f6bc7a0d0e4d45435f3e30486bb75588f9a8be70",
+      "observedAt": "2026-10-07T08:13:46.219970+00:00"
+    },
+    {
+      "id": "sec-31-charge-date",
+      "title": "SEC Rule31收费日期定义",
+      "url": "https://www.govinfo.gov/content/pkg/FR-2004-07-07/pdf/04-15081.pdf",
+      "publishedDate": "2004-07-07",
+      "kind": "officialPublication",
+      "sha256": "9b922313ec9ee68295a89c8f8c989c0c92989fcecedbd756b5ab872f45d282d9",
+      "observedAt": "2026-10-07T08:12:39.174824+00:00"
+    },
+    {
+      "id": "finra-24-04",
+      "title": "T+1自2024-05-28生效；本窗口仍为T+2",
+      "url": "https://www.finra.org/sites/default/files/2024-02/Regulatory_Notice_24-04.pdf",
+      "publishedDate": "2024-02-26",
+      "kind": "officialPublication",
+      "sha256": "b3b74a8cc5f150839cd5a209026d60c0db449722ab62ce38c310506b74d612e5",
+      "observedAt": "2026-10-07T08:13:49.435373+00:00"
+    },
+    {
+      "id": "finra-taf-2020-schedule",
+      "title": "FINRA费率规划表：2024-01-01的TAF股数费率与上限",
+      "url": "https://www.finra.org/sites/default/files/2020-10/SR-FINRA-2020-032.pdf",
+      "publishedDate": null,
+      "kind": "officialPublication",
+      "sha256": "ddac2be95898c8d7fd43c02e5e1d92fd953c2ccb0a5bf312bd5cc4342bd13cd0",
+      "observedAt": "2026-10-07T14:14:13.582475+00:00"
+    },
+    {
+      "id": "govinfo-taf-2024-current",
+      "title": "联邦公报2024现行TAF表与低价豁免：SEC 34-101696",
+      "url": "https://www.govinfo.gov/content/pkg/FR-2024-11-27/pdf/2024-27764.pdf",
+      "publishedDate": "2024-11-27",
+      "kind": "officialPublication",
+      "sha256": "f44be8d255242284f159936a116fa24801a551d3d1a74de001fe23bfe71b3cb4",
+      "observedAt": "2026-10-07T14:11:26.865890+00:00"
+    }
+  ]
+}

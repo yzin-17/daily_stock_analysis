@@ -75,6 +75,17 @@ class _CoreGateway:
     def _result(capability: str, symbol: str, value):
         """构造真实 Provider provenance 的 gateway result。"""
         request = ThesisLedgerDataRequest(capability, symbol, request_id=f"{capability}-test")
+        from types import SimpleNamespace
+        query = SimpleNamespace(symbol=symbol, start=None, end=None, limit=None)
+        if capability == 'FUND_NAV':
+            from data_provider.eastmoney_nav_projection import latest_nav
+            value = latest_nav(value, query, 'efinance', 'eastmoney')
+        elif capability == 'FUND_NAV_HISTORY':
+            from data_provider.eastmoney_nav_projection import history_nav
+            value = history_nav(value, query, 'efinance', 'eastmoney')
+        elif capability == 'CHIP_SUMMARY':
+            from data_provider.chip_summary_projection import project
+            value = project(value, query, 'efinance', 'eastmoney', 'fixture-estimate-v1')
         execution = ProviderExecution(
             value=value,
             capability=capability,

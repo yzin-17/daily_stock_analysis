@@ -4,6 +4,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from dataclasses import replace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -11,10 +12,14 @@ import pandas as pd
 import pytest
 
 from api.thesis_ledger import router_v3
-from api.thesis_ledger_multi_window_v3 import plan_hithink_windows, try_hithink_multi_window_v3
+from api.thesis_ledger_multi_window_v3 import try_daily_multi_window_v3
+from data_provider.hithink_etf_capability import plan_hithink_windows
 from src.services.thesis_ledger_market_v3_facts import market_pagination_contract_v3
 from src.services.thesis_ledger_multi_window_fingerprint import multi_window_content_hash
 from src.services.thesis_ledger_provider_runtime import ProviderCallError
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+from src.services.thesis_ledger_capability_registry import CapabilityRegistry, SourceDefinition
+from src.services.thesis_ledger_daily_window_contract import DailyWindow, DailyWindowPlan
 
 
 SESSIONS = ['2000-01-03', '2004-12-31', '2005-01-03', '2009-12-31', '2010-01-04', '2011-01-03']
@@ -30,11 +35,36 @@ def test_planner_limits_each_window_and_requires_real_overlap_before_calls():
 
 
 @pytest.mark.parametrize('mode', ['complete', 'conflict', 'failure', 'missing_bar', 'pending_page', 'late'])
-def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, mode):
+@pytest.mark.parametrize('provider', ['hithink', 'test-window-source'])
+def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, mode, provider):
     monkeypatch.setenv('THESIS_LEDGER_DSA_TOKEN', 'synthetic-token')
     fixture = json.loads((Path(__file__).parent / 'fixtures/thesis-ledger-multi-window-hash.json').read_text())['response']
     key = fixture['routeKey']
-    target = {'providerId': 'hithink', 'upstreamSource': 'fund-market-historical', 'routeIndex': 0}
+    target = {'providerId': provider, 'upstreamSource': 'fund-market-historical' if provider == 'hithink' else 'test-window-wire', 'routeIndex': 0}
+    plans = []
+    if provider == 'test-window-source':
+        from src.services.thesis_ledger_provider_manifests import PROVIDER_MANIFESTS
+        from src.services.provider_manifest import build_provider_manifest
+        original = CAPABILITY_SOURCES.resolve(key, {'providerId': 'hithink', 'upstreamSource': 'fund-market-historical'})
+        def custom_plan(context):
+            plans.append(context)
+            assert context.sessions == tuple(SESSIONS) and context.max_requests == 8
+            assert not hasattr(context, 'runtime') and not hasattr(context, 'adapter')
+            # 独立来源按会话段规划，区别于原五年上游窗口算法。
+            return DailyWindowPlan(windows=(
+                DailyWindow(start=SESSIONS[0], end=SESSIONS[1]),
+                DailyWindow(start=SESSIONS[1], end=SESSIONS[3]),
+                DailyWindow(start=SESSIONS[3], end=SESSIONS[-1])))
+        def manifest():
+            return build_provider_manifest(provider, '隔离窗口来源', {'DAILY_BAR': ('ETF',)},
+                upstream_sources=((target['upstreamSource'], '隔离窗口'),))
+        source = SourceDefinition(provider, manifest, lambda _: None,
+            (replace(original, upstream_source=target['upstreamSource'], gated=False,
+                     source_contract=None, public_units_policy=None, window_planner=custom_plan),))
+        registry = CapabilityRegistry((*CAPABILITY_SOURCES.sources, source))
+        monkeypatch.setattr(CAPABILITY_SOURCES, 'sources', registry.sources)
+        monkeypatch.setattr(CAPABILITY_SOURCES, '_bindings', registry._bindings)
+        monkeypatch.setitem(PROVIDER_MANIFESTS, provider, manifest())
     request = {'contractVersion': 3, 'requestId': 'synthetic-multi-window', 'symbol': '159516.SZ',
                'routeKey': key, 'routeTarget': target, 'start': SESSIONS[0], 'end': SESSIONS[-1]}
 
@@ -63,12 +93,12 @@ def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, 
             frame.loc[0, 'close'] = 1.1
         if mode == 'missing_bar' and len(calls) == 2:
             frame = frame.iloc[1:].copy()
-        contract = market_pagination_contract_v3('ETF', 'hithink', target['upstreamSource'])
+        contract = market_pagination_contract_v3('ETF', provider, target['upstreamSource'])
         frame.attrs['thesis_ledger_v3_pagination'] = {**contract, 'status': 'complete', 'pagesFetched': 1,
             'continuationPending': False, 'requestedStart': data.start, 'requestedEnd': data.end}
         if mode == 'pending_page' and len(calls) == 2:
             frame.attrs['thesis_ledger_v3_pagination']['continuationPending'] = True
-        return SimpleNamespace(value=frame, provider='hithink', upstream_source=target['upstreamSource'],
+        return SimpleNamespace(value=frame, provider=provider, upstream_source=target['upstreamSource'],
                                route_index=0, effective_revision=17)
 
     monkeypatch.setattr('api.thesis_ledger._market_data_v3_coverage_context', coverage)
@@ -78,13 +108,15 @@ def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, 
         clock = iter([0., 0., 5.])
 
         def timed_dispatch(*args, **kwargs):
-            return try_hithink_multi_window_v3(*args, **kwargs, monotonic=lambda: next(clock))
+            return try_daily_multi_window_v3(*args, **kwargs, monotonic=lambda: next(clock))
 
-        monkeypatch.setattr('api.thesis_ledger_multi_window_v3.try_hithink_multi_window_v3', timed_dispatch)
+        monkeypatch.setattr('api.thesis_ledger_multi_window_v3.try_daily_multi_window_v3', timed_dispatch)
     app = FastAPI()
     app.include_router(router_v3, prefix='/api/v3')
     response = TestClient(app).post('/api/v3/thesis-ledger/market/bars', json=request,
                                     headers={'Authorization': 'Bearer synthetic-token'})
+    if provider == 'test-window-source':
+        assert len(plans) == 1
     if mode == 'complete':
         assert response.status_code == 200, response.json()
         value = response.json()
@@ -94,6 +126,8 @@ def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, 
         assert value['coverageProof']['pagination']['pagesFetched'] == 3
         assert len(calls) == 3
     else:
-        expected_status = {'conflict': 502, 'failure': 503, 'missing_bar': 422, 'pending_page': 502, 'late': 503}
+        expected_status = {'conflict': 502, 'failure': 403, 'missing_bar': 422, 'pending_page': 502, 'late': 503}
         assert response.status_code == expected_status[mode], response.json()
+        if mode == 'failure':
+            assert response.json()['error'] == {'code': 'permission_denied', 'message': '来源权限不足'}
         assert len(calls) == (1 if mode == 'late' else 2)

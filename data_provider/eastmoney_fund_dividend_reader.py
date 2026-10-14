@@ -13,6 +13,18 @@ from data_provider.eastmoney_fund_dividends import normalize_eastmoney_fund_divi
 from data_provider.eastmoney_fund_event_transport import ENDPOINT, read_event_page, read_literal
 
 
+def fetch_fund_cash_research_page(symbol: str):
+    """复用东财有界传输；保存完整业务页面，历史覆盖保持未知。"""
+    from data_provider.eastmoney_fund_event_transport import read_fund_distribution_page
+    if not re.fullmatch(r"[0-9]{6}\.(SH|SZ)", symbol):
+        raise ValueError("基金代码必须包含明确交易所")
+    with requests.Session() as session:
+        body = read_fund_distribution_page(session, symbol.split(".")[0])
+    return {"symbol": symbol, "rawBusinessResponse": body,
+            "responseSha256": sha256(body.encode()).hexdigest(),
+            "observedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}
+
+
 MAX_RESPONSE_BYTES = 1024 * 1024
 COLUMNS = ["基金代码", "基金简称", "权益登记日", "除息日期", "分红", "分红发放日", "-"]
 

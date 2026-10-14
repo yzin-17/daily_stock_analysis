@@ -1,0 +1,101 @@
+{
+  "说明": "由主仓控制复核共享合同发布；样例不证明供应商读取或准入。",
+  "exchange": {
+    "request": {
+      "contractVersion": 3,
+      "protocolVersion": "known-cash-control-v1",
+      "requestId": "known-cash-fixture",
+      "symbol": "510300.SH",
+      "routeKey": {
+        "kind": "data",
+        "market": "CN",
+        "assetType": "ETF",
+        "capability": "CASH_DISTRIBUTION"
+      },
+      "routeTarget": {
+        "providerId": "hithink",
+        "upstreamSource": "fund-corporate-actions-dividends",
+        "routeIndex": 0
+      },
+      "desiredRevision": 1,
+      "effectivePolicyRevision": 1,
+      "catalogRevision": 1,
+      "start": "2025-06-01",
+      "end": "2025-06-30",
+      "dataAsOf": "2026-10-09T14:00:00Z",
+      "currency": "CNY",
+      "researchPolicy": {
+        "version": "known-announced-cash-events-v1",
+        "entitlement": "settled-record-date-holdings",
+        "receivable": "ex-date",
+        "settlement": "assume-scheduled-payment-date",
+        "missingEvents": "excluded-with-unknown-coverage",
+        "usage": "accounting-only",
+        "splitEvents": "not-modelled",
+        "historicalAvailability": "notVerified"
+      },
+      "expectedControlIdentity": {
+        "providerConfigVersion": 3,
+        "credentialRevision": "hmac-sha256-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "response": {
+      "contractVersion": 3,
+      "protocolVersion": "known-cash-control-v1",
+      "requestId": "known-cash-fixture",
+      "symbol": "510300.SH",
+      "routeKey": {
+        "kind": "data",
+        "market": "CN",
+        "assetType": "ETF",
+        "capability": "CASH_DISTRIBUTION"
+      },
+      "routeTarget": {
+        "providerId": "hithink",
+        "upstreamSource": "fund-corporate-actions-dividends",
+        "routeIndex": 0
+      },
+      "desiredRevision": 1,
+      "effectivePolicyRevision": 1,
+      "catalogRevision": 1,
+      "start": "2025-06-01",
+      "end": "2025-06-30",
+      "dataAsOf": "2026-10-09T14:00:00Z",
+      "currency": "CNY",
+      "researchPolicy": {
+        "version": "known-announced-cash-events-v1",
+        "entitlement": "settled-record-date-holdings",
+        "receivable": "ex-date",
+        "settlement": "assume-scheduled-payment-date",
+        "missingEvents": "excluded-with-unknown-coverage",
+        "usage": "accounting-only",
+        "splitEvents": "not-modelled",
+        "historicalAvailability": "notVerified"
+      },
+      "expectedControlIdentity": {
+        "providerConfigVersion": 3,
+        "credentialRevision": "hmac-sha256-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "status": "verified",
+      "readOnly": true,
+      "upstreamRead": false,
+      "checkedAt": "2026-10-10T00:00:00Z",
+      "controlIdentity": {
+        "providerConfigVersion": 3,
+        "credentialRevision": "hmac-sha256-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "targetSequence": [
+        {
+          "providerId": "hithink",
+          "upstreamSource": "fund-corporate-actions-dividends",
+          "routeIndex": 0
+        },
+        {
+          "providerId": "backup-provider",
+          "upstreamSource": "structured-plans",
+          "routeIndex": 1
+        }
+      ]
+    }
+  }
+}

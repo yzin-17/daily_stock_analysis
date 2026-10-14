@@ -3,6 +3,8 @@
 from datetime import datetime
 from typing import Any, Mapping
 
+from src.services.thesis_ledger_listing_information import daily_listing_information
+
 from src.services.thesis_ledger_daily_tradability import daily_tradability_evidence
 from src.services.thesis_ledger_market_tradability_input import market_tradability_frame
 from src.services.thesis_ledger_provider_runtime import ProviderCallError
@@ -26,10 +28,7 @@ def market_daily_tradability(request: Mapping, execution: Any, context: Mapping,
         )
         if evidence["calendar"]["expectedSessions"] != expected:
             raise ValueError("来源日历不符")
-        listing = context["listing"]
-        if evidence["listing"] != {"listedOn": listing["firstTradingDate"], "source": {
-            "provider": listing["source"], "revision": listing["revision"], "availableAt": listing["knownAt"],
-        }} or evidence["calendar"]["source"]["provider"] != context["calendar"]["source"] or evidence["calendar"]["source"]["revision"] != context["calendar"]["revision"]:
+        if evidence["listing"] != daily_listing_information(context["listing"]) or evidence["calendar"]["source"]["provider"] != context["calendar"]["source"] or evidence["calendar"]["source"]["revision"] != context["calendar"]["revision"]:
             raise ValueError("独立范围事实不符")
         observed = [day["date"] for day in evidence["days"] if day["state"] == "observed-traded"]
         if sorted(actual_dates) != observed or len(set(actual_dates)) != len(actual_dates):

@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "datasetId": "cn-xshg-stock-auction-public-fees-archive-2023-08",
+  "scope": {
+    "market": "CN",
+    "exchange": "XSHG",
+    "assetType": "STOCK",
+    "tradingMethod": "auction"
+  },
+  "coverage": {
+    "start": "2023-08-22",
+    "end": "2023-08-29"
+  },
+  "calculationSettings": "executionModel",
+  "historicalAvailability": "notVerified",
+  "description": "本人本地研究的独立备用规则包，按税务公告和政府转载整理；与主包共享政策依据，不表示独立事实或官网容灾。金额设置由已选执行模型提供，历史首次可见时间未核验。",
+  "sourceDocuments": [
+    {
+      "id": "stamp-duty-law",
+      "title": "中华人民共和国印花税法及税率表",
+      "url": "https://www.hengqin.gov.cn/lab/flfg/fl/content/post_3517835.html",
+      "publishedDate": "2021-06-10",
+      "kind": "officialPublication"
+    },
+    {
+      "id": "stamp-duty-2023-39",
+      "title": "财政部 税务总局公告2023年第39号",
+      "url": "https://shanghai.chinatax.gov.cn/zcfw/zcfgk/yhs/202308/t468451.html",
+      "publishedDate": "2023-08-28",
+      "kind": "officialPublication"
+    },
+    {
+      "id": "handling-2023-government-news",
+      "title": "国务院网站：沪深交易所8月28日起降低经手费",
+      "url": "https://english.www.gov.cn/news/202308/18/content_WS64df6b79c6d0868f4e8deaa6.html",
+      "publishedDate": "2023-08-18",
+      "kind": "governmentNewsRepublication"
+    },
+    {
+      "id": "regulatory-2018-917",
+      "title": "发改价格规〔2018〕917号",
+      "url": "https://www.ndrc.gov.cn/xxgk/zcfb/ghxwj/201806/t20180627_960950_ext.html",
+      "publishedDate": "2018-06-27",
+      "kind": "officialPublication"
+    },
+    {
+      "id": "transfer-2022-republication",
+      "title": "中国结算：4月29日起股票交易过户费下调50%",
+      "url": "https://jrj.wuhan.gov.cn/ynzx_57/xwzx/202204/t20220429_1964160.shtml",
+      "publishedDate": "2022-04-29",
+      "kind": "governmentNewsRepublication"
+    }
+  ],
+  "segments": [
+    {
+      "range": {
+        "start": "2023-08-22",
+        "endExclusive": "2023-08-28"
+      },
+      "charges": [
+        {
+          "code": "stampDuty",
+          "side": "sell",
+          "basis": "turnover",
+          "rate": "0.001",
+          "currency": "CNY",
+          "sourceDocumentIds": [
+            "stamp-duty-law"
+          ]
+        },
+        {
+          "code": "handlingFee",
+          "side": "both",
+          "basis": "turnover",
+          "rate": "0.0000487",
+          "currency": "CNY",
+          "sourceDocumentIds": [
+            "handling-2023-government-news"
+          ]
+        },
+        {
+          "code": "regulatoryFee",
+          "side": "both",
+          "basis": "turnover",
+          "rate": "0.00002",
+          "currency": "CNY",
+          "sourceDocumentIds": [
+            "regulatory-2018-917"
+          ]
+        },
+        {
+          "code": "transferFee",
+          "side": "both",
+          "basis": "turnover",
+          "rate": "0.00001",
+          "currency": "CNY",
+          "sourceDocumentIds": [
+            "transfer-2022-republication"
+          ]
+        }
+      ]
+    },
+    {
+      "range": {
+        "start": "2023-08-28",
+        "endExclusive": "2023-08-30"
+      },
+      "charges": [
+        {
+          "code": "stampDuty",
+          "side": "sell",
+          "basis": "turnover",
+          "rate": "0.0005",
+          "currency": "CNY",
+          "sourceDocumentIds": [
+            "stamp-duty-law",
+            "stamp-duty-2023-39"
+          ]
+        },
+        {
+          "code": "handlingFee",
+          "side": "both",
+          "basis": "turnover",
+          "rate": "0.0000341",
+          "currency": "CNY",
+          "sourceDocumentIds": [
+            "handling-2023-government-news"
+          ]
+        },
+        {
+          "code": "regulatoryFee",
+          "side": "both",
+          "basis": "turnover",
+          "rate": "0.00002",
+          "currency": "CNY",
+          "sourceDocumentIds": [
+            "regulatory-2018-917"
+          ]
+        },
+        {
+          "code": "transferFee",
+          "side": "both",
+          "basis": "turnover",
+          "rate": "0.00001",
+          "currency": "CNY",
+          "sourceDocumentIds": [
+            "transfer-2022-republication"
+          ]
+        }
+      ]
+    }
+  ]
+}

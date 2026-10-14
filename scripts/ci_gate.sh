@@ -17,6 +17,7 @@ flake8_checks() {
 
 deterministic_checks() {
   echo "==> backend-gate: local deterministic checks"
+  python scripts/check_thesis_ledger_capability_boundaries.py
   ./scripts/test.sh code
   ./scripts/test.sh yfinance
 }

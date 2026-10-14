@@ -72,14 +72,14 @@ def test_hithink_credential_revision_fails_closed_for_missing_inputs(monkeypatch
     assert _provider_credential_revision_from_snapshot(_snapshot(_TEST_API_KEY)) is None
 
 
-def test_hithink_credential_revision_requires_environment_api_key_snapshot(monkeypatch):
+def test_hithink_credential_revision_requires_valid_api_key_snapshot(monkeypatch):
     _set_synthetic_master(monkeypatch, "synthetic-master")
     invalid_snapshots = (
         ProviderCredentialSnapshot.create(
             "tushare", "environment", "api_key", {"apiKey": _TEST_API_KEY}, 0, 0
         ),
         ProviderCredentialSnapshot.create(
-            "hithink", "control", "api_key", {"apiKey": _TEST_API_KEY}, 0, 0
+            "hithink", "unknown", "api_key", {"apiKey": _TEST_API_KEY}, 0, 0
         ),
         ProviderCredentialSnapshot.create(
             "hithink", "environment", "token", {"apiKey": _TEST_API_KEY}, 0, 0
@@ -90,6 +90,17 @@ def test_hithink_credential_revision_requires_environment_api_key_snapshot(monke
         _provider_credential_revision_from_snapshot(snapshot) is None
         for snapshot in invalid_snapshots
     )
+
+
+def test_page_hithink_key_revision_is_bound_to_source(monkeypatch):
+    _set_synthetic_master(monkeypatch, "synthetic-master")
+    page = ProviderCredentialSnapshot.create(
+        "hithink", "control", "api_key", {"apiKey": _TEST_API_KEY}, 1, 1,
+    )
+    revision = _provider_credential_revision_from_snapshot(page)
+    assert revision is not None
+    assert revision != _provider_credential_revision_from_snapshot(_snapshot(_TEST_API_KEY))
+    assert _TEST_API_KEY not in revision
 
 
 def test_credential_snapshot_repr_and_provider_registry_redact_revision_inputs(

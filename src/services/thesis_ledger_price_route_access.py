@@ -2,17 +2,47 @@
 
 from src.services.thesis_ledger_market_v3_adapters import basic_market_price_route
 from src.services.thesis_ledger_route_admission_v3 import route_admission_scope_applies
+from src.services.thesis_ledger_local_rules import local_rule_route_matches
+from src.services.thesis_ledger_current_data_route import current_data_adapter_revisions
+from types import MappingProxyType
+from src.services.thesis_ledger_capability_contracts import PolicyAdmissionContext
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+from src.services.thesis_ledger_capability_registry import QueryBinding, EventBinding
+
+
+def configured_data_route(key, target):
+    binding = CAPABILITY_SOURCES.resolve(key, target)
+    if isinstance(binding, (QueryBinding, EventBinding)):
+        if binding.admission_required is not None:
+            return not binding.admission_required
+        return not binding.gated
+    return local_rule_route_matches(key, target) or current_data_adapter_revisions(key, target) is not None
 
 
 def basic_price_credential_ready(snapshot):
-    return (snapshot is not None and snapshot.method == "api_key"
-            and isinstance(snapshot.values.get("apiKey"), str) and bool(snapshot.values["apiKey"].strip()))
+    if snapshot is None:
+        return False
+    from src.services.provider_credentials import PROVIDER_CREDENTIAL_DEFINITIONS
+
+    definitions = PROVIDER_CREDENTIAL_DEFINITIONS.get(snapshot.provider_id, ())
+    definition = next((item for item in definitions if item.method == snapshot.method), None)
+    return definition is not None and all(
+        isinstance(snapshot.values.get(field), str) and bool(snapshot.values[field].strip())
+        for field in definition.fields
+    )
 
 
 def basic_price_route_configured(store, key, target):
-    if not basic_market_price_route(key, target):
+    if not basic_market_price_route(key, target) and not configured_data_route(key, target):
         return False
-    if target["providerId"] == "tencent":
+    from src.services.thesis_ledger_provider_manifests import PROVIDER_MANIFESTS
+    manifest = PROVIDER_MANIFESTS.get(target["providerId"], {})
+    if not manifest:
+        return False
+    from src.services.thesis_ledger_provider_dependencies import provider_dependency_ready
+    if not provider_dependency_ready(target["providerId"], key, target):
+        return False
+    if not manifest.get("requiresCredential"):
         return True
     from src.services.thesis_ledger_control import ControlContractError
 
@@ -36,15 +66,15 @@ def price_route_admission(read_admission, request, key, target, *, credential_sn
 
 
 def policy_route_admission_reason(store, connection, key, target, consumer, manifest):
-    """基础价格免人工准入；其余能力继续使用原有审核状态。"""
-    if basic_market_price_route(key, target):
+    """基础价格与本地历史规则按配置调用，其余能力保留既有状态。"""
+    if basic_market_price_route(key, target) or configured_data_route(key, target):
+        from src.services.thesis_ledger_provider_dependencies import provider_dependency_ready
+        if not provider_dependency_ready(target["providerId"], key, target):
+            return "dependency_missing"
         return None
-    from src.services.thesis_ledger_control import ControlContractError, _provider_credential_revision_from_snapshot
-    from src.services.thesis_ledger_hithink_dividend_contract_v3 import hithink_dividend_route_matches
-    from src.services.thesis_ledger_hithink_quote_admission import hithink_quote_revisions
-    from src.services.thesis_ledger_market_v3_revisions import _market_v3_admission_matches_current
+    from src.services.thesis_ledger_event_v3_adapters import event_admission_reader
 
-    provider_id, upstream_source = target["providerId"], target["upstreamSource"]
+    provider_id = target["providerId"]
     identity = store._route_admission_identity_v3(key, target, consumer)
     row = connection.execute(
         """SELECT * FROM thesis_ledger_route_admission_v3
@@ -52,29 +82,18 @@ def policy_route_admission_reason(store, connection, key, target, consumer, mani
     ).fetchone()
     payload = store._route_admission_payload_v3(row) if row else None
     state = store._route_admission_state_v3(payload)
-    if hithink_dividend_route_matches(key, target):
-        from src.services.thesis_ledger_hithink_event_v3 import current_hithink_event_admission
-
-        if current_hithink_event_admission(store, key, target, manifest) is None:
-            return "not_admitted"
-    if provider_id == "hithink":
-        if state != "admitted":
-            return "not_admitted"
-        try:
-            snapshot = store.provider_credential_snapshot(provider_id)
-        except (ControlContractError, ValueError):
-            return "not_admitted"
-        revision = _provider_credential_revision_from_snapshot(snapshot)
-        if key.get("kind") == "data" and key["capability"] == "REALTIME_QUOTE":
-            versions = hithink_quote_revisions(key["assetType"], upstream_source)
-            if (revision is None or versions is None
-                    or payload.get("adapterRevision") != versions["adapterRevision"]
-                    or payload.get("sourceRevision") != versions["sourceRevision"]
-                    or payload.get("credentialRevision") != revision):
-                return "not_admitted"
-        elif revision is None or not _market_v3_admission_matches_current(
-            {**payload, "admissionState": state}, key, target, manifest, credential_revision=revision,
-        ):
+    if reader := event_admission_reader(key, target):
+        if reader(store, key, target, manifest) is None:
+            return 'not_admitted'
+    source = CAPABILITY_SOURCES.source(provider_id)
+    if source is not None and source.policy_admission_guard is not None:
+        context = PolicyAdmissionContext(
+            key=MappingProxyType(dict(key)), target=MappingProxyType(dict(target)),
+            manifest=MappingProxyType(dict(manifest)), state=state,
+            payload=MappingProxyType(dict(payload)) if payload is not None else None,
+            read_credentials=lambda: store.provider_credential_snapshot(provider_id),
+        )
+        if source.policy_admission_guard(context) is not True:
             return "not_admitted"
     if state == "pending":
         return "not_admitted"

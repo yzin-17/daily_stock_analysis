@@ -14,6 +14,7 @@ import pandas as pd
 import requests
 
 from src.services.thesis_ledger_hithink_pagination import has_unverified_pagination
+from src.services.thesis_ledger_hithink_stock_errors import classify_hithink_stock_error
 
 HITHINK_STOCK_HISTORICAL_URL = (
     "https://fuyao.aicubes.cn/api/a-share/prices/historical"
@@ -24,21 +25,6 @@ _ADJUSTMENTS = {
     "none": "none",
     "qfq": "forward",
     "hfq": "backward",
-}
-_ERRORS: dict[int, tuple[str, str, bool]] = {
-    1001: ("invalid_request", "HiThink 历史行情请求缺少必填参数", False),
-    1002: ("invalid_request", "HiThink 历史行情请求参数格式无效", False),
-    1003: ("range_exceeded", "HiThink 历史行情请求范围超限", False),
-    1004: ("invalid_request", "HiThink 历史行情请求参数冲突", False),
-    2001: ("authentication_failed", "HiThink 凭据未通过认证", False),
-    2003: ("permission_denied", "HiThink 账号无权访问该行情能力", False),
-    3001: ("symbol_not_found", "HiThink 未识别该股票代码", False),
-    3002: ("data_not_ready", "HiThink 股票行情数据尚未准备", True),
-    3004: ("unsupported_capability", "HiThink 不支持该股票行情能力", False),
-    4001: ("rate_limited", "HiThink 行情请求触发限流", True),
-    5001: ("upstream_failure", "HiThink 行情服务暂时不可用", True),
-    5002: ("upstream_failure", "HiThink 上游行情暂时不可用", True),
-    5003: ("upstream_failure", "HiThink 行情服务暂时不可用", True),
 }
 
 
@@ -203,10 +189,10 @@ class HiThinkStockHistoricalAdapter:
         end: str | date,
         adjustment: str,
         *,
-        expected_sessions: Sequence[str | date],
-        calendar_revision: str,
+        expected_sessions: Sequence[str | date] | None = None,
+        calendar_revision: str | None = None,
     ) -> pd.DataFrame:
-        """Return a complete daily frame with explicit source semantics."""
+        """读取来源日线；传入独立会话集合时另外校验完整窗口。"""
         normalized_symbol = str(symbol or "").strip().upper()
         if not _SYMBOL_PATTERN.fullmatch(normalized_symbol):
             raise HiThinkStockError("invalid_request", "股票代码必须包含六位代码和交易所后缀")
@@ -228,9 +214,10 @@ class HiThinkStockHistoricalAdapter:
         if end_date >= ten_year_boundary:
             raise HiThinkStockError("range_exceeded", "单次股票历史行情范围不得达到或超过十年")
 
-        if not isinstance(calendar_revision, str) or not calendar_revision.strip():
+        complete_window = expected_sessions is not None
+        if complete_window and (not isinstance(calendar_revision, str) or not calendar_revision.strip()):
             raise HiThinkStockError("invalid_request", "必须提供目标市场日历版本")
-        sessions = _normalize_expected_sessions(expected_sessions, start_date, end_date)
+        sessions = _normalize_expected_sessions(expected_sessions, start_date, end_date) if complete_window else ()
 
         params = {
             "thscode": normalized_symbol,
@@ -285,8 +272,9 @@ class HiThinkStockHistoricalAdapter:
                 "invalid_response", "HiThink 行情响应业务状态无效", request_id=request_id
             )
         if code != 0:
-            if code in _ERRORS:
-                error_code, message, retryable = _ERRORS[code]
+            classification = classify_hithink_stock_error(code, payload.get("message"), normalized_symbol)
+            if classification is not None:
+                error_code, message, retryable = classification
                 raise HiThinkStockError(
                     error_code, message, retryable=retryable, request_id=request_id
                 )
@@ -302,6 +290,8 @@ class HiThinkStockHistoricalAdapter:
                 "invalid_response", "HiThink 行情响应缺少 data", request_id=request_id
             )
         echoed_adjustment = data.get("adjust")
+        if "thscode" in data and data["thscode"] != normalized_symbol:
+            raise HiThinkStockError("invalid_response", "HiThink 股票响应标的身份不一致", request_id=request_id)
         if echoed_adjustment is not None and echoed_adjustment != upstream_adjustment:
             raise HiThinkStockError(
                 "invalid_response", "HiThink 响应复权口径与请求不一致", request_id=request_id
@@ -323,11 +313,11 @@ class HiThinkStockHistoricalAdapter:
         bars = _normalize_items(raw_items, start_date, end_date, request_id)
         actual_sessions = {item["date"] for item in bars}
         missing_sessions = set(sessions) - actual_sessions
-        if missing_sessions:
+        if complete_window and missing_sessions:
             raise HiThinkStockError(
                 "incomplete_coverage", "HiThink 股票行情缺少目标市场交易日", request_id=request_id
             )
-        if actual_sessions != set(sessions):
+        if complete_window and actual_sessions != set(sessions):
             raise HiThinkStockError(
                 "invalid_response", "HiThink 股票行情包含非目标市场交易日", request_id=request_id
             )
@@ -338,7 +328,7 @@ class HiThinkStockHistoricalAdapter:
             normalized_adjustment,
             start_date,
             end_date,
-            calendar_revision.strip(),
+            calendar_revision.strip() if complete_window else "observed-source-window",
             bars,
         )
         frame = pd.DataFrame(
@@ -371,8 +361,8 @@ class HiThinkStockHistoricalAdapter:
                 "requested_end": end_date.isoformat(),
                 "actual_start": bars[0]["date"] if bars else None,
                 "actual_end": bars[-1]["date"] if bars else None,
-                "complete": True,
-                "calendar_revision": calendar_revision.strip(),
+                "complete": True if complete_window else None,
+                "calendar_revision": calendar_revision.strip() if complete_window else None,
             },
             "units": {
                 "price_currency": "CNY",

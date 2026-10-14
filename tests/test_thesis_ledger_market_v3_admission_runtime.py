@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from src.services.thesis_ledger_control import PROVIDER_MANIFESTS
+from src.services.thesis_ledger_exact_route_inventory import exact_route_inventory
 from src.services.thesis_ledger_provider_runtime import (
     ProviderCallError,
     ThesisLedgerDataRequest,
@@ -68,12 +69,14 @@ class _CatalogStore:
         self.providers = [
             {
                 **PROVIDER_MANIFESTS[provider_id],
-                "configured": True,
-                "enabled": True,
+                "configured": provider_id in {'akshare', 'tencent'},
+                "enabled": provider_id in {'akshare', 'tencent'},
                 "credentialConfigured": False,
                 "tombstone": None,
             }
-            for provider_id in ("akshare", "tencent")
+            for provider_id in sorted({'akshare', 'tencent'} | {
+                target['providerId'] for _, target, gated in exact_route_inventory() if not gated
+            })
         ]
 
     def provider_registry(self):
@@ -94,6 +97,7 @@ class _DataStore:
             "contractVersion": 3,
             "enabled": True,
             "revision": 27,
+            "sourceDesiredRevision": 27,
             "routes": [
                 {
                     "key": ROUTE_KEY,
@@ -116,6 +120,12 @@ class _DataStore:
         self.read_count += 1
         return deepcopy(self.admissions[index])
 
+    def health(self, *_args, **_kwargs):
+        return None
+
+    def record_health(self, *_args, **_kwargs):
+        pass
+
 
 class _Adapter:
     def __init__(self):
@@ -123,7 +133,7 @@ class _Adapter:
 
     def get_daily_data_for_source(self, symbol, source, **options):
         self.calls.append((symbol, source, options))
-        frame = pd.DataFrame([{"date": "2026-05-18"}])
+        frame = pd.DataFrame([{"date": "2026-05-18", "open": 1., "high": 2., "low": 1., "close": 2., "volume": 100., "amount": 200.}])
         frame.attrs["upstream_source"] = source
         return frame
 
@@ -132,15 +142,17 @@ def test_catalog_adds_basic_tencent_prices_to_exact_reviewed_admissions():
     store = _CatalogStore({_identity(ROUTE_KEY, TARGET): _admission()})
     catalog = ThesisLedgerProviderRuntime(store).market_route_catalog_v3()
 
-    ready = [entry for entry in catalog["entries"] if entry["state"] == "ready"]
+    ready = [entry for entry in catalog["entries"]
+             if entry["state"] == "ready" and entry["key"]["kind"] == "bar"]
     assert catalog["integrity"] == "complete"
     reviewed = [entry for entry in ready if entry["target"] == TARGET]
-    assert len(reviewed) == 1
-    assert reviewed[0]["key"] == ROUTE_KEY
+    assert len(reviewed) == 6
+    assert any(entry["key"] == ROUTE_KEY for entry in reviewed)
     basic = [entry for entry in ready if entry["target"]["providerId"] == "tencent"]
-    assert len(ready) == 4
-    assert {entry["key"]["adjustment"] for entry in basic} == {"none", "qfq", "hfq"}
-    assert all(entry["key"]["assetType"] == "ETF" for entry in basic)
+    assert len(ready) == 17
+    assert {(entry["key"]["assetType"], entry["key"]["adjustment"]) for entry in basic} == {
+        ("ETF", "none"), ("ETF", "qfq"), ("ETF", "hfq"), ("STOCK", "none"), ("STOCK", "qfq"),
+    }
 
 
 @pytest.mark.parametrize(
@@ -151,7 +163,7 @@ def test_catalog_adds_basic_tencent_prices_to_exact_reviewed_admissions():
         ("credentialRevision", "not-required-fixture-v1"),
     ],
 )
-def test_catalog_keeps_stale_revision_not_admitted(field, stale_value):
+def test_ordinary_catalog_ignores_stale_manual_revision(field, stale_value):
     stale = _admission(**{field: stale_value})
     store = _CatalogStore({_identity(ROUTE_KEY, TARGET): stale})
 
@@ -162,14 +174,14 @@ def test_catalog_keeps_stale_revision_not_admitted(field, stale_value):
         for entry in catalog["entries"]
         if entry["key"] == ROUTE_KEY and entry["target"] == TARGET
     )
-    assert exact_entry["state"] == "not_admitted"
+    assert exact_entry["state"] == "ready"
 
 
 @pytest.mark.parametrize(
     "admission_state",
     ["pending", "invalid", "revoked", "expired", "not_yet_valid"],
 )
-def test_catalog_requires_current_admitted_state(admission_state):
+def test_ordinary_catalog_ignores_manual_record_state(admission_state):
     admission = _admission(admissionState=admission_state)
     store = _CatalogStore({_identity(ROUTE_KEY, TARGET): admission})
 
@@ -180,7 +192,7 @@ def test_catalog_requires_current_admitted_state(admission_state):
         for entry in catalog["entries"]
         if entry["key"] == ROUTE_KEY and entry["target"] == TARGET
     )
-    assert exact_entry["state"] == "not_admitted"
+    assert exact_entry["state"] == "ready"
 
 
 def test_revision_resolver_fails_closed_for_unknown_or_credentialed_adapter():
@@ -233,18 +245,15 @@ def test_tencent_etf_hfq_has_a_separate_revision_and_stock_hfq_stays_unadapted()
         _admission(admissionState="revoked"),
     ],
 )
-def test_data_request_rejects_stale_effective_before_adapter_call(stale_admission):
+def test_ordinary_data_calls_configured_adapter_despite_stale_manual_record(stale_admission):
     adapter = _Adapter()
     runtime = ThesisLedgerProviderRuntime(_DataStore([stale_admission]), adapters={"akshare": adapter})
 
-    with pytest.raises(ProviderCallError) as caught:
-        runtime.execute_market_bars_v3(REQUEST, ROUTE_KEY)
-
-    assert caught.value.code == "NO_ELIGIBLE_PROVIDER"
-    assert adapter.calls == []
+    assert runtime.execute_market_bars_v3(REQUEST, ROUTE_KEY).provider == "akshare"
+    assert len(adapter.calls) == 1
 
 
-def test_data_request_rechecks_admission_immediately_before_provider_call(monkeypatch):
+def test_ordinary_data_does_not_read_manual_admission_before_provider_call(monkeypatch):
     current = _admission()
     stale = _admission(adapterRevision="old-adapter-v1")
     store = _DataStore([current, stale])
@@ -258,9 +267,6 @@ def test_data_request_rechecks_admission_immediately_before_provider_call(monkey
 
     monkeypatch.setattr(runtime, "_execute_with_metadata", execute_one_target)
 
-    with pytest.raises(ProviderCallError) as caught:
-        runtime.execute_market_bars_v3(REQUEST, ROUTE_KEY)
-
-    assert caught.value.code == "NO_ELIGIBLE_PROVIDER"
-    assert store.read_count == 2
-    assert adapter.calls == []
+    assert not runtime.execute_market_bars_v3(REQUEST, ROUTE_KEY).empty
+    assert store.read_count == 0
+    assert len(adapter.calls) == 1

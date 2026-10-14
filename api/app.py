@@ -168,6 +168,7 @@ from api.thesis_ledger import router_v3 as thesis_ledger_v3_router
 from api.thesis_ledger_chart_v3 import router as thesis_ledger_chart_v3_router
 from api.thesis_ledger_events_v3 import router as thesis_ledger_events_v3_router
 from api.thesis_ledger_nav_v3 import router as thesis_ledger_nav_v3_router
+from api.thesis_ledger_cache_context_v3 import router as thesis_ledger_cache_context_v3_router
 from api.thesis_ledger_oauth import (
     initialize_provider_oauth,
     shutdown_provider_oauth,
@@ -298,10 +299,14 @@ async def app_lifespan(app: FastAPI):
         runtime_scheduler=app.state.runtime_scheduler_service,
     )
     _schedule_stock_index_background_refresh(app, "startup")
+    from api.thesis_ledger_announcement_runtime import create_announcement_runtime
+    app.state.announcement_runtime = create_announcement_runtime()
+    app.state.announcement_runtime.start()
     try:
         initialize_provider_oauth(app)
         yield
     finally:
+        app.state.announcement_runtime.stop()
         await shutdown_provider_oauth(app)
         refresh_task = getattr(app.state, "stock_index_refresh_task", None)
         if refresh_task is not None and not refresh_task.done():
@@ -391,6 +396,7 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
     app.include_router(thesis_ledger_chart_v3_router, prefix="/api/v3")
     app.include_router(thesis_ledger_events_v3_router, prefix="/api/v3")
     app.include_router(thesis_ledger_nav_v3_router, prefix="/api/v3")
+    app.include_router(thesis_ledger_cache_context_v3_router, prefix="/api/v3")
     app.include_router(thesis_ledger_oauth_router, prefix="/api/v3")
 
     # 带前端资源时，GET 型 SPA 回退会让旧 ThesisLedger POST 路径返回 405。

@@ -5,16 +5,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.services.hithink_fund_identity_evidence import _instant, resolve_hithink_fund_identity
-from src.services.thesis_ledger_control import _provider_credential_revision_from_snapshot, _secret_key
+from src.services.thesis_ledger_control import _provider_credential_revision_from_snapshot
 from src.services.thesis_ledger_hithink_dividend_contract_v3 import (
     HITHINK_DIVIDEND_KEY, HITHINK_DIVIDEND_TARGET, hithink_dividend_route_revisions,
 )
-from src.services.thesis_ledger_hithink_mapped_dividend_read import read_hithink_mapped_fund_dividends
 from src.services.thesis_ledger_mapping_evidence_store import MappingEvidenceStore
 from src.services.thesis_ledger_market_v3_revisions import _market_v3_admission_matches_current
-
-
-HITHINK_EVENT_TIMEOUT_SECONDS = 30
 
 
 class HiThinkEventError(ValueError):
@@ -23,8 +19,8 @@ class HiThinkEventError(ValueError):
         self.code = code
 
 
-def _local_admission(store):
-    admission = deepcopy(store.get_route_admission_v3(key=HITHINK_DIVIDEND_KEY, target=HITHINK_DIVIDEND_TARGET))
+def local_admission_record(read_record):
+    admission = deepcopy(read_record())
     if (not isinstance(admission, dict) or admission.get("routeKey") != HITHINK_DIVIDEND_KEY
             or admission.get("target") != HITHINK_DIVIDEND_TARGET
             or admission.get("admissionState") != "admitted"):
@@ -37,8 +33,11 @@ def _local_admission(store):
     return admission
 
 
-def _evidence_store(store):
-    database = store.database_path
+def _local_admission(store):
+    return local_admission_record(lambda: store.get_route_admission_v3(key=HITHINK_DIVIDEND_KEY, target=HITHINK_DIVIDEND_TARGET))
+
+
+def evidence_store(database):
     if not isinstance(database, str) or not database or database == ":memory:":
         raise ValueError("persistent evidence required")
     return MappingEvidenceStore(
@@ -46,9 +45,9 @@ def _evidence_store(store):
     )
 
 
-def _identity_guard(store, request):
-    admission = _local_admission(store)
-    content = _evidence_store(store).read(admission.get("evidenceRef"))
+def bound_identity_guard(database, read_record, request):
+    admission = local_admission_record(read_record)
+    content = evidence_store(database).read(admission.get("evidenceRef"))
     identity = resolve_hithink_fund_identity(
         content, admission, symbol=request["symbol"], start=request["start"], end=request["end"],
         data_as_of=request["dataAsOf"], observed_at=datetime.now(timezone.utc),
@@ -65,7 +64,7 @@ def current_hithink_event_admission(store, key, target, manifest):
         now = datetime.now(timezone.utc)
         if not _instant(admission["validFrom"]) <= _instant(now.isoformat()) < _instant(admission["validUntil"]):
             return None
-        content = _evidence_store(store).read(admission.get("evidenceRef"))
+        content = evidence_store(store.database_path).read(admission.get("evidenceRef"))
         for symbol in admission["scopeSymbols"]:
             resolve_hithink_fund_identity(
                 content, admission, symbol=symbol, start=admission["scopeDateFrom"],
@@ -73,7 +72,7 @@ def current_hithink_event_admission(store, key, target, manifest):
             )
         snapshot = store.provider_credential_snapshot("hithink")
         revision = _provider_credential_revision_from_snapshot(snapshot)
-        if (snapshot.source == "environment" and revision
+        if (snapshot.source in {"environment", "control"} and revision
                 and _market_v3_admission_matches_current(
                     admission, key, target, manifest, credential_revision=revision,
                 )):
@@ -81,13 +80,6 @@ def current_hithink_event_admission(store, key, target, manifest):
     except Exception:
         return None
     return None
-
-
-def _request_guard(store, request):
-    try:
-        return _identity_guard(store, request)
-    except Exception:
-        raise HiThinkEventError("not_admitted") from None
 
 
 def _response(request, state, mapped, fetched):
@@ -116,40 +108,3 @@ def _response(request, state, mapped, fetched):
             "hithinkIdentityEvidence": {"ref": identity.evidence_ref, "sha256": identity.evidence_sha256,
                                         "content": identity.content.decode("utf-8")},
             "coverage": {"complete": False, "reason": "historical_coverage_unverified"}}
-
-
-def execute_hithink_events_v3(runtime, request, *, admitted_state, check_security=None, fetch=None):
-    guard = _request_guard(runtime.store, request)
-    if check_security:
-        check_security()
-    before = admitted_state(runtime, request)
-    if before["admission"] != guard[0] or _request_guard(runtime.store, request) != guard:
-        raise HiThinkEventError("policy_not_applied")
-    if check_security:
-        check_security()
-    options = {"fetch": fetch} if fetch is not None else {}
-    try:
-        mapped = read_hithink_mapped_fund_dividends(
-            request["symbol"], database_path=runtime.store.database_path,
-            start=request["start"], end=request["end"], data_as_of=request["dataAsOf"],
-            read_admission=lambda: runtime._current_market_v3_admission(
-                HITHINK_DIVIDEND_KEY, HITHINK_DIVIDEND_TARGET,
-            ),
-            read_credentials=lambda: runtime.store.provider_credential_snapshot("hithink"),
-            read_master_key=_secret_key, timeout_seconds=HITHINK_EVENT_TIMEOUT_SECONDS,
-            **options,
-        )
-    except Exception:
-        raise HiThinkEventError("upstream_failure") from None
-    if _request_guard(runtime.store, request) != guard or mapped.identity != guard[1]:
-        raise HiThinkEventError("policy_not_applied")
-    after = admitted_state(runtime, request)
-    if after != before:
-        raise HiThinkEventError("policy_not_applied")
-    fetched = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    response = _response(request, after, mapped, fetched)
-    if _request_guard(runtime.store, request) != guard:
-        raise HiThinkEventError("policy_not_applied")
-    if check_security:
-        check_security()
-    return response

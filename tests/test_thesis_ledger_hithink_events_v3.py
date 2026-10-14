@@ -39,17 +39,17 @@ def state(monkeypatch, tmp_path):
         "revision": 1, "enabled": True,
         "routes": [{"key": HITHINK_DIVIDEND_KEY, "targets": [HITHINK_DIVIDEND_TARGET]}],
     })
-    credential_revision = _provider_credential_revision_from_snapshot(
-        store.provider_credential_snapshot("hithink"),
-    )
-    revisions = market_v3_current_route_revisions(
-        HITHINK_DIVIDEND_KEY, HITHINK_DIVIDEND_TARGET, PROVIDER_MANIFESTS["hithink"],
-        credential_revision=credential_revision,
-    )
-    assert revisions is not None
     digest = sha256(content).hexdigest()
 
     def admit():
+        credential_revision = _provider_credential_revision_from_snapshot(
+            store.provider_credential_snapshot("hithink"),
+        )
+        revisions = market_v3_current_route_revisions(
+            HITHINK_DIVIDEND_KEY, HITHINK_DIVIDEND_TARGET, PROVIDER_MANIFESTS["hithink"],
+            credential_revision=credential_revision,
+        )
+        assert revisions is not None
         return store.record_route_admission_v3(
             key=HITHINK_DIVIDEND_KEY, target=HITHINK_DIVIDEND_TARGET,
             evidence_ref=f"sha256:{digest}", evidence_sha256=digest,
@@ -96,7 +96,12 @@ def target(state):
     return state["store"].effective_policy_v3()["routes"][0]["targets"][0]
 
 
-def test_exact_inventory_stays_denied_until_admission_then_executes_own_reader(state):
+@pytest.mark.parametrize("credential_source", ["environment", "control"])
+def test_exact_inventory_stays_denied_until_admission_then_executes_own_reader(state, credential_source):
+    if credential_source == "control":
+        state["store"].save_provider_config("hithink", {"requestId": "page-event-key", "credentials": {
+            "method": "api_key", "values": {"apiKey": "synthetic-event-key"},
+        }})
     assert catalog_state(state) == "not_admitted"
     assert target(state)["reason"] == "not_admitted"
     with pytest.raises(EventV3Error, match="not_admitted"):
@@ -162,7 +167,7 @@ def test_malformed_manifest_never_claims_exact_hithink_event_capability(change):
 
 
 def test_authenticated_http_uses_exact_hithink_reader_and_denies_missing_token(state, monkeypatch):
-    import src.services.thesis_ledger_hithink_event_v3 as event_module
+    import data_provider.hithink_cash_capability as event_module
     import src.services.thesis_ledger_provider_runtime as runtime_module
     from src.services.thesis_ledger_hithink_mapped_dividend_read import read_hithink_mapped_fund_dividends
 

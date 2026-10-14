@@ -78,6 +78,36 @@ def test_unauthorized_never_dispatches(setup):
     execute.assert_not_called()
 
 
+@pytest.mark.parametrize("market,symbol,provider", [("HK", "00700.HK", "longbridge"), ("US", "AAPL.US", "yfinance")])
+def test_market_local_dates_and_unknown_amount_reach_http(setup, market, symbol, provider):
+    client, _, execution = setup
+    execution.provider = execution.upstream_source = provider
+    execution.value["amount"] = None
+    payload = {**REQUEST, "symbol": symbol, "routeKey": {**REQUEST["routeKey"], "market": market, "assetType": "STOCK"},
+               "routeTarget": {"providerId": provider, "upstreamSource": provider, "routeIndex": 0}}
+    response = post(client, payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert all(point["amount"] is None for point in data["bars"])
+    assert data["bars"][0]["timestamp"].startswith("2026-05-18T00:00:00")
+
+
+@pytest.mark.parametrize("market,symbol,asset", [("HK", "00700.HK", "STOCK"), ("HK", "02800.HK", "ETF"),
+                                                ("US", "AAPL.US", "STOCK"), ("US", "SPY.US", "ETF")])
+def test_registered_futu_price_execution_is_accepted_by_http_projection(setup, market, symbol, asset):
+    client, execute, execution = setup
+    execution.provider = execution.upstream_source = "futu"
+    payload = {**REQUEST, "symbol": symbol, "routeKey": {**REQUEST["routeKey"], "market": market, "assetType": asset},
+               "routeTarget": {"providerId": "futu", "upstreamSource": "futu", "routeIndex": 0}}
+    response = post(client, payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["provenance"]["providerId"] == data["provenance"]["upstreamSource"] == "futu"
+    assert data["routeKey"] == payload["routeKey"] and data["symbol"] == symbol
+    assert execute.call_args.args[0].instrument_type == asset
+    assert data["bars"][0]["timestamp"].endswith("+08:00" if market == "HK" else "-04:00")
+
+
 @pytest.mark.parametrize("field", ["purpose", "routeTarget", "requestId"])
 def test_required_chart_identity(setup, field):
     client, execute, _ = setup

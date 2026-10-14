@@ -5,21 +5,32 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any, Callable, Mapping
 
-from data_provider.tencent_native_daily import MAX_ROWS, TENCENT_NATIVE_DAILY_PROTOCOL
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from src.services.thesis_ledger_hithink_etf import HITHINK_ETF_HISTORICAL_URL
 
 
-HITHINK_ETF_HISTORY_SOURCE = "fund-market-historical"
-HITHINK_ETF_LOCAL_PAGINATION_PROTOCOL_V1 = "hithink-etf-single-response-local-v1"
-HITHINK_ETF_SOURCE_CONTRACT_REVISION_V1 = "dsa-hithink-etf-request-contract-v1"
+from data_provider.hithink_etf_capability import (
+    HITHINK_ETF_HISTORY_SOURCE, HITHINK_ETF_LOCAL_PAGINATION_PROTOCOL_V1,
+    HITHINK_ETF_SOURCE_CONTRACT_REVISION_V1, HITHINK_ETF_LOCAL_COVERAGE_PROTOCOL_V1,
+)
+
 HITHINK_ETF_NATIVE_FIELD_CONTRACT_V1 = "dsa-hithink-etf-native-field-units-v1"
 HITHINK_ETF_NATIVE_FIELD_CONTRACT_V2 = "dsa-hithink-etf-native-field-units-v2"
-HITHINK_ETF_LOCAL_COVERAGE_PROTOCOL_V1 = (
-    "dsa-hithink-etf-independent-calendar-session-equality-v1"
-)
 
 
 _CN_LISTING_FACTS_V3: dict[str, dict[str, str]] = {
+    "000995.SZ": {
+        "firstTradingDate": "2000-08-07",
+        "source": "https://static.cninfo.com.cn/finalpage/2021-04-28/1209836916.PDF",
+        "revision": "huangtai-2020-annual-report-1209836916",
+        "knownAt": "2021-04-29T00:00:00+08:00",
+    },
+    "600000.SH": {
+        "firstTradingDate": "1999-11-10",
+        "source": "https://news.spdb.com.cn/about_spd/xwdt_1632/202302/t20230201_1115740.shtml",
+        "revision": "spdb-listing-t20230201_1115740",
+        "knownAt": "2023-02-01T00:00:00+08:00",
+    },
     "159516.SZ": {
         "firstTradingDate": "2023-07-27",
         "source": "https://www.szse.cn/disclosure/notice/fund/t20230724_602100.html",
@@ -53,6 +64,19 @@ _CN_CALENDAR_WINDOW_V3 = {
 }
 
 
+_CN_CALENDAR_WINDOWS_V3 = (
+    _CN_CALENDAR_WINDOW_V3,
+    {
+        "start": "2023-08-01",
+        "end": "2023-08-31",
+        "source": "https://www.sse.com.cn/disclosure/dealinstruc/closed/c/c_20221227_5714459.shtml",
+        "revision": "sse-2023-holidays-c_20221227_5714459-august-v1",
+        # 上交所全年休市公告的八月没有节假日休市；周末保持休市。
+        "holidays": frozenset(),
+    },
+)
+
+
 def market_listing_fact_v3(symbol: str) -> dict[str, str] | None:
     """Return only explicitly sourced listing dates for exact canonical symbols."""
     if not isinstance(symbol, str) or not symbol.strip():
@@ -73,30 +97,15 @@ def market_pagination_contract_v3(
     asset = asset_type.strip().upper()
     provider_id = provider.strip().lower()
     source = upstream_source.strip().lower()
-    if (asset, provider_id, source) == ("ETF", "tushare", "tushare"):
-        from data_provider.tushare_fund_daily import PAGINATION_PROTOCOL
-
-        return {"protocol": PAGINATION_PROTOCOL, "maximumRows": None}
+    for key, target, binding in CAPABILITY_SOURCES.routes("DAILY_BAR"):
+        if (key["assetType"], target["providerId"], target["upstreamSource"]) == (asset, provider_id, source):
+            return {"protocol": binding.protocol, "maximumRows": binding.maximum_rows}
     source_contract = market_source_contract_v3(asset, provider_id, source)
     if source_contract is not None:
         return {
             "protocol": source_contract["paginationProtocol"],
             "maximumRows": source_contract["maximumRows"],
         }
-    if provider_id == "akshare":
-        protocols = {
-            ("ETF", "eastmoney"): ("akshare-etf-range-response-v1", None),
-            ("STOCK", "eastmoney"): ("akshare-stock-eastmoney-range-response-v1", None),
-            ("STOCK", "sina"): ("akshare-stock-sina-range-response-v1", None),
-            ("STOCK", "tencent"): ("akshare-stock-tencent-range-response-v1", None),
-        }
-        contract = protocols.get((asset, source))
-        if contract is None:
-            return None
-        protocol, maximum_rows = contract
-        return {"protocol": protocol, "maximumRows": maximum_rows}
-    if provider_id == "tencent" and source == "tencent":
-        return {"protocol": TENCENT_NATIVE_DAILY_PROTOCOL, "maximumRows": MAX_ROWS}
     return None
 
 
@@ -115,24 +124,10 @@ def market_source_contract_v3(
         provider.strip().lower(),
         upstream_source.strip().lower(),
     )
-    if identity != ("ETF", "hithink", HITHINK_ETF_HISTORY_SOURCE):
-        return None
-    return {
-        "providerId": "hithink",
-        "upstreamSource": HITHINK_ETF_HISTORY_SOURCE,
-        "endpoint": HITHINK_ETF_HISTORICAL_URL,
-        "sourceContractRevision": HITHINK_ETF_SOURCE_CONTRACT_REVISION_V1,
-        "paginationProtocol": HITHINK_ETF_LOCAL_PAGINATION_PROTOCOL_V1,
-        "continuationCursorSupported": False,
-        "maximumRows": None,
-        "maximumRowsKnown": False,
-        "upstreamPaginationVerified": False,
-        "requestWindowMaximumYears": 5,
-        "coverageProtocol": HITHINK_ETF_LOCAL_COVERAGE_PROTOCOL_V1,
-        "upstreamCoverageVerified": False,
-        "upstreamDataRevision": None,
-        "adjustmentAlgorithmRevision": None,
-    }
+    for key, target, binding in CAPABILITY_SOURCES.routes("DAILY_BAR"):
+        if (key["assetType"], target["providerId"], target["upstreamSource"]) == identity and binding.source_contract is not None:
+            return dict(binding.source_contract)
+    return None
 
 
 def market_calendar_evidence_v3(
@@ -140,39 +135,40 @@ def market_calendar_evidence_v3(
     start: str,
     end: str,
 ) -> dict[str, Any] | None:
-    """Return the finite 2026 SZSE calendar supported by the official notice."""
+    """返回官方休市公告支持的有限日历窗口。"""
     if market != "CN":
         return None
     try:
         requested_start = date.fromisoformat(start)
         requested_end = date.fromisoformat(end)
-        supported_start = date.fromisoformat(_CN_CALENDAR_WINDOW_V3["start"])
-        supported_end = date.fromisoformat(_CN_CALENDAR_WINDOW_V3["end"])
     except (TypeError, ValueError):
         return None
-    if (
-        requested_start > requested_end
-        or requested_start < supported_start
-        or requested_end > supported_end
-    ):
+    if requested_start > requested_end:
+        return None
+    window = next((
+        candidate for candidate in _CN_CALENDAR_WINDOWS_V3
+        if date.fromisoformat(candidate["start"]) <= requested_start
+        and requested_end <= date.fromisoformat(candidate["end"])
+    ), None)
+    if window is None:
         return None
 
     expected_sessions: list[str] = []
     current = requested_start
     while current <= requested_end:
         value = current.isoformat()
-        if current.weekday() < 5 and value not in _CN_CALENDAR_WINDOW_V3["holidays"]:
+        if current.weekday() < 5 and value not in window["holidays"]:
             expected_sessions.append(value)
         current += timedelta(days=1)
 
     return {
         "market": market,
         "timezone": _MARKET_TIMEZONES_V3[market],
-        "source": _CN_CALENDAR_WINDOW_V3["source"],
-        "revision": _CN_CALENDAR_WINDOW_V3["revision"],
+        "source": window["source"],
+        "revision": window["revision"],
         "supportedRange": {
-            "start": _CN_CALENDAR_WINDOW_V3["start"],
-            "end": _CN_CALENDAR_WINDOW_V3["end"],
+            "start": window["start"],
+            "end": window["end"],
         },
         "expectedSessionDates": expected_sessions,
     }
@@ -186,9 +182,10 @@ def market_coverage_context_v3(
     end: str,
     calendar_evidence_provider: Callable[[str, str, str], Mapping[str, Any] | None]
     = market_calendar_evidence_v3,
+    allow_unknown_listing: bool = False,
 ) -> dict[str, Any] | None:
     """Build independently sourced Data V3 coverage facts for one request window."""
-    if market != "CN":
+    if market not in {"CN", "HK", "US"} or (market != "CN" and not allow_unknown_listing):
         return None
     try:
         requested_start = date.fromisoformat(start)
@@ -199,14 +196,18 @@ def market_coverage_context_v3(
         return None
 
     listing = market_listing_fact_v3(symbol)
+    first_trading_date = None
     if listing is None:
-        return None
-    try:
-        first_trading_date = date.fromisoformat(listing["firstTradingDate"])
-    except (KeyError, TypeError, ValueError):
-        return None
-    if first_trading_date > requested_end:
-        return None
+        if not allow_unknown_listing or not isinstance(symbol, str) or not symbol.strip():
+            return None
+        listing = {"symbol": symbol.strip(), "status": "unknown"}
+    else:
+        try:
+            first_trading_date = date.fromisoformat(listing["firstTradingDate"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if first_trading_date > requested_end:
+            return None
 
     raw_calendar = calendar_evidence_provider(market, start, end)
     if not isinstance(raw_calendar, Mapping):
@@ -268,7 +269,8 @@ def market_coverage_context_v3(
         return None
 
     expected_post_listing = [
-        session.isoformat() for session in parsed_sessions if session >= first_trading_date
+        session.isoformat() for session in parsed_sessions
+        if first_trading_date is None or session >= first_trading_date
     ]
     window = {
         "status": "complete",
@@ -285,6 +287,8 @@ def market_coverage_context_v3(
 
 def canonical_market_coverage_proof_v3(proof: Mapping[str, Any]) -> list[Any]:
     """Encode the proof in the same stable field order as the Schema V3 helper."""
+    from src.services.thesis_ledger_listing_information import canonical_listing_information
+
     calendar = proof["calendar"]
     listing = proof["listing"]
     window = proof["window"]
@@ -300,13 +304,7 @@ def canonical_market_coverage_proof_v3(proof: Mapping[str, Any]) -> list[Any]:
             [supported["start"], supported["end"]],
             calendar["expectedSessionDates"],
         ],
-        [
-            listing["symbol"],
-            listing["firstTradingDate"],
-            listing["source"],
-            listing["revision"],
-            listing["knownAt"],
-        ],
+        canonical_listing_information(listing),
         [window["status"], window["requestedStart"], window["requestedEnd"]],
         [
             pagination["status"],

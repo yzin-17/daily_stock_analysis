@@ -5,62 +5,18 @@ from __future__ import annotations
 import hmac
 from typing import Any, Mapping
 
-from src.services.thesis_ledger_market_v3_adapters import (
-    HITHINK_STOCK_HISTORY_SOURCE, HITHINK_STOCK_SINGLE_RESPONSE_PROTOCOL_V1,
-    HITHINK_STOCK_SOURCE_CONTRACT_REVISION, market_v3_bar_adapter_reason,
-)
-from src.services.thesis_ledger_market_v3_facts import (
-    HITHINK_ETF_HISTORY_SOURCE, market_pagination_contract_v3, market_source_contract_v3,
-)
+from src.services.thesis_ledger_market_v3_adapters import market_v3_bar_adapter_reason
+from src.services.thesis_ledger_capability_registry import DailyBinding
 from src.services.thesis_ledger_route_admission_v3 import route_admission_scope_applies
 from src.services.thesis_ledger_current_data_route import current_data_adapter_revisions
 from src.services.thesis_ledger_event_v3_adapters import event_adapter_revisions, event_adapter_matches
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 
 MARKET_V3_CREDENTIAL_NOT_REQUIRED_REVISION = "not-required"
 
 # These revisions describe the local exact adapter implementation. Bump the
 # affected entry whenever its source dispatch or adjustment behavior changes.
 _MARKET_V3_ADAPTER_REVISIONS = {
-    ("ETF", "tushare", "tushare"): {
-        "none": "dsa-v3-etf-tushare-fund-daily-none-adapter-v1",
-    },
-    ("ETF", "akshare", "eastmoney"): {
-        "none": "dsa-v3-etf-akshare-eastmoney-none-adapter-v1",
-        "qfq": "dsa-v3-etf-akshare-eastmoney-qfq-adapter-v1",
-        "hfq": "dsa-v3-etf-akshare-eastmoney-hfq-adapter-v1",
-    },
-    ("STOCK", "akshare", "eastmoney"): {
-        "none": "dsa-v3-stock-akshare-eastmoney-none-adapter-v1",
-        "qfq": "dsa-v3-stock-akshare-eastmoney-qfq-adapter-v1",
-        "hfq": "dsa-v3-stock-akshare-eastmoney-hfq-adapter-v1",
-    },
-    ("STOCK", "akshare", "sina"): {
-        "none": "dsa-v3-stock-akshare-sina-none-adapter-v1",
-        "qfq": "dsa-v3-stock-akshare-sina-qfq-adapter-v1",
-        "hfq": "dsa-v3-stock-akshare-sina-hfq-adapter-v1",
-    },
-    ("STOCK", "akshare", "tencent"): {
-        "none": "dsa-v3-stock-akshare-tencent-none-adapter-v1",
-        "qfq": "dsa-v3-stock-akshare-tencent-qfq-adapter-v1",
-        "hfq": "dsa-v3-stock-akshare-tencent-hfq-adapter-v1",
-    },
-    ("ETF", "tencent", "tencent"): {
-        "none": "dsa-v3-etf-tencent-none-adapter-v2",
-        "qfq": "dsa-v3-etf-tencent-qfq-adapter-v2",
-        "hfq": "dsa-v3-etf-tencent-hfq-newfqkline-adapter-v1",
-    },
-    ("ETF", "hithink", HITHINK_ETF_HISTORY_SOURCE): {
-        "qfq": "dsa-v3-etf-hithink-fund-market-historical-qfq-adapter-v3",
-    },
-    ("STOCK", "hithink", HITHINK_STOCK_HISTORY_SOURCE): {
-        "none": "dsa-v3-stock-hithink-financial-api-none-adapter-v1",
-        "qfq": "dsa-v3-stock-hithink-financial-api-qfq-adapter-v1",
-        "hfq": "dsa-v3-stock-hithink-financial-api-hfq-adapter-v1",
-    },
-    ("STOCK", "tencent", "tencent"): {
-        "none": "dsa-v3-stock-tencent-none-adapter-v2",
-        "qfq": "dsa-v3-stock-tencent-qfq-adapter-v2",
-    },
 }
 
 
@@ -85,60 +41,28 @@ def market_v3_current_route_revisions(
         return current_data_adapter_revisions(key, target)
     if event_adapter_matches(key, target):
         provider_id = target["providerId"]
+        source = CAPABILITY_SOURCES.source(provider_id)
+        if source is None:
+            return None
+        requires_credential = source.manifest().get('requiresCredential')
         if (provider_manifest.get("providerId") != provider_id
-                or provider_manifest.get("requiresCredential") is not (provider_id in {"hithink", "rqdata", "tushare"})):
+                or provider_manifest.get("requiresCredential") is not requires_credential):
             return None
         return event_adapter_revisions(key, target, credential_revision)
     if market_v3_bar_adapter_reason(dict(key), dict(target)) is not None:
         return None
 
-    asset_type = str(key.get("assetType") or "").strip().upper()
     provider_id = str(target.get("providerId") or "").strip().lower()
-    upstream_source = str(target.get("upstreamSource") or "").strip().lower()
-    adjustment = str(key.get("adjustment") or "").strip().lower()
     if provider_manifest.get("providerId") != provider_id:
         return None
-
-    adapter_revision = _MARKET_V3_ADAPTER_REVISIONS.get(
-        (asset_type, provider_id, upstream_source), {}
-    ).get(adjustment)
-    pagination_contract = market_pagination_contract_v3(
-        asset_type,
-        provider_id,
-        upstream_source,
-    )
-    source_contract = market_source_contract_v3(
-        asset_type,
-        provider_id,
-        upstream_source,
-    )
-    if (
-        asset_type == "STOCK"
-        and provider_id == "hithink"
-        and upstream_source == HITHINK_STOCK_HISTORY_SOURCE
-    ):
-        pagination_contract = {
-            "protocol": HITHINK_STOCK_SINGLE_RESPONSE_PROTOCOL_V1,
-            "maximumRows": None,
-        }
-        source_revision = HITHINK_STOCK_SOURCE_CONTRACT_REVISION
-    elif provider_id == "hithink":
-        source_revision = (
-            source_contract.get("sourceContractRevision")
-            if isinstance(source_contract, Mapping)
-            else None
-        )
-    else:
-        source_revision = (
-            pagination_contract.get("protocol")
-            if isinstance(pagination_contract, Mapping)
-            else None
-        )
+    binding = CAPABILITY_SOURCES.resolve(key, target)
+    if not isinstance(binding, DailyBinding):
+        return None
+    adapter_revision, source_revision = binding.adapter_revision, binding.source_revision
     if (
         not adapter_revision
-        or not isinstance(pagination_contract, Mapping)
-        or not isinstance(pagination_contract.get("protocol"), str)
-        or not pagination_contract["protocol"].strip()
+        or not isinstance(binding.protocol, str)
+        or not binding.protocol.strip()
         or not isinstance(source_revision, str)
         or not source_revision.strip()
     ):
@@ -148,7 +72,10 @@ def market_v3_current_route_revisions(
     if requires_credential is False:
         credential_revision = MARKET_V3_CREDENTIAL_NOT_REQUIRED_REVISION
     elif requires_credential is True:
-        if provider_id in {"hithink", "tushare"}:
+        source = CAPABILITY_SOURCES.source(provider_id)
+        if source is None:
+            return None
+        if source.credential_revision_kind == 'hmac':
             if (
                 not isinstance(credential_revision, str)
                 or not credential_revision.startswith("hmac-sha256-v1:")

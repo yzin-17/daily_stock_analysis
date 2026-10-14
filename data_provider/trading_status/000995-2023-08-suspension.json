@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "datasetId": "cn-000995-daily-suspension-2023-08",
+  "symbol": "000995.SZ",
+  "coverage": { "start": "2023-08-16", "end": "2023-08-21" },
+  "description": "本人本地研究使用的发行人日级停复牌安排。公告仅确认08-17停牌、08-18复牌，其他日期保持未知；不应用风险警示或涨跌幅变化，不宣称盘中状态或严格PIT。",
+  "sourceDocuments": [
+    {
+      "id": "huangtai-2023-029",
+      "title": "皇台酒业：关于公司股票交易撤销退市风险警示暨停牌的公告（2023-029）",
+      "url": "https://static.cninfo.com.cn/finalpage/2023-08-17/1217557800.PDF",
+      "publishedDate": "2023-08-17",
+      "kind": "issuerDisclosure"
+    }
+  ],
+  "days": [
+    { "date": "2023-08-17", "state": "suspended", "sourceDocumentIds": ["huangtai-2023-029"] },
+    { "date": "2023-08-18", "state": "trading", "sourceDocumentIds": ["huangtai-2023-029"] }
+  ]
+}

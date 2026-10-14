@@ -86,10 +86,9 @@ def test_gateway_returns_effective_policy_and_actual_provider_provenance(tmp_pat
     class _Adapter:
         """返回统一 Quote 的最小 Provider adapter。"""
 
-        def get_realtime_quote(self, symbol, *, source=None):
+        def _get_stock_realtime_quote_em(self, symbol):
             """确认 gateway 传递裸 Provider symbol 并返回 fixture。"""
             assert symbol == "600519"
-            assert source == "em"
             return _Quote()
 
     gateway = ThesisLedgerDataGateway(
@@ -140,14 +139,14 @@ def test_gateway_marks_provider_switch_and_preserves_attempted_route(tmp_path):
     class _TimeoutAdapter:
         """模拟持续超时的主 Provider。"""
 
-        def get_realtime_quote(self, _symbol, *, source=None):
+        def _get_stock_realtime_quote_em(self, _symbol):
             """触发 runtime 的有界 retry。"""
             raise TimeoutError("timeout")
 
     class _HealthyAdapter:
         """模拟返回完整 Quote 的 fallback Provider。"""
 
-        def get_realtime_quote(self, _symbol, *, source=None):
+        def _get_realtime_snapshot_quote(self, _symbol):
             """返回统一 Quote fixture。"""
             return _Quote()
 
@@ -252,9 +251,9 @@ def test_fastapi_current_quote_uses_applied_policy_and_exact_target(tmp_path, mo
     class _Adapter:
         calls = 0
 
-        def get_realtime_quote(self, symbol, *, source=None):
+        def _get_stock_realtime_quote_em(self, symbol):
             self.calls += 1
-            assert (symbol, source) == ("600519", "em")
+            assert symbol == "600519"
             return _Quote()
 
     adapter = _Adapter()

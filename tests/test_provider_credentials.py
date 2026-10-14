@@ -158,6 +158,7 @@ def test_provider_config_uses_page_credentials_and_versions(monkeypatch, tmp_pat
 @pytest.mark.parametrize(
     ("provider_id", "method", "values", "fields"),
     [
+        ("hithink", "api_key", {"apiKey": "synthetic-hithink"}, {"apiKey": True}),
         ("tushare", "token", {"token": "token"}, {"token": True}),
         ("tickflow", "api_key", {"apiKey": "tickflow"}, {"apiKey": True}),
         ("finnhub", "api_key", {"apiKey": "finnhub"}, {"apiKey": True}),
@@ -224,7 +225,7 @@ def test_clearing_page_credential_restores_environment_source(monkeypatch, tmp_p
     restored = store.save_provider_config("tushare", {"requestId": "clear", "clearCredentials": True})
     assert restored["credentialSource"] == "environment"
     assert restored["credentialFieldsConfigured"] == {"token": False}
-    assert restored["credentialMethod"] is None
+    assert restored["credentialMethod"] == "token"
     with pytest.raises(Exception, match="不能与 credentials"):
         store.save_provider_config(
             "finnhub",
@@ -248,10 +249,10 @@ def test_old_string_credential_is_rejected_without_changing_environment(monkeypa
     provider = next(item for item in store.provider_registry() if item["providerId"] == "tushare")
     assert provider["credentialSource"] == "environment"
     assert provider["credentialFieldsConfigured"] == {"token": False}
-    assert provider["credentialMethod"] is None
+    assert provider["credentialMethod"] == "token"
 
 
-def test_longbridge_environment_oauth_does_not_fill_legacy_fields(monkeypatch, tmp_path):
+def test_longbridge_client_id_alone_does_not_enable_source(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "data_provider.longbridge_fetcher._longbridge_credentials",
         lambda _config: {
@@ -265,9 +266,13 @@ def test_longbridge_environment_oauth_does_not_fill_legacy_fields(monkeypatch, t
         "data_provider.longbridge_fetcher.LongbridgeFetcher.has_configured_credentials",
         staticmethod(lambda _config=None: True),
     )
+    monkeypatch.delenv("LONGBRIDGE_OAUTH_TOKEN_CACHE_B64", raising=False)
+    monkeypatch.setattr("data_provider.longbridge_fetcher._oauth_token_cache_path", lambda _: tmp_path / "missing-token")
     store = _store(monkeypatch, tmp_path)
     longbridge = next(item for item in store.provider_registry() if item["providerId"] == "longbridge")
-    assert longbridge["credentialSource"] == "environment"
+    assert longbridge["credentialSource"] == "none"
+    assert longbridge["credentialConfigured"] is False
+    assert longbridge["enabled"] is False
     assert longbridge["credentialFieldsConfigured"] == {
         "accessToken": False,
         "appKey": False,

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "symbol": "GME.US",
+  "sourceSymbol": "GME",
+  "market": "US",
+  "currency": "USD",
+  "timezone": "America/New_York",
+  "upstreamSource": "yahoo-gme-share-window",
+  "coverage": { "start": "2024-05-10", "end": "2024-05-24" },
+  "rawFile": "us-gme-share-window.raw.json",
+  "rawSha256": "6bcb64233cc1a17afe6ef212f4803f71a4f2c250652ec91d15c27b64be8df989",
+  "rawBytes": 2341,
+  "observedAt": "2026-10-07T18:50:59.089894+00:00",
+  "sourceUrl": "https://query1.finance.yahoo.com/v8/finance/chart/GME?period1=1715299200&period2=1716595200&interval=1d&events=div%2Csplits%2CcapitalGains",
+  "eventObservation": {
+    "observedAt": "2026-10-08T04:53:18.473173+00:00",
+    "rawSha256": "e36020b5d436b56eb22d8b0292b0f7a5a5ea2857db9e7bae430bf54961215c62",
+    "observations": 604,
+    "events": {},
+    "sourceUrl": "https://query1.finance.yahoo.com/v8/finance/chart/GME?period1=1715299200&period2=1791435197&interval=1d&events=div%2Csplits%2CcapitalGains"
+  },
+  "anchor": {
+    "date": "2024-05-16",
+    "closePerShare": "27.67",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1326380/000119312524141200/d815176d424b5.htm",
+    "description": "官方网页披露的单点每股价格锚；CLI的403错误载荷不作为原件。"
+  },
+  "unitModel": {
+    "observedAt": "2026-10-08T05:00:13.996180+00:00",
+    "quantityStep": "1",
+    "tickSize": "0.01",
+    "representationTolerance": "0.000005",
+    "description": "整股模拟成交步长，不等同NYSE报价整手；原响应保留，微小浮点误差按一美分网格还原。",
+    "references": [
+      "https://www.futuhk.com/hans/support/topic2_139",
+      "https://www.govinfo.gov/content/pkg/FR-2024-10-08/pdf/2024-21867.pdf"
+    ],
+    "sourceDigests": [
+      "853f540914b824223dbb20363d7a361cc1ee043475a8e9e4751456ef1b9935a6",
+      "e39950cd4690d852c5b13f82acc5d088008205cdd3c86d1fbae506aee52a0820"
+    ]
+  },
+  "historicalAvailability": "notVerified",
+  "description": "仅本有界窗口的按股价格与显式整股研究模型；市场成交额未知，未证明完整公司行动或历史当时可见。"
+}

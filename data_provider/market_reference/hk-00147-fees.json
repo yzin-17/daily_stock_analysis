@@ -1,0 +1,45 @@
+{
+  "market": "HK",
+  "symbol": "00147.HK",
+  "upstreamSource": "hkex-trading-fee",
+  "datasetId": "hk-00147-trading-fee-2025-08-v1",
+  "coverage": {
+    "start": "2025-08-06",
+    "end": "2025-08-11"
+  },
+  "exchange": "XHKG",
+  "tradingMethod": "exchangeTrading",
+  "calculationSettings": "executionModel",
+  "coverageDescription": "仅纳入港交所交易费，按归一化模拟成交额及已选每笔四舍五入金额模型计算；印花税、SFC/AFRC及券商其他费用未纳入。",
+  "segments": [
+    {
+      "range": {
+        "start": "2025-08-06",
+        "endExclusive": "2025-08-12"
+      },
+      "charges": [
+        {
+          "code": "handlingFee",
+          "side": "both",
+          "currency": "HKD",
+          "rate": "0.0000565",
+          "basis": "turnover",
+          "sourceDocumentIds": [
+            "hkex-086-2022"
+          ]
+        }
+      ]
+    }
+  ],
+  "sourceDocuments": [
+    {
+      "id": "hkex-086-2022",
+      "title": "港交所交易费调整通告 LSD/086/2022",
+      "url": "https://www.hkex.com.hk/-/media/HKEX-Market/Services/Circulars-and-Notices/Participant-and-Members-Circulars/SEHK/2022/086_22_SEHK_OP_Trading-Fee_e.pdf",
+      "publishedDate": "2022-11-14",
+      "kind": "officialPublication",
+      "sha256": "ebf57bb5b3041ec0ae7bc209b07a22517acce0d3904c0dee12c4a2fdf0efbd1d",
+      "observedAt": "2026-10-07T08:12:18.131611+00:00"
+    }
+  ]
+}

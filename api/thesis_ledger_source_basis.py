@@ -1,63 +1,31 @@
-"""V3 原生价格事实的 HTTP 投影；单位不改变数值或授予转换资格。"""
+"""V3原生价格事实的HTTP投影，只消费精确绑定的标准单位。"""
 
 from typing import Any, Mapping
 
-from src.services.thesis_ledger_market_v3_facts import (
-    HITHINK_ETF_HISTORY_SOURCE,
-)
-from src.services.thesis_ledger_hithink_etf_units import hithink_etf_field_contract_is_valid
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+from src.services.thesis_ledger_capability_registry import DailyBinding
+from src.services.thesis_ledger_daily_units_contract import DailyFieldUnits, DailyUnitsContext
 
 
 def native_field_units(attrs: Mapping[str, Any], key: Mapping[str, Any],
                        provider: str, source: str,
                        request: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    hithink_contract = attrs.get("hithink_etf_field_units")
-    native_contract = attrs.get("native_daily_contract")
-    if hithink_contract is not None:
-        if (
-            native_contract is not None
-            or provider != "hithink"
-            or source != HITHINK_ETF_HISTORY_SOURCE
-            or key.get("assetType") != "ETF"
-            or key.get("timeframe") != "1d"
-            or key.get("market") != "CN"
-            or key.get("adjustment") != "qfq"
-            or not isinstance(hithink_contract, Mapping)
-            or not hithink_etf_field_contract_is_valid(
-                dict(hithink_contract), dict(request) if isinstance(request, Mapping) else None,
-            )
-        ):
-            raise ValueError("invalid HiThink ETF field unit contract")
-        return {"fieldUnits": {
-            "volume": hithink_contract["volumeUnit"],
-            "amount": hithink_contract["amountUnit"],
-        }}
-
-    if native_contract is None:
+    names = {name for _, _, binding in CAPABILITY_SOURCES.routes('DAILY_BAR')
+             if isinstance(binding, DailyBinding) and binding.public_units_policy is not None
+             for name in binding.public_units_policy.metadata_names}
+    present = {name for name in names if attrs.get(name) is not None}
+    if not present:
         return {}
-    contract = native_contract
-    stock = key["assetType"] == "STOCK"
-    expected = {
-        "contractVersion": "akshare-eastmoney-native-fields-v1",
-        "providerId": "akshare", "upstreamSource": "eastmoney",
-        "independentSourceId": "eastmoney",
-        "assetType": key["assetType"], "adjustment": key["adjustment"],
-        "nativeAdjust": "" if key["adjustment"] == "none" else key["adjustment"],
-        "endpoint": "stock_zh_a_hist" if stock else "fund_etf_hist_em",
-        "volumeUnit": "hand" if stock else "unknown",
-        "amountUnit": "CNY" if stock else "unknown",
-        "volumeAdjustment": "unknown",
-    }
-    if (
-        provider != "akshare" or source != "eastmoney"
-        or key["assetType"] not in {"STOCK", "ETF"}
-        or key["timeframe"] != "1d" or key["market"] != "CN"
-        or not isinstance(contract, Mapping)
-        or any(contract.get(name) != value for name, value in expected.items())
-        or contract.get("valuesConverted") is not False
-    ):
-        raise ValueError("invalid native field contract")
-    return {"fieldUnits": {"volume": contract["volumeUnit"], "amount": contract["amountUnit"]}}
+    binding = CAPABILITY_SOURCES.resolve(key, {'providerId': provider, 'upstreamSource': source})
+    policy = binding.public_units_policy if isinstance(binding, DailyBinding) else None
+    if policy is None or len(present) != 1 or not present.issubset(policy.metadata_names):
+        raise ValueError('日线单位合同与精确来源绑定不匹配')
+    metadata = {name: attrs[name] for name in present}
+    result = policy.project(DailyUnitsContext(metadata, key, request))
+    if not isinstance(result, DailyFieldUnits):
+        raise ValueError('日线单位投影未返回标准结果')
+    checked = DailyFieldUnits.model_validate(result.model_dump())
+    return {'fieldUnits': checked.model_dump()}
 
 
 def native_source_basis(adjustment: str, method_version: str, fingerprint: str,

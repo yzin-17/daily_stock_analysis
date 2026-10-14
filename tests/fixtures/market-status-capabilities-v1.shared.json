@@ -1,0 +1,582 @@
+{
+  "schema": "status-capabilities-v1-test-fixtures",
+  "valid": [
+    {
+      "name": "DAILY_TRADING_STATUS",
+      "request": {
+        "contractVersion": 3,
+        "capabilityVersion": 1,
+        "consumer": "thesis-ledger",
+        "requestId": "fixture-request",
+        "symbol": "600000.SH",
+        "routeKey": {
+          "kind": "data",
+          "market": "CN",
+          "assetType": "STOCK",
+          "capability": "DAILY_TRADING_STATUS"
+        },
+        "routeTarget": {
+          "providerId": "fixture-status",
+          "upstreamSource": "fixture-upstream",
+          "routeIndex": 0
+        },
+        "policyRevision": 7,
+        "range": {
+          "start": "2024-07-15",
+          "end": "2024-07-15"
+        }
+      },
+      "result": {
+        "contractVersion": 3,
+        "capabilityVersion": 1,
+        "consumer": "thesis-ledger",
+        "requestId": "fixture-request",
+        "symbol": "600000.SH",
+        "routeKey": {
+          "kind": "data",
+          "market": "CN",
+          "assetType": "STOCK",
+          "capability": "DAILY_TRADING_STATUS"
+        },
+        "routeTarget": {
+          "providerId": "fixture-status",
+          "upstreamSource": "fixture-upstream",
+          "routeIndex": 0
+        },
+        "policyRevision": 7,
+        "range": {
+          "start": "2024-07-15",
+          "end": "2024-07-15"
+        },
+        "provenance": {
+          "adapterRevision": "fixture-adapter-v1",
+          "sourceRevision": "fixture-source-v1"
+        },
+        "clock": {
+          "observedAt": "2024-07-20T08:00:00Z",
+          "upstreamAt": null,
+          "timezone": "Asia/Shanghai",
+          "basis": "effectiveDate"
+        },
+        "evidence": [
+          {
+            "id": "record",
+            "kind": "record",
+            "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "normalizedResponse",
+            "reference": null
+          },
+          {
+            "id": "document",
+            "kind": "document",
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "originalBytes",
+            "reference": "https://example.invalid/fixture-document"
+          },
+          {
+            "id": "calendar",
+            "kind": "calendar",
+            "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "normalizedResponse",
+            "reference": null
+          }
+        ],
+        "days": [
+          {
+            "date": "2024-07-15",
+            "state": "trading",
+            "intradayHalts": [],
+            "evidenceRefs": [
+              "record"
+            ]
+          }
+        ],
+        "coverage": {
+          "range": {
+            "start": "2024-07-15",
+            "end": "2024-07-15"
+          },
+          "expectedDates": [
+            "2024-07-15"
+          ],
+          "calendarUnknownDates": [],
+          "unknownDates": [],
+          "calendarEvidenceRefs": [
+            "calendar"
+          ],
+          "complete": true
+        }
+      }
+    },
+    {
+      "name": "RISK_WARNING",
+      "request": {
+        "contractVersion": 3,
+        "capabilityVersion": 1,
+        "consumer": "thesis-ledger",
+        "requestId": "fixture-request",
+        "symbol": "600000.SH",
+        "routeKey": {
+          "kind": "data",
+          "market": "CN",
+          "assetType": "STOCK",
+          "capability": "RISK_WARNING"
+        },
+        "routeTarget": {
+          "providerId": "fixture-status",
+          "upstreamSource": "fixture-upstream",
+          "routeIndex": 0
+        },
+        "policyRevision": 7,
+        "range": {
+          "start": "2024-07-15",
+          "end": "2024-07-15"
+        },
+        "detail": {
+          "kind": "coarseST"
+        }
+      },
+      "result": {
+        "contractVersion": 3,
+        "capabilityVersion": 1,
+        "consumer": "thesis-ledger",
+        "requestId": "fixture-request",
+        "symbol": "600000.SH",
+        "routeKey": {
+          "kind": "data",
+          "market": "CN",
+          "assetType": "STOCK",
+          "capability": "RISK_WARNING"
+        },
+        "routeTarget": {
+          "providerId": "fixture-status",
+          "upstreamSource": "fixture-upstream",
+          "routeIndex": 0
+        },
+        "policyRevision": 7,
+        "range": {
+          "start": "2024-07-15",
+          "end": "2024-07-15"
+        },
+        "provenance": {
+          "adapterRevision": "fixture-adapter-v1",
+          "sourceRevision": "fixture-source-v1"
+        },
+        "clock": {
+          "observedAt": "2024-07-20T08:00:00Z",
+          "upstreamAt": null,
+          "timezone": "Asia/Shanghai",
+          "basis": "effectiveDate"
+        },
+        "evidence": [
+          {
+            "id": "record",
+            "kind": "record",
+            "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "normalizedResponse",
+            "reference": null
+          },
+          {
+            "id": "document",
+            "kind": "document",
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "originalBytes",
+            "reference": "https://example.invalid/fixture-document"
+          },
+          {
+            "id": "calendar",
+            "kind": "calendar",
+            "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "normalizedResponse",
+            "reference": null
+          }
+        ],
+        "days": [
+          {
+            "date": "2024-07-15",
+            "coarseST": "notFlagged",
+            "delisting": "unknown",
+            "other": "unknown",
+            "evidenceRefs": [
+              "record"
+            ]
+          }
+        ],
+        "coverage": {
+          "range": {
+            "start": "2024-07-15",
+            "end": "2024-07-15"
+          },
+          "expectedDates": [
+            "2024-07-15"
+          ],
+          "calendarUnknownDates": [],
+          "unknownDates": [],
+          "calendarEvidenceRefs": [
+            "calendar"
+          ],
+          "complete": true
+        },
+        "detail": {
+          "kind": "coarseST"
+        }
+      }
+    },
+    {
+      "name": "DAILY_PRICE_RULE",
+      "request": {
+        "contractVersion": 3,
+        "capabilityVersion": 1,
+        "consumer": "thesis-ledger",
+        "requestId": "fixture-request",
+        "symbol": "600000.SH",
+        "routeKey": {
+          "kind": "data",
+          "market": "CN",
+          "assetType": "STOCK",
+          "capability": "DAILY_PRICE_RULE"
+        },
+        "routeTarget": {
+          "providerId": "fixture-status",
+          "upstreamSource": "fixture-upstream",
+          "routeIndex": 0
+        },
+        "policyRevision": 7,
+        "range": {
+          "start": "2024-07-15",
+          "end": "2024-07-15"
+        },
+        "representation": "rule"
+      },
+      "result": {
+        "contractVersion": 3,
+        "capabilityVersion": 1,
+        "consumer": "thesis-ledger",
+        "requestId": "fixture-request",
+        "symbol": "600000.SH",
+        "routeKey": {
+          "kind": "data",
+          "market": "CN",
+          "assetType": "STOCK",
+          "capability": "DAILY_PRICE_RULE"
+        },
+        "routeTarget": {
+          "providerId": "fixture-status",
+          "upstreamSource": "fixture-upstream",
+          "routeIndex": 0
+        },
+        "policyRevision": 7,
+        "range": {
+          "start": "2024-07-15",
+          "end": "2024-07-15"
+        },
+        "provenance": {
+          "adapterRevision": "fixture-adapter-v1",
+          "sourceRevision": "fixture-source-v1"
+        },
+        "clock": {
+          "observedAt": "2024-07-20T08:00:00Z",
+          "upstreamAt": null,
+          "timezone": "Asia/Shanghai",
+          "basis": "effectiveDate"
+        },
+        "evidence": [
+          {
+            "id": "record",
+            "kind": "record",
+            "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "normalizedResponse",
+            "reference": null
+          },
+          {
+            "id": "document",
+            "kind": "document",
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "originalBytes",
+            "reference": "https://example.invalid/fixture-document"
+          },
+          {
+            "id": "calendar",
+            "kind": "calendar",
+            "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "normalizedResponse",
+            "reference": null
+          }
+        ],
+        "days": [
+          {
+            "date": "2024-07-15",
+            "rule": {
+              "kind": "ratio",
+              "reference": "previousRawClose",
+              "maxUpRatio": "0.1",
+              "maxDownRatio": "0.1"
+            },
+            "evidenceRefs": [
+              "document"
+            ]
+          }
+        ],
+        "coverage": {
+          "range": {
+            "start": "2024-07-15",
+            "end": "2024-07-15"
+          },
+          "expectedDates": [
+            "2024-07-15"
+          ],
+          "calendarUnknownDates": [],
+          "unknownDates": [],
+          "calendarEvidenceRefs": [
+            "calendar"
+          ],
+          "complete": true
+        },
+        "representation": "rule"
+      }
+    },
+    {
+      "name": "LISTING_PHASE",
+      "request": {
+        "contractVersion": 3,
+        "capabilityVersion": 1,
+        "consumer": "thesis-ledger",
+        "requestId": "fixture-request",
+        "symbol": "600000.SH",
+        "routeKey": {
+          "kind": "data",
+          "market": "CN",
+          "assetType": "STOCK",
+          "capability": "LISTING_PHASE"
+        },
+        "routeTarget": {
+          "providerId": "fixture-status",
+          "upstreamSource": "fixture-upstream",
+          "routeIndex": 0
+        },
+        "policyRevision": 7,
+        "range": {
+          "start": "2024-07-15",
+          "end": "2024-07-15"
+        }
+      },
+      "result": {
+        "contractVersion": 3,
+        "capabilityVersion": 1,
+        "consumer": "thesis-ledger",
+        "requestId": "fixture-request",
+        "symbol": "600000.SH",
+        "routeKey": {
+          "kind": "data",
+          "market": "CN",
+          "assetType": "STOCK",
+          "capability": "LISTING_PHASE"
+        },
+        "routeTarget": {
+          "providerId": "fixture-status",
+          "upstreamSource": "fixture-upstream",
+          "routeIndex": 0
+        },
+        "policyRevision": 7,
+        "range": {
+          "start": "2024-07-15",
+          "end": "2024-07-15"
+        },
+        "provenance": {
+          "adapterRevision": "fixture-adapter-v1",
+          "sourceRevision": "fixture-source-v1"
+        },
+        "clock": {
+          "observedAt": "2024-07-20T08:00:00Z",
+          "upstreamAt": null,
+          "timezone": "Asia/Shanghai",
+          "basis": "effectiveDate"
+        },
+        "evidence": [
+          {
+            "id": "record",
+            "kind": "record",
+            "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "normalizedResponse",
+            "reference": null
+          },
+          {
+            "id": "document",
+            "kind": "document",
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "originalBytes",
+            "reference": "https://example.invalid/fixture-document"
+          },
+          {
+            "id": "calendar",
+            "kind": "calendar",
+            "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "normalizedResponse",
+            "reference": null
+          }
+        ],
+        "days": [
+          {
+            "date": "2024-07-15",
+            "phase": "listed",
+            "evidenceRefs": [
+              "document"
+            ]
+          }
+        ],
+        "coverage": {
+          "range": {
+            "start": "2024-07-15",
+            "end": "2024-07-15"
+          },
+          "expectedDates": [
+            "2024-07-15"
+          ],
+          "calendarUnknownDates": [],
+          "unknownDates": [],
+          "calendarEvidenceRefs": [
+            "calendar"
+          ],
+          "complete": true
+        }
+      }
+    },
+    {
+      "name": "SECURITY_BASIC_DATES",
+      "request": {
+        "contractVersion": 3,
+        "capabilityVersion": 1,
+        "consumer": "thesis-ledger",
+        "requestId": "fixture-request",
+        "symbol": "600000.SH",
+        "routeKey": {
+          "kind": "data",
+          "market": "CN",
+          "assetType": "STOCK",
+          "capability": "SECURITY_BASIC_DATES"
+        },
+        "routeTarget": {
+          "providerId": "fixture-status",
+          "upstreamSource": "fixture-upstream",
+          "routeIndex": 0
+        },
+        "policyRevision": 7
+      },
+      "result": {
+        "contractVersion": 3,
+        "capabilityVersion": 1,
+        "consumer": "thesis-ledger",
+        "requestId": "fixture-request",
+        "symbol": "600000.SH",
+        "routeKey": {
+          "kind": "data",
+          "market": "CN",
+          "assetType": "STOCK",
+          "capability": "SECURITY_BASIC_DATES"
+        },
+        "routeTarget": {
+          "providerId": "fixture-status",
+          "upstreamSource": "fixture-upstream",
+          "routeIndex": 0
+        },
+        "policyRevision": 7,
+        "provenance": {
+          "adapterRevision": "fixture-adapter-v1",
+          "sourceRevision": "fixture-source-v1"
+        },
+        "clock": {
+          "observedAt": "2024-07-20T08:00:00Z",
+          "upstreamAt": null,
+          "timezone": "Asia/Shanghai",
+          "basis": "effectiveDate"
+        },
+        "evidence": [
+          {
+            "id": "record",
+            "kind": "record",
+            "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "observedAt": "2024-07-20T08:00:00Z",
+            "availableAt": null,
+            "hashScope": "normalizedResponse",
+            "reference": null
+          }
+        ],
+        "dates": {
+          "ipoDate": "2012-05-28",
+          "outDate": null,
+          "ipoDateStatus": "known",
+          "outDateStatus": "notProvided",
+          "sourceRecordId": "record"
+        }
+      }
+    }
+  ],
+  "querySupport": [
+    {
+      "capability": "DAILY_TRADING_STATUS",
+      "granularity": "day",
+      "maximumWindowDays": 3661
+    },
+    {
+      "capability": "RISK_WARNING",
+      "detailKinds": [
+        "coarseST"
+      ],
+      "riskCategories": []
+    },
+    {
+      "capability": "RISK_WARNING",
+      "detailKinds": [
+        "riskCategories"
+      ],
+      "riskCategories": [
+        "delisting",
+        "other"
+      ]
+    },
+    {
+      "capability": "DAILY_PRICE_RULE",
+      "representations": [
+        "rule"
+      ]
+    },
+    {
+      "capability": "SECURITY_BASIC_DATES",
+      "fields": [
+        "ipoDate",
+        "outDate"
+      ]
+    },
+    {
+      "capability": "LISTING_PHASE",
+      "phases": [
+        "delistingPeriod",
+        "delisted"
+      ]
+    }
+  ]
+}

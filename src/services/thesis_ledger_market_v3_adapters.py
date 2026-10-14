@@ -3,32 +3,25 @@
 from __future__ import annotations
 
 from typing import Any, Iterator
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+from src.services.thesis_ledger_capability_registry import DailyBinding
+from data_provider.thesis_ledger_sources.hithink import (
+    STOCK_SOURCE as HITHINK_STOCK_HISTORY_SOURCE,
+    STOCK_SOURCE_REVISION as HITHINK_STOCK_SOURCE_CONTRACT_REVISION,
+    STOCK_PROTOCOL as HITHINK_STOCK_SINGLE_RESPONSE_PROTOCOL_V1,
+)
 
 
-HITHINK_STOCK_HISTORY_SOURCE = "hithink-financial-api"
-# This is the frozen local endpoint/request contract, not an upstream data or
-# adjustment-algorithm revision.
-HITHINK_STOCK_SOURCE_CONTRACT_REVISION = "dsa-hithink-stock-request-contract-v1"
-HITHINK_STOCK_SINGLE_RESPONSE_PROTOCOL_V1 = "hithink-stock-single-response-local-v1"
 
 
 # Only source-pinned adapters used by ``execute_market_bars_v3`` belong here.
 # Generic provider manifests describe broader native support and are not proof
 # that a ThesisLedger V3 route can execute one exact source/type combination.
 _ROUTE_ADJUSTMENTS: dict[tuple[str, str, str], tuple[str, ...]] = {
-    ("STOCK", "akshare", "eastmoney"): ("none", "qfq", "hfq"),
-    ("STOCK", "akshare", "sina"): ("none", "qfq", "hfq"),
-    ("STOCK", "akshare", "tencent"): ("none", "qfq", "hfq"),
-    ("ETF", "akshare", "eastmoney"): ("none", "qfq", "hfq"),
-    ("STOCK", "tencent", "tencent"): ("none", "qfq"),
-    ("ETF", "tencent", "tencent"): ("none", "qfq", "hfq"),
 }
 
 # 需凭据的适配器单独登记。HiThink ETF 基础价格只检查配置，扩展能力继续独立准入。
 _GATED_ROUTE_ADJUSTMENTS: dict[tuple[str, str, str], tuple[str, ...]] = {
-    ("ETF", "tushare", "tushare"): ("none",),
-    ("ETF", "hithink", "fund-market-historical"): ("qfq",),
-    ("STOCK", "hithink", HITHINK_STOCK_HISTORY_SOURCE): ("none", "qfq", "hfq"),
 }
 
 
@@ -36,6 +29,17 @@ def market_v3_bar_adapter_reason(
     key: dict[str, Any], target: dict[str, Any]
 ) -> str | None:
     """Return a fail-closed reason unless this exact bar route has an adapter."""
+    if isinstance(CAPABILITY_SOURCES.resolve(key, target), DailyBinding):
+        return None
+    if key.get("kind") == "bar" and any(
+        candidate[0].get("market") == key.get("market")
+        and candidate[0].get("assetType") == key.get("assetType")
+        and candidate[0].get("capability") == key.get("capability")
+        and candidate[0].get("timeframe") == key.get("timeframe")
+        and candidate[1] == {name: target.get(name) for name in ("providerId", "upstreamSource")}
+        for candidate in CAPABILITY_SOURCES.routes("DAILY_BAR")
+    ):
+        return "unsupported_adjustment"
     if (
         key.get("kind") != "bar"
         or key.get("market") != "CN"
@@ -61,6 +65,9 @@ def market_v3_bar_adapter_reason(
 
 def iter_market_v3_bar_adapters() -> Iterator[tuple[dict[str, Any], dict[str, str]]]:
     """Yield the established deterministic exact route inventory."""
+    for key, target, binding in CAPABILITY_SOURCES.routes("DAILY_BAR"):
+        if not binding.gated:
+            yield key, target
     for (asset_type, provider_id, upstream_source), adjustments in sorted(_ROUTE_ADJUSTMENTS.items()):
         for adjustment in adjustments:
             yield (
@@ -77,18 +84,15 @@ def iter_market_v3_bar_adapters() -> Iterator[tuple[dict[str, Any], dict[str, st
 
 
 def basic_market_price_route(key, target) -> bool:
-    """已实现的共同 ETF 价格能力按配置启用，不要求人工逐窗准入。"""
-    return (
-        key.get("assetType") == "ETF"
-        and (target.get("providerId"), target.get("upstreamSource")) in {
-            ("hithink", "fund-market-historical"), ("tencent", "tencent"),
-        }
-        and market_v3_bar_adapter_reason(key, target) is None
-    )
+    """普通日线按真实精确适配与配置使用，不依赖人工窗口准入。"""
+    return market_v3_bar_adapter_reason(key, target) is None
 
 
 def iter_market_v3_gated_bar_adapters() -> Iterator[tuple[dict[str, Any], dict[str, str]]]:
-    """Yield exact adapters staged behind source-evidence and admission gates."""
+    """按注册来源补充精确库存；普通能力是否就绪由配置控制。"""
+    for key, target, binding in CAPABILITY_SOURCES.routes("DAILY_BAR"):
+        if binding.gated:
+            yield key, target
     for (asset_type, provider_id, upstream_source), adjustments in sorted(
         _GATED_ROUTE_ADJUSTMENTS.items()
     ):
@@ -104,3 +108,12 @@ def iter_market_v3_gated_bar_adapters() -> Iterator[tuple[dict[str, Any], dict[s
                 },
                 {"providerId": provider_id, "upstreamSource": upstream_source},
             )
+
+
+def market_v3_bar_provider_ids():
+    return frozenset(target["providerId"] for _, target in (
+        *iter_market_v3_bar_adapters(), *iter_market_v3_gated_bar_adapters(),
+    ))
+
+
+MARKET_DATA_V3_SUPPORTED_PROVIDER_IDS = market_v3_bar_provider_ids()

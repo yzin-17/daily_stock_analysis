@@ -5,13 +5,14 @@ from decimal import Decimal
 from hashlib import sha256
 import json
 import re
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 import requests
 
 from data_provider.eastmoney_fund_event_transport import ENDPOINT, read_event_page, read_literal
 from data_provider.eastmoney_fund_splits import normalize_eastmoney_fund_splits
+from data_provider.eastmoney_split_diagnostics import diagnostic_stage
 
 COLUMNS = ["基金代码", "基金简称", "拆分折算日", "拆分类型", "拆分折算", "-"]
 
@@ -35,7 +36,7 @@ def parse_split_page(text: str, page: int) -> tuple[list[int], list[list[Any]]]:
 
 
 def fetch_fund_split_observations(symbol: str, *, start: str, end: str,
-                                  max_pages: int = 10) -> dict[str, Any]:
+                                  max_pages: int = 10, diagnostics: Callable | None = None) -> dict[str, Any]:
     lower, upper = date.fromisoformat(start), date.fromisoformat(end)
     if (lower > upper or lower.year < 2005 or upper.year - lower.year > 4
             or lower.isoformat() != start or upper.isoformat() != end):
@@ -51,17 +52,20 @@ def fetch_fund_split_observations(symbol: str, *, start: str, end: str,
             while True:
                 if len(evidence) >= max_pages:
                     raise ValueError("基金拆分总页预算不足")
-                text = read_event_page(session, year=year, page=page, data_type="9", max_bytes=1024 * 1024)
-                info, current = parse_split_page(text, page)
-                if expected is None:
-                    expected = info[:2]
-                    if len(evidence) + info[0] > max_pages:
-                        raise ValueError("基金拆分总页预算不足")
-                elif info[:2] != expected:
-                    raise ValueError("基金拆分读取期间分页变化")
-                digest = sha256(json.dumps(current, ensure_ascii=False, default=str).encode()).hexdigest()
-                if digest in seen:
-                    raise ValueError("基金拆分页面重复")
+                with diagnostic_stage(diagnostics, 'source_http'):
+                    text = read_event_page(session, year=year, page=page, data_type="9", max_bytes=1024 * 1024)
+                with diagnostic_stage(diagnostics, 'source_parse'):
+                    info, current = parse_split_page(text, page)
+                with diagnostic_stage(diagnostics, 'source_pagination'):
+                    if expected is None:
+                        expected = info[:2]
+                        if len(evidence) + info[0] > max_pages:
+                            raise ValueError("基金拆分总页预算不足")
+                    elif info[:2] != expected:
+                        raise ValueError("基金拆分读取期间分页变化")
+                    digest = sha256(json.dumps(current, ensure_ascii=False, default=str).encode()).hexdigest()
+                    if digest in seen:
+                        raise ValueError("基金拆分页面重复")
                 seen.add(digest)
                 evidence.append({"year": year, "page": page, "rows": len(current), "contentHash": digest})
                 rows.extend(current)
@@ -69,10 +73,11 @@ def fetch_fund_split_observations(symbol: str, *, start: str, end: str,
                     break
                 page += 1
     revision = "eastmoney-fund-cf:" + sha256(json.dumps(evidence, sort_keys=True).encode()).hexdigest()
-    result = normalize_eastmoney_fund_splits(
-        pd.DataFrame(rows, columns=COLUMNS), symbol, start=start, end=end,
-        observed_at=datetime.now(timezone.utc), provider_revision=revision,
-    )
+    with diagnostic_stage(diagnostics, 'source_normalize'):
+        result = normalize_eastmoney_fund_splits(
+            pd.DataFrame(rows, columns=COLUMNS), symbol, start=start, end=end,
+            observed_at=datetime.now(timezone.utc), provider_revision=revision,
+        )
     result["providerRevision"] = revision
     result["retrieval"] = {"endpoint": ENDPOINT, "pages": evidence,
                            "paginationComplete": True, "historicalRevisionsVerified": False}

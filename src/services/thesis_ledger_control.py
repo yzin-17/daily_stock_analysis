@@ -23,9 +23,11 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from .thesis_ledger_feature_policy import validate_feature_route_shape, canonical_feature_route, effective_feature_route, feature_target_reason
 
 from src.services.provider_credentials import (
     CredentialValue,
+    PROVIDER_CREDENTIAL_DEFINITIONS,
     configured_fields,
     decode_credential_plaintext,
     encode_credential_plaintext,
@@ -35,23 +37,11 @@ from src.services.provider_credentials import (
     validate_stored_credential,
 )
 from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
-from src.services.provider_manifest import build_provider_manifest as _manifest
+from src.services.thesis_ledger_environment_credentials import environment_credential_values as _environment_credential_values
+from src.services.thesis_ledger_environment_credentials import environment_credential_method, environment_snapshot_values
 from src.services.provider_oauth_contract import OAuthStateError, validate_oauth_token
-from src.services.thesis_ledger_akshare_manifest import build_akshare_manifest
-from src.services.thesis_ledger_efinance_manifest import build_efinance_manifest
 from src.services.thesis_ledger_event_v3_adapters import event_adapter_matches
-from src.services.thesis_ledger_market_v3_adapters import (
-    HITHINK_STOCK_HISTORY_SOURCE,
-    market_v3_bar_adapter_reason,
-)
-from src.services.thesis_ledger_market_v3_facts import HITHINK_ETF_HISTORY_SOURCE
-from src.services.thesis_ledger_hithink_dividend_contract_v3 import (
-    HITHINK_DIVIDEND_SOURCE,
-)
-from src.services.thesis_ledger_hithink_quote import (
-    HITHINK_ETF_SNAPSHOT_SOURCE,
-    HITHINK_STOCK_SNAPSHOT_SOURCE,
-)
+from src.services.thesis_ledger_market_v3_adapters import market_v3_bar_adapter_reason
 from src.services.thesis_ledger_price_route_access import policy_route_admission_reason
 from src.services.thesis_ledger_current_data_route import current_data_adapter_revisions
 from src.services.thesis_ledger_route_admission_v3 import (
@@ -78,203 +68,30 @@ INSTRUMENT_TYPES = (
 )
 
 
-def _hithink_manifest() -> dict[str, Any]:
-    manifest = _manifest(
-        "hithink",
-        "HiThink",
-        {
-            "REALTIME_QUOTE": ("ETF", "STOCK"),
-            "DAILY_BAR": ("ETF", "STOCK"),
-            "CASH_DISTRIBUTION": ("ETF",),
-        },
-        requires_credential=True,
-        upstream_sources=(
-            (HITHINK_ETF_HISTORY_SOURCE, "HiThink ETF 历史接口"),
-            (HITHINK_STOCK_HISTORY_SOURCE, "HiThink 股票历史接口"),
-            (HITHINK_STOCK_SNAPSHOT_SOURCE, "HiThink A股行情快照"),
-            (HITHINK_ETF_SNAPSHOT_SOURCE, "HiThink ETF/LOF 场内快照"),
-            (HITHINK_DIVIDEND_SOURCE, "HiThink 场内基金分红"),
-        ),
-        markets=("CN",),
-        configuration_mode="dsa_environment",
-    )
-    # The ETF and stock endpoints have independent adapter and admission
-    # evidence. Do not inherit the provider-wide union for either source.
-    source_capabilities = {
-        HITHINK_ETF_HISTORY_SOURCE: {"DAILY_BAR": ["ETF"]},
-        HITHINK_STOCK_HISTORY_SOURCE: {"DAILY_BAR": ["STOCK"]},
-        HITHINK_STOCK_SNAPSHOT_SOURCE: {"REALTIME_QUOTE": ["STOCK"]},
-        HITHINK_ETF_SNAPSHOT_SOURCE: {"REALTIME_QUOTE": ["ETF"]},
-        HITHINK_DIVIDEND_SOURCE: {"CASH_DISTRIBUTION": ["ETF"]},
-    }
-    for source in manifest["upstreamSources"]:
-        source["capabilities"] = source_capabilities[source["sourceId"]]
-    manifest["credentialEnvironmentKey"] = "HITHINK_API_KEY"
-    return manifest
-
-
-PROVIDER_MANIFESTS: dict[str, dict[str, Any]] = {
-    "akshare": build_akshare_manifest(),
-    "efinance": build_efinance_manifest(),
-    "tencent": _manifest(
-        "tencent",
-        "腾讯财经",
-        {
-            "DAILY_BAR": ("STOCK", "ETF"),
-        },
-        upstream_sources=(("tencent", "腾讯财经"),),
-    ),
-    "tushare": _manifest(
-        "tushare",
-        "Tushare Pro",
-        {
-            "REALTIME_QUOTE": ("STOCK",),
-            "DAILY_BAR": ("STOCK", "ETF"),
-            "CHIP_SUMMARY": ("STOCK",),
-        },
-        requires_credential=True,
-        markets=("CN", "HK"),
-        configuration_mode="dsa_environment",
-    ),
-    "tickflow": _manifest(
-        "tickflow",
-        "TickFlow",
-        {
-            "REALTIME_QUOTE": ("STOCK",),
-            "DAILY_BAR": ("STOCK",),
-        },
-        requires_credential=True,
-        markets=("CN",),
-        configuration_mode="dsa_environment",
-    ),
-    "pytdx": _manifest(
-        "pytdx",
-        "通达信（pytdx）",
-        {
-            "REALTIME_QUOTE": ("STOCK",),
-            "DAILY_BAR": ("STOCK",),
-        },
-        markets=("CN",),
-        configuration_mode="built_in",
-    ),
-    "baostock": _manifest(
-        "baostock",
-        "BaoStock",
-        {"DAILY_BAR": ("STOCK",)},
-        markets=("CN",),
-        configuration_mode="built_in",
-    ),
-    "yfinance": _manifest(
-        "yfinance",
-        "Yahoo Finance",
-        {
-            "REALTIME_QUOTE": ("STOCK", "ETF", "INDEX"),
-            "DAILY_BAR": ("STOCK", "ETF", "INDEX"),
-        },
-        markets=("CN", "HK", "US", "JP", "KR", "TW"),
-        configuration_mode="built_in",
-    ),
-    "longbridge": _manifest(
-        "longbridge",
-        "Longbridge",
-        {
-            "REALTIME_QUOTE": ("STOCK", "ETF"),
-            "DAILY_BAR": ("STOCK", "ETF"),
-        },
-        requires_credential=True,
-        markets=("HK", "US"),
-        configuration_mode="dsa_environment",
-    ),
-    "finnhub": _manifest(
-        "finnhub",
-        "Finnhub",
-        {
-            "REALTIME_QUOTE": ("STOCK",),
-            "DAILY_BAR": ("STOCK",),
-        },
-        requires_credential=True,
-        markets=("US",),
-        configuration_mode="dsa_environment",
-    ),
-    "alphavantage": _manifest(
-        "alphavantage",
-        "Alpha Vantage",
-        {
-            "REALTIME_QUOTE": ("STOCK",),
-            "DAILY_BAR": ("STOCK",),
-        },
-        requires_credential=True,
-        markets=("US",),
-        configuration_mode="dsa_environment",
-    ),
-    "hithink": _hithink_manifest(),
-    "rqdata": _manifest("rqdata", "RQData", {}, requires_credential=True),
-}
+from src.services.thesis_ledger_provider_manifests import PROVIDER_MANIFESTS
 
 
 def _provider_configured(
     manifest: dict[str, Any],
     config: sqlite3.Row | None,
 ) -> bool:
-    if not manifest.get("requiresCredential", False):
-        return True
-    _, _, configured, _ = _credential_state(manifest, config)
-    return configured
-
-
-def _environment_credential_values(provider_id: str) -> dict[str, str]:
-    if provider_id == "hithink":
-        api_key = os.environ.get("HITHINK_API_KEY", "").strip()
-        return {"apiKey": api_key} if api_key else {}
-    try:
-        from src.config import get_config
-
-        runtime_config = get_config()
-        if provider_id == "longbridge":
-            from data_provider.longbridge_fetcher import _longbridge_credentials
-
-            credentials = _longbridge_credentials(runtime_config)
-            return {
-                field: str(value).strip()
-                for field, value in {
-                    "appKey": credentials.get("app_key"),
-                    "appSecret": credentials.get("app_secret"),
-                    "accessToken": credentials.get("access_token"),
-                    "oauthClientId": credentials.get("oauth_client_id"),
-                }.items()
-                if value
-            }
-        credential_fields = {
-            "tushare": {"token": "tushare_token"},
-            "tickflow": {"apiKey": "tickflow_api_key"},
-            "finnhub": {"apiKey": "finnhub_api_key"},
-            "alphavantage": {"apiKey": "alphavantage_api_key"},
-        }
-        return {
-            field: str(getattr(runtime_config, env_name, "") or "").strip()
-            for field, env_name in credential_fields.get(provider_id, {}).items()
-            if str(getattr(runtime_config, env_name, "") or "").strip()
-        }
-    except Exception:
-        return {}
+    return not manifest.get("requiresCredential", False) or _credential_state(manifest, config)[2]
 
 
 def _environment_credential_state(provider_id: str) -> tuple[dict[str, bool], bool]:
     values = _environment_credential_values(provider_id)
-    if provider_id == "longbridge":
-        try:
-            from src.config import get_config
-            from data_provider.longbridge_fetcher import LongbridgeFetcher
-
-            configured = LongbridgeFetcher.has_configured_credentials(get_config())
-        except Exception:
-            configured = False
-        return {
-            "appKey": bool(values.get("appKey")),
-            "appSecret": bool(values.get("appSecret")),
-            "accessToken": bool(values.get("accessToken")),
-        }, configured
-    return {field: bool(value) for field, value in values.items()}, bool(values)
+    definitions = PROVIDER_CREDENTIAL_DEFINITIONS.get(provider_id, ())
+    if not values or not definitions:
+        return {}, False
+    method = environment_credential_method(provider_id, values)
+    credential = CredentialValue(method, values)
+    try:
+        validate_stored_credential(provider_id, credential)
+        if method == "oauth":
+            validate_oauth_token(values["clientId"], values["tokenJson"])
+        return configured_fields(provider_id, credential), True
+    except (ValueError, OAuthStateError):
+        return configured_fields(provider_id, None), False
 
 
 def _credential_state(
@@ -303,7 +120,9 @@ def _credential_state(
             return "control", configured_fields(provider_id, None), False, None
     _, environment_configured = _environment_credential_state(provider_id)
     if environment_configured:
-        return "environment", configured_fields(provider_id, None), True, None
+        values = _environment_credential_values(provider_id)
+        method = environment_credential_method(provider_id, values)
+        return "environment", configured_fields(provider_id, None), True, method
     return "none", configured_fields(provider_id, None), False, None
 
 
@@ -600,8 +419,7 @@ def normalize_policy_v3(payload: dict[str, Any]) -> dict[str, Any]:
     seen_routes: set[tuple[Any, ...]] = set()
     valid_asset_types = set(INSTRUMENT_TYPES)
     for route in routes:
-        if not isinstance(route, dict) or set(route) != {"key", "targets"}:
-            fail("INVALID_POLICY_SCHEMA", "V3 route 必须只包含 key 和 targets", request_id)
+        validate_feature_route_shape(route, fail, request_id)
         key = route.get("key")
         if not isinstance(key, dict):
             fail("INVALID_POLICY_SCHEMA", "V3 route key 必须是对象", request_id)
@@ -683,7 +501,7 @@ def normalize_policy_v3(payload: dict[str, Any]) -> dict[str, Any]:
             normalized_targets.append(
                 {"providerId": provider_id, "upstreamSource": upstream_source}
             )
-        normalized_routes.append({"key": normalized_key, "targets": normalized_targets})
+        normalized_routes.append(canonical_feature_route(route, normalized_key, normalized_targets))
 
     return {
         "contractVersion": CONTROL_CONTRACT_V3_VERSION,
@@ -1312,15 +1130,9 @@ class ThesisLedgerControlStore:
             return "not_adapted"
         capability = key["capability"]
         asset_type = key["assetType"]
-        if (
-            key.get("kind") == "data" and capability == "REALTIME_QUOTE"
-            and asset_type == "ETF" and provider_id == "akshare"
-        ):
-            return "not_adapted"
         is_event = event_adapter_matches(key, target)
         if (
             key.get("kind") == "data" and not is_event
-            and provider_id != "hithink"
             and current_data_adapter_revisions(key, target) is None
         ):
             return "not_adapted"
@@ -1366,9 +1178,8 @@ class ThesisLedgerControlStore:
             key = route["key"]
             targets = []
             for index, target in enumerate(route["targets"]):
-                reason = self._v3_target_reason(
-                    connection, policy, key, target, configurations
-                )
+                reason = feature_target_reason(policy, route, lambda: self._v3_target_reason(
+                    connection, policy, key, target, configurations))
                 targets.append(
                     {
                         **target,
@@ -1380,9 +1191,7 @@ class ThesisLedgerControlStore:
             route_reason = None
             if not any(target["eligible"] for target in targets):
                 route_reason = str(targets[0]["reason"] or "not_adapted")
-            effective_routes.append(
-                {"key": key, "targets": targets, "reason": route_reason}
-            )
+            effective_routes.append(effective_feature_route(route, targets, route_reason))
         return {
             "contractVersion": CONTROL_CONTRACT_V3_VERSION,
             "consumer": CONSUMER_NAMESPACE,
@@ -1668,6 +1477,8 @@ class ThesisLedgerControlStore:
         }
 
     def provider_registry(self) -> list[dict[str, Any]]:
+        from src.services.thesis_ledger_provider_capability_projection import exact_provider_manifests
+
         with self._connect() as connection:
             configurations = self._configuration(connection)
             health_rows = connection.execute(
@@ -1693,7 +1504,7 @@ class ThesisLedgerControlStore:
                     }
                 )
             result = []
-            for provider_id, manifest in PROVIDER_MANIFESTS.items():
+            for provider_id, manifest in exact_provider_manifests(PROVIDER_MANIFESTS).items():
                 config = configurations.get(provider_id)
                 credential_source, credential_fields, credential_configured, credential_method = _credential_state(
                     manifest, config
@@ -1712,7 +1523,7 @@ class ThesisLedgerControlStore:
                     {
                         **manifest,
                         "configured": configured,
-                        "enabled": bool(config["enabled"]) if config else True,
+                        "enabled": (bool(config["enabled"]) if config else True) and configured,
                         "credentialConfigured": credential_configured,
                         "credentialSource": credential_source,
                         "credentialFieldsConfigured": credential_fields,
@@ -1770,24 +1581,9 @@ class ThesisLedgerControlStore:
                 values = dict(credential.values)
             elif source == "environment":
                 values = _environment_credential_values(normalized)
-                if normalized == "tushare" and values:
-                    from data_provider.tushare_endpoint import DEFAULT_TUSHARE_HTTP_URL, _resolve_tushare_http_url
-
-                    values["httpUrl"] = _resolve_tushare_http_url() or DEFAULT_TUSHARE_HTTP_URL
-                if normalized == "longbridge" and (
-                    values.get("oauthClientId")
-                    or not {"appKey", "appSecret", "accessToken"}.issubset(values)
-                ):
-                    values = {}
                 if values:
-                    method = {
-                        "tushare": "token",
-                        "tickflow": "api_key",
-                        "finnhub": "api_key",
-                        "alphavantage": "api_key",
-                        "hithink": "api_key",
-                        "longbridge": "legacy",
-                    }.get(normalized)
+                    values = environment_snapshot_values(normalized, values)
+                    method = environment_credential_method(normalized, values)
             if not configured and manifest.get("requiresCredential", False):
                 values = {}
             return ProviderCredentialSnapshot.create(
@@ -1879,20 +1675,8 @@ class ThesisLedgerControlStore:
             ) from exc
         enabled_provided = "enabled" in payload
         enabled_value = payload.get("enabled")
-        if enabled_provided and not isinstance(enabled_value, bool):
-            raise ControlContractError(
-                "INVALID_PROVIDER_CONFIG",
-                "Provider enabled 必须是布尔值",
-                request_id=request_id,
-            )
         settings_provided = "settings" in payload
         settings_value = payload.get("settings")
-        if settings_provided and not isinstance(settings_value, dict):
-            raise ControlContractError(
-                "INVALID_PROVIDER_CONFIG",
-                "Provider settings 必须是对象",
-                request_id=request_id,
-            )
         credentials_provided = "credentials" in payload
         credential_patch = None
         if credentials_provided:
@@ -1925,6 +1709,10 @@ class ThesisLedgerControlStore:
                     "SELECT * FROM thesis_ledger_provider_config WHERE provider_id = ?",
                     (provider_id,),
                 ).fetchone()
+                version = int(existing["config_version"]) if existing else 0
+                if payload.get("expectedConfigVersion", version) != version:
+                    raise ControlContractError("PROVIDER_CONFIG_VERSION_CONFLICT", "Provider 配置已改变，请重新读取后再操作",
+                                               status_code=409, request_id=request_id)
                 if enabled_provided:
                     enabled = enabled_value
                 elif existing is not None:
@@ -1979,6 +1767,17 @@ class ThesisLedgerControlStore:
                     credential_changed = existing_credential != merged
                     if credential_changed:
                         key_version, encrypted = _encrypt_secret(encode_credential_plaintext(merged))
+                _, _, credential_configured, _ = _credential_state(
+                    PROVIDER_MANIFESTS[provider_id],
+                    {"credential_ciphertext": encrypted, "secret_key_version": key_version},
+                )
+                if PROVIDER_MANIFESTS[provider_id].get("requiresCredential") and not credential_configured:
+                    if enabled_provided and enabled_value:
+                        raise ControlContractError(
+                            "PROVIDER_CREDENTIAL_MISSING", "请先配置完整凭证再启用数据源",
+                            request_id=request_id,
+                        )
+                    enabled = False
                 current_config_version = int(existing["config_version"]) if existing else 0
                 current_credential_version = int(existing["credential_version"]) if existing else 0
                 config_version = current_config_version + 1

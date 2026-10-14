@@ -6,7 +6,9 @@ from fastapi import HTTPException
 
 from api.thesis_ledger import _fund_holdings_payload
 from src.services.thesis_ledger_holding_rows import holding_period, validate_holding_rows
-from src.services.thesis_ledger_provider_runtime import ProviderCallError, ThesisLedgerProviderRuntime
+from data_provider.eastmoney_holdings_projection import holdings_result
+from src.services.thesis_ledger_fund_holdings_contract_v1 import HoldingsRequest
+from src.services.thesis_ledger_capability_contracts import CapabilityContractError
 
 
 def frame(codes=None, periods=None, weights=None):
@@ -22,16 +24,17 @@ def test_invalid_period_rejects_entire_frame(period):
     rows = frame(['600519', '000001'], ['2026年2季度', period])
     with pytest.raises(ValueError):
         validate_holding_rows(rows)
-    with pytest.raises(HTTPException) as error:
-        _fund_holdings_payload('000001.OF', rows, 'akshare', False)
-    assert error.value.status_code == 502
+    with pytest.raises(CapabilityContractError) as error:
+        holdings_result(rows, HoldingsRequest(symbol='000001.OF'), 'akshare', 'eastmoney')
+    assert error.value.code == 'invalid_response'
 
 
 def test_source_suffix_and_distinct_quarters_are_allowed():
     assert holding_period('2026年2季度股票投资明细') == (2026, 2)
     rows = frame(['600519', '600519'], ['2026年1季度', '2026年2季度'], [7, 8])
     validate_holding_rows(rows)
-    result = _fund_holdings_payload('000001.OF', rows, 'akshare', False)
+    value = holdings_result(rows, HoldingsRequest(symbol='000001.OF'), 'akshare', 'eastmoney')
+    result = _fund_holdings_payload('000001.OF', value, 'akshare', False)
     assert result['reportPeriod'] == '2026-Q2'
     assert len(result['holdings']) == 1
     assert result['holdings'][0]['weight'] == 0.08
@@ -41,20 +44,24 @@ def test_duplicate_rows_are_not_summed():
     rows = frame(['600519', '600519'])
     with pytest.raises(ValueError, match='重复'):
         validate_holding_rows(rows)
-    with pytest.raises(HTTPException) as error:
-        _fund_holdings_payload('000001.OF', rows, 'akshare', False)
-    assert error.value.status_code == 502
+    with pytest.raises(CapabilityContractError) as error:
+        holdings_result(rows, HoldingsRequest(symbol='000001.OF'), 'akshare', 'eastmoney')
+    assert error.value.code == 'invalid_response'
 
 
 def test_canonical_duplicate_is_rejected_by_api():
+    with pytest.raises(CapabilityContractError):
+        holdings_result(frame(['600519', '600519.SH']), HoldingsRequest(symbol='000001.OF'), 'akshare', 'eastmoney')
+    value = holdings_result(frame(), HoldingsRequest(symbol='000001.OF'), 'akshare', 'eastmoney')
+    invalid = value.model_copy(update={'holdings': value.holdings * 2})
     with pytest.raises(HTTPException) as error:
-        _fund_holdings_payload('000001.OF', frame(['600519', '600519.SH']), 'akshare', False)
+        _fund_holdings_payload('000001.OF', invalid, 'akshare', False)
     assert error.value.status_code == 502
 
 
 def test_provider_maps_invalid_rows_to_invalid_response():
-    with pytest.raises(ProviderCallError) as error:
-        ThesisLedgerProviderRuntime._validate_fund_holdings(frame(periods=['未知']))
+    with pytest.raises(CapabilityContractError) as error:
+        holdings_result(frame(periods=['未知']), HoldingsRequest(symbol='000001.OF'), 'akshare', 'eastmoney')
     assert error.value.code == 'invalid_response'
 
 

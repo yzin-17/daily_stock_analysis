@@ -1,4 +1,4 @@
-"""HiThink stock Control routes remain explicitly unavailable until admitted."""
+"""HiThink 股票 Control 按当前配置读取，独立事件准入不限制普通价格。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def test_hithink_manifest_keeps_etf_and_stock_source_capabilities_separate():
     }
 
 
-def test_hithink_v3_stock_none_qfq_hfq_desired_is_retained_but_not_admitted(
+def test_hithink_v3_stock_none_qfq_hfq_desired_is_retained_and_configured(
     monkeypatch, tmp_path
 ):
     monkeypatch.setenv("HITHINK_API_KEY", "synthetic-hithink-test-key")
@@ -60,6 +60,8 @@ def test_hithink_v3_stock_none_qfq_hfq_desired_is_retained_but_not_admitted(
 
     assert applied["desired"]["routes"] == routes
     for route in applied["effective"]["routes"]:
-        assert route["targets"][0]["eligible"] is False
-        assert route["targets"][0]["reason"] == "not_admitted"
-        assert route["reason"] == "not_admitted"
+        assert route["targets"][0]["eligible"] is True
+        assert route["targets"][0]["reason"] is None
+        assert route["reason"] is None
+        target = {field: route["targets"][0][field] for field in ("providerId", "upstreamSource")}
+        assert store.get_route_admission_v3(key=route["key"], target=target) is None

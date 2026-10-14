@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any, Callable
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 
 
 CREDENTIAL_FORMAT_VERSION = 1
@@ -24,6 +25,7 @@ CONFIG_PATCH_KEYS = frozenset(
         "settings",
         "credentials",
         "clearCredentials",
+        "expectedConfigVersion",
     }
 )
 
@@ -49,15 +51,8 @@ class CredentialPatch:
 
 
 PROVIDER_CREDENTIAL_DEFINITIONS: dict[str, tuple[CredentialDefinition, ...]] = {
-    "rqdata": (CredentialDefinition("username_password", ("username", "password")),),
-    "tushare": (CredentialDefinition("token", ("token",)),),
-    "tickflow": (CredentialDefinition("api_key", ("apiKey",)),),
-    "finnhub": (CredentialDefinition("api_key", ("apiKey",)),),
-    "alphavantage": (CredentialDefinition("api_key", ("apiKey",)),),
-    "longbridge": (
-        CredentialDefinition("legacy", ("appKey", "appSecret", "accessToken")),
-        CredentialDefinition("oauth", ("clientId", "tokenJson")),
-    ),
+    **{source.provider_id: tuple(CredentialDefinition(method, fields) for method, fields in source.credentials)
+       for source in CAPABILITY_SOURCES.sources if source.credentials},
 }
 
 
@@ -75,7 +70,7 @@ def credential_schema(provider_id: str) -> dict[str, Any]:
                 "fields": [
                     {
                         "name": field,
-                        "secret": definition.method != "oauth",
+                        "secret": definition.method not in {"oauth", "opend"},
                         "required": True,
                     }
                     for field in fields
@@ -112,13 +107,15 @@ def parse_credential_patch(provider_id: str, raw: Any) -> CredentialPatch:
     if unknown:
         raise ValueError(f"credentials.values 包含未知字段: {', '.join(sorted(map(str, unknown)))}")
     normalized: dict[str, str] = {}
+    source = CAPABILITY_SOURCES.source(provider_id)
+    normalize = source.normalize_credential_value if source is not None else None
     for field, value in values.items():
         if not isinstance(value, str):
             raise ValueError(f"credentials.values.{field} 必须是字符串")
-        if provider_id == "rqdata" and field == "password" and value.strip():
-            normalized[field] = value
-        else:
-            normalized[field] = value.strip()
+        result = normalize(field, value) if normalize is not None else value.strip()
+        if not isinstance(result, str):
+            raise ValueError('来源凭据字段归一化结果必须为字符串')
+        normalized[field] = result
     return CredentialPatch(method=method, values=normalized)
 
 
@@ -126,6 +123,14 @@ def validate_config_patch_keys(payload: dict[str, Any]) -> None:
     unknown = set(payload) - CONFIG_PATCH_KEYS
     if unknown:
         raise ValueError(f"Provider config 包含未知字段: {', '.join(sorted(map(str, unknown)))}")
+    if "enabled" in payload and not isinstance(payload["enabled"], bool):
+        raise ValueError("Provider enabled 必须是布尔值")
+    if "settings" in payload and not isinstance(payload["settings"], dict):
+        raise ValueError("Provider settings 必须是对象")
+    if "expectedConfigVersion" in payload:
+        version = payload["expectedConfigVersion"]
+        if not isinstance(version, int) or isinstance(version, bool) or not 0 <= version <= 9007199254740991:
+            raise ValueError("expectedConfigVersion 必须是非负安全整数")
 
 
 def decode_credential_plaintext(plaintext: str) -> CredentialValue:

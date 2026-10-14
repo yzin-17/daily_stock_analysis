@@ -20,16 +20,6 @@ _SYMBOLS = {
     "STOCK": re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$"),
     "ETF": re.compile(r"^[0-9]{6}\.(?:SH|SZ)$"),
 }
-_QUOTE_REVISIONS = {
-    ("STOCK", HITHINK_STOCK_SNAPSHOT_SOURCE): (
-        "dsa-hithink-stock-quote-adapter-v1",
-        "dsa-hithink-stock-snapshot-request-v1",
-    ),
-    ("ETF", HITHINK_ETF_SNAPSHOT_SOURCE): (
-        "dsa-hithink-etf-quote-adapter-v1",
-        "dsa-hithink-etf-snapshot-request-v1",
-    ),
-}
 
 
 def hithink_quote_route_key(asset_type: str) -> dict[str, str]:
@@ -43,18 +33,22 @@ def hithink_quote_route_key(asset_type: str) -> dict[str, str]:
 
 
 def iter_hithink_quote_routes():
-    """Enumerate the two source-pinned quote adapters exposed to Control."""
-    for asset_type, source in sorted(_QUOTE_REVISIONS):
-        yield hithink_quote_route_key(asset_type), {
-            "providerId": "hithink", "upstreamSource": source,
-        }
+    """旧枚举接口仅派生来源绑定，不作为独立登记入口。"""
+    from .thesis_ledger_capability_sources import CAPABILITY_SOURCES
+    for key, target, _ in CAPABILITY_SOURCES.routes("REALTIME_QUOTE"):
+        if target["providerId"] == "hithink":
+            yield key, target
 
 
 def hithink_quote_revisions(asset_type: str, source: str) -> dict[str, str] | None:
-    values = _QUOTE_REVISIONS.get((asset_type, source))
-    if values is None:
+    from .thesis_ledger_capability_sources import CAPABILITY_SOURCES
+    if asset_type not in {"STOCK", "ETF"}:
         return None
-    return {"adapterRevision": values[0], "sourceRevision": values[1]}
+    binding = CAPABILITY_SOURCES.resolve(hithink_quote_route_key(asset_type),
+        {"providerId": "hithink", "upstreamSource": source})
+    if binding is None:
+        return None
+    return {"adapterRevision": binding.adapter_revision, "sourceRevision": binding.source_revision}
 
 
 def _utc(value: Any) -> datetime | None:

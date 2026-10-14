@@ -1,6 +1,7 @@
 """腾讯原生日线的字段、窗口分段与失败关闭测试。"""
 
 from hashlib import sha256
+from datetime import date, timedelta
 import json
 from unittest.mock import patch
 
@@ -9,7 +10,7 @@ import pytest
 from data_provider.base import DataFetchError
 from data_provider.tencent_fetcher import TencentFetcher
 from data_provider.tencent_native_daily import (
-    TENCENT_NATIVE_DAILY_PROTOCOL, TENCENT_NATIVE_DAILY_URL,
+    MAX_ROWS, TENCENT_NATIVE_DAILY_PROTOCOL, TENCENT_NATIVE_DAILY_URL,
     fetch_tencent_native_daily,
 )
 from src.services.thesis_ledger_market_v3_pagination import (
@@ -105,7 +106,7 @@ def test_exact_etf_hfq_uses_native_key_and_matching_pagination_proof(monkeypatch
 
     frame.attrs["thesis_ledger_v3_pagination"] = {
         "status": "complete", "pagesFetched": 1, "continuationPending": False,
-        "protocol": TENCENT_NATIVE_DAILY_PROTOCOL, "maximumRows": 800,
+        "protocol": TENCENT_NATIVE_DAILY_PROTOCOL, "maximumRows": MAX_ROWS,
         "requestedStart": "2026-07-09", "requestedEnd": "2026-07-10",
     }
     assert market_pagination_proof_v3(
@@ -173,7 +174,7 @@ def test_exact_fetcher_preserves_native_retrieval_for_v3_proof(monkeypatch):
     assert frame["amount"].tolist() == [234500.0, 234500.0]
     frame.attrs["thesis_ledger_v3_pagination"] = {
         "status": "complete", "pagesFetched": 2, "continuationPending": False,
-        "protocol": TENCENT_NATIVE_DAILY_PROTOCOL, "maximumRows": 800,
+        "protocol": TENCENT_NATIVE_DAILY_PROTOCOL, "maximumRows": MAX_ROWS,
         "requestedStart": "2024-12-31", "requestedEnd": "2025-01-02",
     }
     assert market_pagination_proof_v3(
@@ -215,7 +216,7 @@ def test_missing_native_fact_or_wrong_identity_fails_closed(monkeypatch, rows, c
     ("bj920748", "2025-01-01", "2025-01-02", "none", 4.5),
     ("sh510300", "2025-01-01", "2025-01-02", "backward", 4.5),
     ("sh510300", "2025-01-03", "2025-01-02", "none", 4.5),
-    ("sh510300", "2025-01-01", "2033-01-02", "none", 4.5),
+    ("sh510300", "2025-01-01", "2041-01-02", "none", 4.5),
     ("sh510300", "2025-01-01", "2025-01-02", "none", float("nan")),
 ])
 def test_invalid_request_is_rejected_before_transport(symbol, start, end, adjustment, timeout):
@@ -223,3 +224,76 @@ def test_invalid_request_is_rejected_before_transport(symbol, start, end, adjust
         with pytest.raises(DataFetchError):
             fetch_tencent_native_daily(symbol, start, end, adjustment, timeout)
         request.assert_not_called()
+
+
+@pytest.mark.parametrize("adjustment", ["qfq", "hfq"])
+def test_empty_native_year_retains_zero_facts_and_partition_proof(monkeypatch, adjustment):
+    def fake_get(url, *, params, **kwargs):
+        return _Response(params["_var"], "sz159516", [])
+
+    monkeypatch.setattr("data_provider.tencent_native_daily.requests.get", fake_get)
+    frame, retrieval = fetch_tencent_native_daily(
+        "sz159516", "2021-01-01", "2022-12-31", adjustment, 4.5,
+    )
+    assert frame.empty
+    assert "date" in frame.columns
+    assert [part["rows"] for part in retrieval["partitions"]] == [0, 0]
+    assert retrieval["partitionComplete"] is True
+
+
+@pytest.mark.parametrize("key", ["qfqday", "hfqday", "missing"])
+def test_absent_requested_basis_without_empty_native_array_is_invalid(monkeypatch, key):
+    def fake_get(url, *, params, **kwargs):
+        return _Response(params["_var"], "sz159516", [], key=key)
+
+    monkeypatch.setattr("data_provider.tencent_native_daily.requests.get", fake_get)
+    with pytest.raises(DataFetchError, match="口径"):
+        fetch_tencent_native_daily("sz159516", "2021-01-01", "2021-12-31", "none", 4.5)
+
+
+def _full_year_response(params):
+    symbol, _, start, end, _, adjustment = params["param"].split(",")
+    first, last = date.fromisoformat(start), date.fromisoformat(end)
+    rows = [_row((first + timedelta(days=index)).isoformat())
+            for index in range((last - first).days + 1)]
+    return _Response(params["_var"], symbol, rows, key="qfqday" if adjustment else "day")
+
+
+def test_complete_long_window_preserves_more_than_800_rows_and_proof(monkeypatch):
+    monkeypatch.setattr("data_provider.tencent_native_daily.requests.get",
+                        lambda url, *, params, **kwargs: _full_year_response(params))
+    frame, retrieval = fetch_tencent_native_daily(
+        "sh510300", "2020-01-01", "2024-12-31", "qfq", 4.5,
+    )
+    assert len(frame) == 1827
+    frame.attrs["tencentDailyRetrieval"] = retrieval
+    frame.attrs["thesis_ledger_v3_pagination"] = {
+        "status": "complete", "pagesFetched": 5, "continuationPending": False,
+        "protocol": TENCENT_NATIVE_DAILY_PROTOCOL, "maximumRows": MAX_ROWS,
+        "requestedStart": "2020-01-01", "requestedEnd": "2024-12-31",
+    }
+    assert market_pagination_proof_v3(
+        frame, asset_type="ETF", provider="tencent", upstream_source="tencent",
+        expected_session_count=1827, requested_start="2020-01-01",
+        requested_end="2024-12-31", requested_adjustment="qfq",
+    )["pagesFetched"] == 5
+    frame.attrs["thesis_ledger_v3_pagination"]["protocol"] = "tencent-newfqkline-year-partitions-v2"
+    with pytest.raises(MarketPaginationError):
+        market_pagination_proof_v3(
+            frame, asset_type="ETF", provider="tencent", upstream_source="tencent",
+            expected_session_count=1827, requested_start="2020-01-01",
+            requested_end="2024-12-31", requested_adjustment="qfq",
+        )
+
+
+@pytest.mark.parametrize("row_count", [3650, 3651])
+def test_whole_window_row_budget_rejects_without_truncation(monkeypatch, row_count):
+    monkeypatch.setattr("data_provider.tencent_native_daily.requests.get",
+                        lambda url, *, params, **kwargs: _full_year_response(params))
+    end = (date(2015, 1, 1) + timedelta(days=row_count - 1)).isoformat()
+    if row_count > MAX_ROWS:
+        with pytest.raises(DataFetchError, match="整窗行数超限"):
+            fetch_tencent_native_daily("sh510300", "2015-01-01", end, "none", 4.5)
+    else:
+        frame, _ = fetch_tencent_native_daily("sh510300", "2015-01-01", end, "none", 4.5)
+        assert len(frame) == row_count

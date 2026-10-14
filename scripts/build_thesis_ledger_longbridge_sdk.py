@@ -30,11 +30,36 @@ def run(command: list[str], *, cwd: Path, env: dict[str, str], log: Path) -> str
     return result.stdout.strip()
 
 
+def prepare_source(source_dir: Path | None, source: Path, *, cwd: Path, env: dict[str, str], log: Path) -> None:
+    if source_dir is None:
+        run(['git', 'clone', '--depth', '1', '--branch', TAG, UPSTREAM, str(source)], cwd=cwd, env=env, log=log)
+    else:
+        shutil.copytree(source_dir.resolve(), source, symlinks=True)
+    if run(['git', 'rev-parse', 'HEAD'], cwd=source, env=env, log=log) != REVISION:
+        raise RuntimeError('SDK 上游 tag 与固定 revision 不符，停止构建')
+    if source_dir is not None:
+        run(['git', 'fsck', '--strict', '--no-reflogs'], cwd=source, env=env, log=log)
+        run(['git', 'reset', '--mixed', 'HEAD'], cwd=source, env=env, log=log)
+        run(['git', 'diff', '--exit-code', 'HEAD'], cwd=source, env=env, log=log)
+        if run(['git', 'ls-files', '--others'], cwd=source, env=env, log=log):
+            raise RuntimeError('SDK 固定源码输入含未跟踪文件，停止构建')
+
+
+def normalize_source_input(source: Path) -> None:
+    for name in ('logs', 'hooks'):
+        path = source / '.git' / name
+        if path.exists():
+            shutil.rmtree(path)
+    (source / '.git' / 'index').unlink(missing_ok=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "dist" / "longbridge-sdk")
     parser.add_argument("--work-dir", type=Path)
     parser.add_argument("--prepare-only", action="store_true", help="只验证固定源码与补丁可应用性")
+    parser.add_argument('--fetch-only', action='store_true', help='只获取并核验固定源码，不应用补丁或安装SDK')
+    parser.add_argument('--source-dir', type=Path, help='使用已有固定Git源码；导入后验证对象和干净工作树')
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -51,10 +76,11 @@ def main() -> None:
     env.setdefault("PIP_CACHE_DIR", str(output / "pip-cache"))
     env.setdefault("CARGO_BUILD_JOBS", "1")
     env.setdefault("CARGO_PROFILE_RELEASE_LTO", "false")
-    run(["git", "clone", "--depth", "1", "--branch", TAG, UPSTREAM, str(source)], cwd=work, env=env, log=log)
-    revision = run(["git", "rev-parse", "HEAD"], cwd=source, env=env, log=log)
-    if revision != REVISION:
-        raise RuntimeError("SDK 上游 tag 与固定 revision 不符，停止构建")
+    prepare_source(args.source_dir, source, cwd=work, env=env, log=log)
+    if args.fetch_only:
+        normalize_source_input(source)
+        print(f'固定 SDK 源码获取通过：{source}')
+        return
     patch = str(PATCHES / "oauth-storage.patch")
     run(["git", "apply", "--check", patch], cwd=source, env=env, log=log)
     run(["git", "apply", patch], cwd=source, env=env, log=log)

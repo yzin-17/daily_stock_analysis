@@ -280,6 +280,7 @@ def test_v3_policy_apply_matches_wire_and_is_default_read(monkeypatch, tmp_path)
 
 
 def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatch, tmp_path):
+    monkeypatch.setenv("HITHINK_API_KEY", "synthetic-catalog-readiness-only")
     client = _client(monkeypatch, tmp_path)
     headers = {"authorization": "Bearer control-token"}
     assert client.get(
@@ -313,7 +314,29 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     assert catalog["integrity"] == "complete"
     assert catalog["catalogRevision"] > 0
     assert catalog["catalogRevision"] == repeated.json()["catalogRevision"]
-    assert all(set(entry) == {"key", "target", "state"} for entry in catalog["entries"])
+    for entry in catalog["entries"]:
+        fields = {"key", "target", "state"}
+        if "barQuery" in entry:
+            fields.add("barQuery")
+            assert entry["key"]["capability"] == "DAILY_BAR"
+            assert entry["key"]["timeframe"] == "1d"
+            assert entry["barQuery"] == {
+                "contractVersion": 3, "operation": "query",
+                "adjustment": entry["key"]["adjustment"], "priceBasis": "provider-native",
+                "readScope": "single-target-whole-window", "coverageValidation": "per-request",
+                "transportProtocol": entry["barQuery"]["transportProtocol"],
+            }
+            assert isinstance(entry["barQuery"]["transportProtocol"], str) and entry["barQuery"]["transportProtocol"]
+        if "querySupport" in entry:
+            from src.services.thesis_ledger_status_query_support_v1 import SUPPORT
+            from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+            fields.add("querySupport")
+            support = SUPPORT.validate_python(entry["querySupport"])
+            assert entry["key"]["kind"] == "data" and support.capability == entry["key"]["capability"]
+            binding = CAPABILITY_SOURCES.resolve(entry["key"], entry["target"])
+            assert binding.query_support.model_dump() == entry["querySupport"]
+        assert set(entry) == fields
+    assert any("barQuery" in entry for entry in catalog["entries"])
     bars = [entry for entry in catalog["entries"] if entry["key"]["kind"] == "bar"]
     events = [
         entry for entry in catalog["entries"]
@@ -334,9 +357,15 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
         ("STOCK", "hithink", "a-share-prices-snapshot"),
         ("ETF", "efinance", "eastmoney"),
         ("STOCK", "akshare", "eastmoney"),
+        ("ETF", "tencent", "tencent"),
     }
-    assert all(entry["state"] == "not_admitted" for entry in quote_targets)
-    assert events == [{
+    for entry in quote_targets:
+        if entry["target"]["providerId"] in {"akshare", "efinance", "pytdx", "yfinance", "tencent", "hithink"}:
+            assert entry["state"] == "ready"
+        else:
+            assert entry["state"] in {"credential_missing", "not_admitted"}
+    event_identity = lambda entry: (entry['key']['capability'], entry['target']['providerId'], entry['target']['upstreamSource'])
+    assert sorted(events, key=event_identity) == sorted([{
         "key": {"kind": "data", "market": "CN", "assetType": "ETF", "capability": "CASH_DISTRIBUTION"},
         "target": {"providerId": "akshare", "upstreamSource": "eastmoney"}, "state": "not_admitted",
     }, {
@@ -344,18 +373,22 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
         "target": {"providerId": "akshare", "upstreamSource": "eastmoney"}, "state": "not_admitted",
     }, {
         "key": {"kind": "data", "market": "CN", "assetType": "ETF", "capability": "CASH_DISTRIBUTION"},
-        "target": {"providerId": "rqdata", "upstreamSource": "rqdata"}, "state": "not_admitted",
+        "target": {"providerId": "rqdata", "upstreamSource": "rqdata"}, "state": "credential_missing",
     }, {
         "key": {"kind": "data", "market": "CN", "assetType": "ETF", "capability": "SPLIT_EVENT"},
-        "target": {"providerId": "rqdata", "upstreamSource": "rqdata"}, "state": "not_admitted",
+        "target": {"providerId": "rqdata", "upstreamSource": "rqdata"}, "state": "credential_missing",
     }, {
         "key": {"kind": "data", "market": "CN", "assetType": "ETF", "capability": "CASH_DISTRIBUTION"},
-        "target": {"providerId": "tushare", "upstreamSource": "tushare"}, "state": "not_admitted",
+        "target": {"providerId": "tushare", "upstreamSource": "tushare"}, "state": "credential_missing",
     }, {
         "key": {"kind": "data", "market": "CN", "assetType": "ETF", "capability": "CASH_DISTRIBUTION"},
         "target": {"providerId": "hithink", "upstreamSource": "fund-corporate-actions-dividends"},
         "state": "not_admitted",
-    }]
+    }, {
+        "key": {"kind": "data", "market": "CN", "assetType": "ETF", "capability": "CASH_DISTRIBUTION"},
+        "target": {"providerId": "official-dividends", "upstreamSource": "cn-etf-cash-notices"},
+        "state": "not_admitted",
+    }], key=event_identity)
     assert all(
         set(entry["key"]) == {
             "kind", "market", "assetType", "capability", "timeframe", "adjustment"
@@ -372,6 +405,7 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
             entry["target"]["upstreamSource"],
         ): entry["state"]
         for entry in bars
+        if entry["key"]["market"] == "CN"
     }
     expected = {
         ("STOCK", adjustment, "akshare", source)
@@ -394,14 +428,43 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
         ("STOCK", adjustment, "hithink", "hithink-financial-api")
         for adjustment in ("none", "qfq", "hfq")
     }
+    expected |= {(asset, adjustment, "efinance", "eastmoney") for asset in ("STOCK", "ETF") for adjustment in ("none", "qfq", "hfq")}
+    expected |= {("STOCK", adjustment, provider, provider) for provider in ("baostock", "tickflow") for adjustment in ("none", "qfq", "hfq")}
+    expected |= {("STOCK", "none", provider, provider) for provider in ("pytdx", "tushare")}
+    expected |= {(asset, "qfq", "yfinance", "yfinance") for asset in ("STOCK", "ETF")}
     assert set(rows) == expected
-    assert len(bars) == len(rows) == 22
+    assert len(rows) == 38
+    foreign_rows = {
+        (entry["key"]["market"], entry["key"]["assetType"], entry["key"]["adjustment"],
+         entry["target"]["providerId"], entry["target"]["upstreamSource"])
+        for entry in bars if entry["key"]["market"] != "CN"
+    }
+    foreign_expected = {
+        (market, asset, adjustment, provider, provider)
+        for market in ("HK", "US") for asset in ("STOCK", "ETF")
+        for provider, adjustments in (("longbridge", ("none", "qfq")),
+                                      ("futu", ("none", "qfq", "hfq")),
+                                      ("yfinance", ("qfq",)))
+        for adjustment in adjustments
+    }
+    foreign_expected |= {
+        ("US", "INDEX", "qfq", "yfinance", "yfinance"),
+        ("US", "STOCK", "none", "yfinance", "yahoo-gme-share-window"),
+        ("HK", "STOCK", "none", "yfinance", "yahoo-hk-share-window"),
+        ("HK", "STOCK", "none", "tushare", "tushare"),
+        ("US", "STOCK", "qfq", "finnhub", "finnhub"),
+        ("US", "STOCK", "none", "alphavantage", "alphavantage"),
+    }
+    assert foreign_rows == foreign_expected
+    assert len(bars) == 68
+    assert [entry["key"] for entry in bars if entry["target"]["upstreamSource"] == "yahoo-gme-share-window"] == [{
+        "kind": "bar", "market": "US", "assetType": "STOCK", "capability": "DAILY_BAR", "timeframe": "1d", "adjustment": "none",
+    }]
     assert len(catalog["entries"]) > len(bars) + len(events)
-    basic_ready = {("ETF", adjustment, "tencent", "tencent") for adjustment in ("none", "qfq", "hfq")}
-    basic_ready.add(("ETF", "qfq", "hithink", "fund-market-historical"))
+    basic_ready = {key for key in expected if key[2] not in {"tushare", "tickflow"}}
     assert {key for key, state in rows.items() if state == "ready"} == basic_ready
-    assert all(state == "not_admitted" for key, state in rows.items() if key not in basic_ready)
-    assert all(entry["key"]["market"] == "CN" for entry in catalog["entries"])
+    assert all(state in {"credential_missing", "not_admitted"} for key, state in rows.items() if key not in basic_ready)
+    assert {entry["key"]["market"] for entry in catalog["entries"]} == {"CN", "HK", "US"}
     assert all(entry["key"]["timeframe"] == "1d" for entry in bars)
 
 
@@ -436,9 +499,9 @@ def test_v3_revisions_are_isolated_atomic_and_idempotent(tmp_path):
     store = ThesisLedgerControlStore(str(tmp_path / "v3-revisions.db"))
     first = _v3_policy()
     applied = store.apply_policy_v3(first)
-    assert applied["effective"]["routes"][0]["targets"][0]["eligible"] is False
-    assert applied["effective"]["routes"][0]["targets"][0]["reason"] == "not_admitted"
-    assert applied["effective"]["routes"][0]["reason"] == "not_admitted"
+    assert applied["effective"]["routes"][0]["targets"][0]["eligible"] is True
+    assert applied["effective"]["routes"][0]["targets"][0]["reason"] is None
+    assert applied["effective"]["routes"][0]["reason"] is None
 
     repeated = store.apply_policy_v3({**first, "requestId": "retry-request"})
     assert repeated["idempotent"] is True

@@ -9,9 +9,13 @@ from src.services.thesis_ledger_mapping_evidence_store import MappingEvidenceSto
 from src.services.thesis_ledger_rqdata_read import read_rqdata_fund_event_with_credentials
 
 
+class RqDataIdentityNotAdmitted(ValueError):
+    """身份准入不存在或读取中变化，不能采用本次事件结果。"""
+
+
 def read_rqdata_mapped_fund_event(
     kind, symbol, *, database_path, start, end, data_as_of, read_admission,
-    read_credentials, read_master_key, timeout_seconds, maximum_rows=2000,
+    read_credentials, read_master_key, timeout_seconds, maximum_rows=2000, build_factory=None,
 ):
     if not database_path or database_path == ":memory:":
         raise ValueError("rqdata_identity_requires_persistent_store")
@@ -20,7 +24,7 @@ def read_rqdata_mapped_fund_event(
     )
     before = deepcopy(read_admission())
     if not isinstance(before, dict) or not isinstance(before.get("evidenceRef"), str):
-        raise ValueError("rqdata_identity_not_admitted")
+        raise RqDataIdentityNotAdmitted("rqdata_identity_not_admitted")
     content = evidence_store.read(before["evidenceRef"])
     identity = resolve_rqdata_fund_identity(
         content, before, kind=kind, symbol=symbol, start=start, end=end, data_as_of=data_as_of,
@@ -33,11 +37,11 @@ def read_rqdata_mapped_fund_event(
     result = read_rqdata_fund_event_with_credentials(
         kind, symbol, admitted_credential_revision=before["credentialRevision"],
         read_credentials=read_credentials, read_master_key=read_master_key,
-        timeout_seconds=timeout_seconds, **options,
+        timeout_seconds=timeout_seconds, build_factory=build_factory, **options,
     )
     after = read_admission()
     if after != before or evidence_store.read(identity.evidence_ref) != content:
-        raise ValueError("rqdata_identity_admission_changed")
+        raise RqDataIdentityNotAdmitted("rqdata_identity_admission_changed")
     resolve_rqdata_fund_identity(
         content, after, kind=kind, symbol=symbol, start=start, end=end, data_as_of=data_as_of,
         observed_at=datetime.now(timezone.utc),

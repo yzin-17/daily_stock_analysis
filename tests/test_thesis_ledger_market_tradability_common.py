@@ -37,7 +37,7 @@ def sample():
         },
         "thesis_ledger_v3_pagination": {
             "status": "complete", "pagesFetched": 1, "continuationPending": False,
-            "protocol": TENCENT_NATIVE_DAILY_PROTOCOL, "maximumRows": 800,
+            "protocol": TENCENT_NATIVE_DAILY_PROTOCOL, "maximumRows": 3650,
             "requestedStart": days[0], "requestedEnd": days[-1],
         },
     })
@@ -68,6 +68,14 @@ def test_same_captured_prices_have_stable_digest_and_changed_price_changes_it():
     assert read()["barSource"]["responseSha256"] == first
     execution.value.loc[0, "close"] = 1.15
     assert read()["barSource"]["responseSha256"] != first
+
+
+def test_missing_turnover_amount_is_unknown_without_blocking_verified_ohlc_volume():
+    request, execution, context, days = sample()
+    execution.value = execution.value.drop(columns=["amount"])
+    evidence = market_daily_tradability(request, execution, context, days, "2026-10-03T00:00:00Z")[0]
+    assert all(day["state"] == "observed-traded" for day in evidence["days"])
+    assert "amount" not in execution.value.columns
 
 
 def test_missing_session_is_only_an_explicit_no_trade_assumption():

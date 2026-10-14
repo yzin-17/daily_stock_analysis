@@ -1,19 +1,16 @@
-"""HiThink 单标报价的当前策略、准入和凭据快照。"""
+"""HiThink 单标报价的精确策略与有效凭据快照。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import sqlite3
 from typing import Any, Mapping
 
 from .provider_credentials_runtime import ProviderCredentialSnapshot
 from .thesis_ledger_control import (
     ControlContractError, PROVIDER_MANIFESTS,
-    _provider_credential_revision_from_snapshot,
 )
 from .thesis_ledger_hithink_quote_admission import (
-    hithink_quote_admission_matches_current,
     hithink_quote_route_key,
 )
 
@@ -21,8 +18,6 @@ from .thesis_ledger_hithink_quote_admission import (
 @dataclass(frozen=True)
 class HiThinkQuoteGuard:
     policy_revision: int
-    admission_version: int
-    credential_revision: str
     snapshot: ProviderCredentialSnapshot
 
 
@@ -79,25 +74,11 @@ def current_hithink_quote_guard(
             return None
         snapshot = store.provider_credential_snapshot("hithink")
         if (
-            snapshot.provider_id != "hithink" or snapshot.source != "environment"
+            snapshot.provider_id != "hithink" or snapshot.source not in {"environment", "control"}
             or snapshot.method != "api_key" or not snapshot.values.get("apiKey")
         ):
             return None
-        credential_revision = _provider_credential_revision_from_snapshot(snapshot)
-        if credential_revision is None:
-            return None
-        target = {"providerId": "hithink", "upstreamSource": source}
-        admission = store.get_route_admission_v3(
-            key=hithink_quote_route_key(asset_type), target=target,
-        )
-        if not hithink_quote_admission_matches_current(
-            admission, asset_type=asset_type, source=source, symbol=symbol,
-            credential_revision=credential_revision, now=datetime.now(timezone.utc),
-        ):
-            return None
-        return HiThinkQuoteGuard(
-            revision, admission["recordVersion"], credential_revision, snapshot,
-        )
+        return HiThinkQuoteGuard(revision, snapshot)
     except (AttributeError, ControlContractError, KeyError, sqlite3.Error, TypeError, ValueError):
         return None
 
@@ -110,15 +91,12 @@ def hithink_quote_guard_still_current(
     source: str,
     symbol: str,
 ) -> bool:
-    """读取结束再次核对，不接受策略、凭据或准入版本晚到。"""
+    """读取结束再次核对，不接受策略或凭据变更后的晚到结果。"""
     current = current_hithink_quote_guard(
         store, asset_type=asset_type, source=source, symbol=symbol,
         expected_policy_revision=guard.policy_revision,
     )
     return (
         current is not None
-        and current.admission_version == guard.admission_version
-        and current.credential_revision == guard.credential_revision
-        and current.snapshot.config_version == guard.snapshot.config_version
-        and current.snapshot.credential_version == guard.snapshot.credential_version
+        and current.snapshot == guard.snapshot
     )

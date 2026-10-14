@@ -24,10 +24,7 @@ def build_provider_manifest(
             "DAILY_BAR": capabilities.get("DAILY_BAR", ())
         }
         source_capabilities[source_id] = {
-            capability: sorted(
-                set(instrument_types)
-                - ({"ETF"} if provider_id == "akshare" and source_id == "sina" and capability == "DAILY_BAR" else set())
-            )
+            capability: sorted(set(instrument_types))
             for capability, instrument_types in declared_capabilities.items()
         }
     return {

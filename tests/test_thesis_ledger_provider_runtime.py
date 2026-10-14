@@ -113,13 +113,15 @@ def _quote_log_events(caplog, request_id):
 
 
 def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
-    """Control 注册表列出已有抓取器及尚未接线的受门禁来源。"""
+    """Control 注册表列出全部精确接入及需要独立证据的来源。"""
     registry = {
         item["providerId"]: item
         for item in ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db")).provider_registry()
     }
 
     assert set(registry) == {
+        "official-rules", "official-states", "official-dividends",
+        "official-hk-rules", "official-us-rules",
         "akshare",
         "efinance",
         "tencent",
@@ -129,6 +131,7 @@ def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
         "baostock",
         "yfinance",
         "longbridge",
+        "futu",
         "finnhub",
         "alphavantage",
         "hithink",
@@ -142,39 +145,55 @@ def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
         "CASH_DISTRIBUTION": ["ETF"],
     }
     assert registry["hithink"]["requiresCredential"] is True
-    assert registry["rqdata"]["capabilities"] == {}
-    assert registry["rqdata"]["upstreamSources"][0]["capabilities"] == {}
+    assert registry["rqdata"]["capabilities"] == {"CASH_DISTRIBUTION": ["ETF"], "SPLIT_EVENT": ["ETF"]}
+    assert registry["rqdata"]["upstreamSources"][0]["capabilities"] == registry["rqdata"]["capabilities"]
     assert registry["tencent"]["origin"] == "dsa"
     assert registry["tencent"]["capabilities"] == {
-        "DAILY_BAR": ["ETF", "STOCK"]
+        "DAILY_BAR": ["ETF", "STOCK"], "REALTIME_QUOTE": ["ETF"],
     }
     assert registry["tencent"]["upstreamSources"] == [
         {
             "sourceId": "tencent",
             "displayName": "腾讯财经",
-            "capabilities": {"DAILY_BAR": ["ETF", "STOCK"]},
+            "capabilities": {"DAILY_BAR": ["ETF", "STOCK"], "REALTIME_QUOTE": ["ETF"]},
         }
     ]
-    assert registry["yfinance"]["markets"] == ["CN", "HK", "JP", "KR", "TW", "US"]
+    assert registry["yfinance"]["markets"] == ["CN", "HK", "US"]
     assert registry["tushare"]["configurationMode"] == "dsa_environment"
     assert registry["tushare"]["capabilities"]["DAILY_BAR"] == ["ETF", "STOCK"]
 
 
 def test_mapping_quote_is_normalized_for_route_contract(tmp_path):
-    """返回字典的内置 Provider 也能通过统一 Quote 契约。"""
+    """pytdx 的原始字典由来源适配为统一 Quote 契约。"""
 
     class _MappingQuoteAdapter:
         @staticmethod
-        def get_realtime_quote(_symbol):
-            return {
+        def _get_market_code(symbol):
+            return 1, symbol
+
+        def _pytdx_session(self):
+            return self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        @staticmethod
+        def get_security_quotes(targets):
+            assert targets == [(1, "600519")]
+            return [{
+                "code": "600519",
+                "market": 1,
                 "open": 99.0,
                 "high": 102.0,
                 "low": 98.0,
                 "price": 101.0,
-                "pre_close": 100.0,
-                "volume": 1200,
+                "last_close": 100.0,
+                "vol": 1200,
                 "amount": 121200,
-            }
+            }]
 
     runtime = ThesisLedgerProviderRuntime(
         _store(tmp_path, {"REALTIME_QUOTE": {"STOCK": ["pytdx"]}}),
@@ -222,7 +241,8 @@ def test_fund_holdings_uses_effective_route_without_weight_normalization(tmp_pat
 
     assert result.provider == "akshare"
     assert result.fallback_used is False
-    assert result.data._rows[0]["占净值比例"] == 8.0
+    assert result.data.holdings[0].weight == 0.08
+    assert sum(holding.weight for holding in result.data.holdings) == 0.08
     assert adapter.calls == ["000001"]
 
 
@@ -364,7 +384,7 @@ def test_quote_uses_one_call_per_exact_target_then_complete_fallback(tmp_path):
 
         calls = 0
 
-        def get_realtime_quote(self, _symbol, *, source=None):
+        def _get_stock_realtime_quote_em(self, _symbol):
             """抛出 transient timeout。"""
             self.calls += 1
             raise TimeoutError("upstream timeout")
@@ -375,7 +395,7 @@ def test_quote_uses_one_call_per_exact_target_then_complete_fallback(tmp_path):
         calls = 0
         symbols = []
 
-        def get_realtime_quote(self, symbol, *, source=None):
+        def _get_realtime_snapshot_quote(self, symbol):
             """返回完整 Quote。"""
             self.calls += 1
             self.symbols.append(symbol)
@@ -399,17 +419,17 @@ def test_quote_uses_one_call_per_exact_target_then_complete_fallback(tmp_path):
     assert fallback.symbols == ["600519"]
 
 
-def test_etf_effective_policy_excludes_akshare_but_preserves_desired_route(tmp_path):
-    """AkShare ETF 全市场能力保留在 Desired Policy，不能进入 Effective route。"""
+def test_etf_effective_policy_includes_exact_akshare_single_symbol_route(tmp_path):
+    """AKShare ETF 单标接入后主备意图均可进入执行投影。"""
     store = _store(tmp_path, _etf_quote_routes())
 
     effective = store.effective_policy_v3()
     route = next(item for item in effective["routes"] if item["key"]["assetType"] == "ETF")
     assert [item["providerId"] for item in route["targets"]] == ["akshare", "efinance"]
-    assert [item["providerId"] for item in route["targets"] if item["eligible"]] == ["efinance"]
+    assert [item["providerId"] for item in route["targets"] if item["eligible"]] == ["akshare", "efinance"]
     akshare = route["targets"][0]
-    assert akshare["eligible"] is False
-    assert akshare["reason"] == "not_adapted"
+    assert akshare["eligible"] is True
+    assert akshare["reason"] is None
 
 
 def test_etf_quote_uses_single_adapter_once_and_persists_cooldown_after_reopen(tmp_path, caplog):
@@ -431,7 +451,7 @@ def test_etf_quote_uses_single_adapter_once_and_persists_cooldown_after_reopen(t
     database_path = str(tmp_path / "stock_analysis.db")
     adapter = _SingleSymbolAdapter()
     first_runtime = ThesisLedgerProviderRuntime(
-        _store(tmp_path, _etf_quote_routes()),
+        _store(tmp_path, {"REALTIME_QUOTE": {"ETF": ["efinance"]}}),
         adapters={"efinance": adapter, "akshare": object()},
     )
     with caplog.at_level(logging.INFO, logger="src.services.thesis_ledger_provider_runtime"):
@@ -524,7 +544,7 @@ def test_etf_quote_failure_has_no_retry_or_universe_fallback(tmp_path, caplog):
 
     adapter = _FailingSingleAdapter()
     runtime = ThesisLedgerProviderRuntime(
-        _store(tmp_path, _etf_quote_routes()),
+        _store(tmp_path, {"REALTIME_QUOTE": {"ETF": ["efinance"]}}),
         adapters={"efinance": adapter, "akshare": object()},
     )
 
@@ -545,13 +565,14 @@ def test_etf_quote_failure_has_no_retry_or_universe_fallback(tmp_path, caplog):
 
 
 def test_confirmed_generic_yfinance_etf_adapter_remains_single_symbol_allowlisted(tmp_path):
-    """已核对的 yfinance 实现可走 generic 单标方法。"""
+    """Yahoo 单标报价必须启用精确模式并绑定请求资产。"""
     provider_id = "yfinance"
 
     class _SingleSymbolAdapter:
         calls = []
 
-        def get_realtime_quote(self, symbol):
+        def get_realtime_quote(self, symbol, *, strict_source, instrument_type):
+            assert strict_source is True and instrument_type == "ETF"
             self.calls.append(symbol)
             return _Quote()
 
@@ -572,13 +593,13 @@ def test_confirmed_generic_yfinance_etf_adapter_remains_single_symbol_allowliste
 
 
 def test_quote_derives_missing_previous_close_from_change_amount(tmp_path):
-    """ETF 快照缺少昨收时，用同一快照的涨跌额补齐 Contract 字段。"""
+    """股票快照缺少昨收时，用同一快照的涨跌额补齐 Contract 字段。"""
 
     class _Adapter:
         """返回缺少 pre_close 但包含涨跌额的行情。"""
 
-        def get_realtime_quote(self, _symbol, *, source=None):
-            """模拟 AKShare ETF 快照的字段缺失。"""
+        def _get_stock_realtime_quote_em(self, _symbol):
+            """模拟 AKShare 股票快照的字段缺失。"""
             return type(
                 "Quote",
                 (),
@@ -608,7 +629,7 @@ def test_quote_derives_missing_previous_close_from_change_amount(tmp_path):
     assert fallback_used is False
 
 
-def test_provider_smoke_uses_native_symbol_format(tmp_path):
+def test_provider_smoke_uses_native_symbol_format(tmp_path, monkeypatch):
     """确认真实 Provider smoke 不把 Contract 的交易所后缀传给适配器。"""
 
     class _Adapter:
@@ -618,18 +639,24 @@ def test_provider_smoke_uses_native_symbol_format(tmp_path):
         quote_sources = []
         bar_symbols = []
 
-        def get_realtime_quote(self, symbol, *, source=None):
-            """记录原生代码与通道并返回最小合法 Quote。"""
-            self.quote_symbols.append(symbol)
-            self.quote_sources.append(source)
-            return _Quote()
+        def _enforce_rate_limit(self):
+            pass
 
         def get_daily_data(self, symbol, *, days):
             """记录日线请求并返回空但结构完整的 frame。"""
             self.bar_symbols.append((symbol, days))
             return _Frame([]), "adapter-source"
 
+    from types import SimpleNamespace
+    from data_provider import akshare_fetcher as sdk
+    from tests.test_thesis_ledger_akshare_stock_quote_paths import sina_payload
     adapter = _Adapter()
+    def get(url, **kwargs):
+        assert url == 'http://hq.sinajs.cn/list=sh600519'
+        adapter.quote_symbols.append('600519')
+        adapter.quote_sources.append('sina')
+        return SimpleNamespace(status_code=200, text=sina_payload())
+    monkeypatch.setattr(sdk.requests, 'get', get)
     runtime = ThesisLedgerProviderRuntime(
         _store(tmp_path, {}),
         adapters={"akshare": adapter},
@@ -664,19 +691,17 @@ def test_fund_nav_history_switches_the_complete_sequence_on_invalid_primary(
         calls[provider_id] += 1
         return primary_frame if provider_id == "akshare" else fallback_frame
 
-    monkeypatch.setattr(
-        "src.services.thesis_ledger_provider_runtime.ThesisLedgerProviderRuntime._fund_nav_from_provider",
-        staticmethod(fetch),
-    )
     runtime = ThesisLedgerProviderRuntime(
         _store(tmp_path, {"FUND_NAV_HISTORY": {"MUTUAL_FUND": ["akshare", "efinance"]}}),
-        adapters={"akshare": object(), "efinance": object()},
+        adapters={"akshare": type("Adapter", (), {"get_fund_nav_history": lambda self, symbol: fetch("akshare", symbol, self)})(),
+                  "efinance": type("Adapter", (), {"get_fund_nav_history": lambda self, symbol: fetch("efinance", symbol, self)})()},
     )
 
     execution = runtime.execute_request(ThesisLedgerDataRequest("FUND_NAV_HISTORY", "000001.OF"))
     result, provider, fallback_used = execution.value, execution.provider, execution.fallback_used
 
-    assert result is fallback_frame
+    assert [point.unit_nav for point in result.points] == [1.1, 1.2]
+    assert [point.reported_date for point in result.points] == ["2025-01-01", "2025-01-02"]
     assert provider == "efinance"
     assert fallback_used is True
     assert calls == {"akshare": 1, "efinance": 1}
@@ -693,13 +718,9 @@ def test_fund_nav_history_rejects_non_ascending_sequence(monkeypatch, tmp_path):
     )
     runtime = ThesisLedgerProviderRuntime(
         _store(tmp_path, {"FUND_NAV_HISTORY": {"MUTUAL_FUND": ["akshare"]}}),
-        adapters={"akshare": object()},
+        adapters={"akshare": type("Adapter", (), {"get_fund_nav_history": lambda self, symbol: frame})()},
     )
 
-    monkeypatch.setattr(
-        "src.services.thesis_ledger_provider_runtime.ThesisLedgerProviderRuntime._fund_nav_from_provider",
-        staticmethod(lambda _provider_id, _symbol, _adapter: frame),
-    )
 
     with pytest.raises(ProviderCallError, match="严格升序"):
         runtime.execute_request(ThesisLedgerDataRequest("FUND_NAV_HISTORY", "000001.OF"))
@@ -716,11 +737,7 @@ def test_provider_history_smoke_validates_complete_sequence(monkeypatch, tmp_pat
     )
     runtime = ThesisLedgerProviderRuntime(
         _store(tmp_path, {}),
-        adapters={"akshare": object()},
-    )
-    monkeypatch.setattr(
-        "src.services.thesis_ledger_provider_runtime.ThesisLedgerProviderRuntime._fund_nav_from_provider",
-        staticmethod(lambda _provider_id, _symbol, _adapter: frame),
+        adapters={"akshare": type("Adapter", (), {"get_fund_nav_history": lambda self, symbol: frame})()},
     )
 
     result = runtime.smoke("akshare", "FUND_NAV_HISTORY")

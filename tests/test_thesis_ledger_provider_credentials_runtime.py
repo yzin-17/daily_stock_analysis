@@ -103,7 +103,7 @@ def test_runtime_injects_page_oauth_without_default_sdk_cache(monkeypatch, tmp_p
     marker = object()
     monkeypatch.setattr(
         "src.services.provider_oauth_runtime.build_page_oauth",
-        lambda snapshot, database_path: marker,
+        lambda snapshot, database_path, **_options: marker,
     )
 
     class _Adapter:
@@ -231,7 +231,7 @@ def test_runtime_oauth_refresh_rebuilds_and_sdk_marker_failure_is_fail_closed(
     built = []
     monkeypatch.setattr(
         "src.services.provider_oauth_runtime.build_page_oauth",
-        lambda snapshot, database_path: built.append(snapshot.values["tokenJson"]) or built[-1],
+        lambda snapshot, database_path, **_options: built.append(snapshot.values["tokenJson"]) or built[-1],
     )
 
     class _Adapter:
@@ -260,7 +260,7 @@ def test_runtime_oauth_refresh_rebuilds_and_sdk_marker_failure_is_fail_closed(
     assert next_version > version
     monkeypatch.setattr(
         "src.services.provider_oauth_runtime.build_page_oauth",
-        lambda snapshot, database_path: (_ for _ in ()).throw(
+        lambda snapshot, database_path, **_options: (_ for _ in ()).throw(
             OAuthStateError("OAUTH_SDK_UNAVAILABLE")
         ),
     )
@@ -600,8 +600,15 @@ def test_draft_probe_does_not_persist_health_or_circuit_state(monkeypatch, tmp_p
     )
 
     class _Adapter:
-        def get_realtime_quote(self, _symbol):
-            return SimpleNamespace(price=100.0)
+        _token = "page"
+        _api = object()
+        _minute_start = None
+        def _check_rate_limit(self):
+            pass
+        def _build_api_client(self, _token):
+            import pandas as pd
+            return SimpleNamespace(query=lambda endpoint, ts_code, fields: pd.DataFrame({"ts_code": [ts_code],
+                "close": [100.], "open": [99.], "high": [101.], "low": [98.], "pre_close": [99.]}))
 
     runtime = ThesisLedgerProviderRuntime(store, adapters={"tushare": _Adapter()})
     snapshot = store.provider_credential_snapshot("tushare")

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import importlib
+import importlib.util
 import sys
 import types
 from pathlib import Path
@@ -13,20 +13,30 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = ROOT / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
 
-if "dotenv" not in sys.modules:
+
+def load_test_subject():
+    """替身仅限脚本导入期间，不能污染后续 Provider 的依赖检查。"""
     dotenv_stub = types.ModuleType("dotenv")
     dotenv_stub.load_dotenv = lambda *args, **kwargs: None
-    sys.modules["dotenv"] = dotenv_stub
-
-if "tushare" not in sys.modules:
     tushare_stub = types.ModuleType("tushare")
     tushare_stub.pro_api = lambda *args, **kwargs: MagicMock()
-    sys.modules["tushare"] = tushare_stub
+    spec = importlib.util.spec_from_file_location("fetch_tushare_stock_list", SCRIPTS_DIR / "fetch_tushare_stock_list.py")
+    module = importlib.util.module_from_spec(spec)
+    with patch.dict(sys.modules, {"dotenv": dotenv_stub, "tushare": tushare_stub}), patch.object(sys, "path", list(sys.path)):
+        spec.loader.exec_module(module)
+    return module
 
-fetch_tushare_stock_list = importlib.import_module("fetch_tushare_stock_list")
+
+fetch_tushare_stock_list = load_test_subject()
+
+
+def test_loading_test_subject_preserves_optional_sdk_modules():
+    modules = {name: sys.modules.get(name) for name in ("tushare", "dotenv")}
+    path = list(sys.path)
+    load_test_subject()
+    assert {name: sys.modules.get(name) for name in modules} == modules
+    assert sys.path == path
 
 
 def test_should_fix_a_stock_name_matches_status_prefixes():

@@ -55,6 +55,23 @@ def test_calendar_scope_does_not_expand_listing_identity():
     ) is None
 
 
+def test_stock_fee_research_window_has_sourced_listing_and_august_sessions():
+    context = market_coverage_context_v3(
+        symbol="600000.SH", market="CN", start="2023-08-07", end="2023-08-29",
+    )
+    assert context is not None
+    assert context["listing"]["firstTradingDate"] == "1999-11-10"
+    assert context["listing"]["knownAt"] == "2023-02-01T00:00:00+08:00"
+    calendar = context["calendar"]
+    assert calendar["supportedRange"] == {"start": "2023-08-01", "end": "2023-08-31"}
+    assert calendar["source"].startswith("https://www.sse.com.cn/")
+    assert len(calendar["expectedSessionDates"]) == 17
+    assert calendar["expectedSessionDates"][-3:] == ["2023-08-25", "2023-08-28", "2023-08-29"]
+    assert "2023-08-26" not in calendar["expectedSessionDates"]
+    assert market_calendar_evidence_v3("CN", "2023-07-31", "2023-08-29") is None
+    assert market_calendar_evidence_v3("CN", "2023-08-07", "2023-09-01") is None
+
+
 @pytest.mark.parametrize("market,start,end", [
     ("CN", "2025-12-31", "2026-01-05"),
     ("CN", "2026-12-30", "2027-01-01"),

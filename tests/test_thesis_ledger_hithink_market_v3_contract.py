@@ -45,7 +45,7 @@ def test_hithink_etf_qfq_is_an_exact_gated_route_only():
         for key, target in gated_routes
         if key["assetType"] == "STOCK" and target["providerId"] == "hithink"
     ]
-    assert gated_routes[0] == (_ROUTE_KEY, _ROUTE_TARGET)
+    assert (_ROUTE_KEY, _ROUTE_TARGET) in gated_routes
     assert [key["adjustment"] for key, _target in stock_gated_routes] == [
         "none",
         "qfq",

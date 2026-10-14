@@ -5,7 +5,7 @@ from typing import Any
 from src.services.provider_manifest import build_provider_manifest
 
 
-def build_akshare_manifest() -> dict[str, Any]:
+def build_akshare_manifest(*, sina_daily_assets: tuple[str, ...]) -> dict[str, Any]:
     manifest = build_provider_manifest(
         "akshare",
         "AKShare",
@@ -24,11 +24,11 @@ def build_akshare_manifest() -> dict[str, Any]:
             ("tencent", "腾讯财经"),
         ),
     )
-    manifest["version"] = 3
+    manifest["version"] = 4
     for source in manifest["upstreamSources"]:
         if source["sourceId"] == "eastmoney":
             source["capabilities"].update({
-                "REALTIME_QUOTE": ["STOCK"],
+                "REALTIME_QUOTE": ["STOCK", "ETF"],
                 "FUND_NAV": ["MUTUAL_FUND"],
                 "FUND_NAV_HISTORY": ["MUTUAL_FUND"],
                 "FUND_HOLDINGS": ["MUTUAL_FUND"],
@@ -36,4 +36,6 @@ def build_akshare_manifest() -> dict[str, Any]:
             })
         elif source["sourceId"] in {"sina", "tencent"}:
             source["capabilities"]["REALTIME_QUOTE"] = ["STOCK"]
+        if source['sourceId'] == 'sina':
+            source['capabilities']['DAILY_BAR'] = list(sina_daily_assets)
     return manifest

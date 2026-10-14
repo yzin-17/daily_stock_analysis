@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import importlib
-import hashlib
 import json
 import logging
 import math
@@ -20,27 +19,19 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
-from types import SimpleNamespace
+from src.services.thesis_ledger_factory_execution import execute_source_factory
 from typing import Any, Callable, Mapping
 
 from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
 from src.services.provider_oauth_contract import OAuthStateError
-from src.services.thesis_ledger_nav_dates import nav_datetime, select_nav_rows, validate_nav_history
-from src.services.thesis_ledger_holding_rows import validate_holding_rows
+from src.services.thesis_ledger_nav_dates import validate_nav_history
 from src.services.thesis_ledger_control import (
     PROVIDER_MANIFESTS,
     ControlContractError,
     ThesisLedgerControlStore,
     _provider_credential_revision_from_snapshot,
 )
-from src.services.thesis_ledger_market_v3_adapters import (
-    HITHINK_STOCK_HISTORY_SOURCE,
-    HITHINK_STOCK_SINGLE_RESPONSE_PROTOCOL_V1,
-    iter_market_v3_bar_adapters,
-    iter_market_v3_gated_bar_adapters,
-    market_v3_bar_adapter_reason,
-    basic_market_price_route,
-)
+from src.services.thesis_ledger_market_v3_adapters import HITHINK_STOCK_HISTORY_SOURCE, HITHINK_STOCK_SINGLE_RESPONSE_PROTOCOL_V1, market_v3_bar_adapter_reason, basic_market_price_route
 from src.services.thesis_ledger_market_v3_facts import (
     HITHINK_ETF_HISTORY_SOURCE,
     market_calendar_evidence_v3,
@@ -49,28 +40,22 @@ from src.services.thesis_ledger_market_v3_facts import (
 )
 from src.services.thesis_ledger_route_admission_v3 import route_admission_scope_applies
 from src.services.thesis_ledger_price_route_access import (
-    basic_price_credential_ready, basic_price_route_configured, price_route_admission,
+    basic_price_credential_ready, basic_price_route_configured, price_route_admission, configured_data_route,
 )
 from src.services.thesis_ledger_market_v3_pagination import MarketPaginationError, market_pagination_proof_v3
-from src.services.thesis_ledger_event_v3_adapters import iter_event_adapters
 from src.services.thesis_ledger_catalog_manifest_v3 import catalog_manifest_matches_v3
-from src.services.thesis_ledger_rqdata_event_v3 import current_rqdata_event_admission
-from src.services.thesis_ledger_tushare_event_v3 import current_tushare_event_admission
-from src.services.thesis_ledger_hithink_event_v3 import current_hithink_event_admission
-from src.services.thesis_ledger_hithink_quote_runtime import (
-    current_hithink_quote_guard, hithink_quote_guard_still_current,
-)
-from src.services.thesis_ledger_hithink_quote_admission import (
-    hithink_quote_admission_matches_current, hithink_quote_revisions,
-    iter_hithink_quote_routes,
-)
-from src.services.thesis_ledger_current_data_route import (
-    CurrentDataRouteError, current_data_route_key, iter_current_data_adapters,
-    select_current_data_targets,
-)
+from src.services.thesis_ledger_event_v3_adapters import event_admission_reader
+from src.services.thesis_ledger_current_data_route import CurrentDataRouteError, current_data_route_key, select_current_data_targets
 from src.services.thesis_ledger_quote_dispatch import realtime_quote as dispatch_realtime_quote
+from src.services.thesis_ledger_local_rules import (
+    LOCAL_RULE_CAPABILITIES, LOCAL_RULE_ADAPTER_IMPORTS,
+    local_rule_source_ready,
+)
 
+from src.services.thesis_ledger_reference_data import reference_data_operation
 from src.services import thesis_ledger_market_v3_revisions as _route_revisions
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+from src.services.thesis_ledger_capability_contracts import QuoteAdmissionContext, QuoteGuardContext, ReadContext, provider_symbol_for_contract
 
 # Preserve the existing import surface while revision ownership moves out of the executor.
 MARKET_V3_CREDENTIAL_NOT_REQUIRED_REVISION = _route_revisions.MARKET_V3_CREDENTIAL_NOT_REQUIRED_REVISION
@@ -80,17 +65,8 @@ _market_v3_admission_matches_current = _route_revisions._market_v3_admission_mat
 logger = logging.getLogger(__name__)
 
 _PROVIDER_ADAPTER_IMPORTS = {
-    "akshare": ("data_provider.akshare_fetcher", "AkshareFetcher"),
-    "efinance": ("data_provider.efinance_fetcher", "EfinanceFetcher"),
-    "tencent": ("data_provider.tencent_fetcher", "TencentFetcher"),
-    "tushare": ("data_provider.tushare_fetcher", "TushareFetcher"),
-    "tickflow": ("data_provider.tickflow_fetcher", "TickFlowFetcher"),
-    "pytdx": ("data_provider.pytdx_fetcher", "PytdxFetcher"),
-    "baostock": ("data_provider.baostock_fetcher", "BaostockFetcher"),
-    "yfinance": ("data_provider.yfinance_fetcher", "YfinanceFetcher"),
-    "longbridge": ("data_provider.longbridge_fetcher", "LongbridgeFetcher"),
-    "finnhub": ("data_provider.finnhub_fetcher", "FinnhubFetcher"),
-    "alphavantage": ("data_provider.alphavantage_fetcher", "AlphaVantageFetcher"),
+    **{source.provider_id: source.adapter_import for source in CAPABILITY_SOURCES.sources if source.adapter_import},
+    **LOCAL_RULE_ADAPTER_IMPORTS,
 }
 
 DAILY_BAR_TARGET_TIMEOUT_SECONDS = 4.5
@@ -369,25 +345,6 @@ def instrument_type_for_symbol(symbol: str) -> str:
     return "STOCK"
 
 
-def provider_symbol_for_contract(symbol: str) -> str:
-    """将 Contract 标的转换为现有 Provider 适配器接受的代码格式。"""
-    value = symbol.strip().upper()
-    if "." in value:
-        base, suffix = value.rsplit(".", 1)
-        if suffix in {"SH", "SS", "SZ", "BJ"} and base.isdigit():
-            return base
-        if suffix == "HK" and base.isdigit():
-            return f"HK{base.zfill(5)}"
-    for prefix in ("SH", "SZ", "SS", "BJ"):
-        if value.startswith(prefix):
-            remainder = value[len(prefix) :]
-            if remainder.startswith("."):
-                remainder = remainder[1:]
-            if remainder.isdigit():
-                return remainder
-    return value
-
-
 @dataclass
 class _CircuitState:
     failures: int = 0
@@ -460,7 +417,7 @@ class ThesisLedgerProviderRuntime:
     ) -> None:
         self.store = store or ThesisLedgerControlStore()
         self.adapters = adapters or {}
-        self._adapter_versions: dict[str, tuple[int, int, str]] = {}
+        self._adapter_versions: dict[str, ProviderCredentialSnapshot] = {}
         self._adapter_cache_lock = threading.RLock()
         self.clock = clock or time.monotonic
         self.circuit = _ScopedCircuit()
@@ -479,41 +436,14 @@ class ThesisLedgerProviderRuntime:
         provider_manifest = provider_manifest if provider_manifest is not None else PROVIDER_MANIFESTS.get(provider_id)
         if not callable(get_admission) or provider_manifest is None:
             return None
-        if provider_id == "rqdata":
-            return current_rqdata_event_admission(self.store, key, target, provider_manifest)
-        if provider_id == "hithink" and key.get("capability") == "CASH_DISTRIBUTION":
-            return current_hithink_event_admission(self.store, key, target, provider_manifest)
-        if provider_id == "tushare" and key.get("capability") == "CASH_DISTRIBUTION":
-            return current_tushare_event_admission(self.store, key, target, provider_manifest)
-        if (
-            provider_id == "hithink" and key.get("kind") == "data"
-            and key.get("capability") == "REALTIME_QUOTE"
-        ):
-            if hithink_quote_revisions(
-                key.get("assetType"), target.get("upstreamSource")
-            ) is None:
-                return None
-            try:
-                snapshot = credential_snapshot or self.store.provider_credential_snapshot(provider_id)
-            except (AttributeError, ControlContractError, ValueError):
-                return None
-            credential_revision = _provider_credential_revision_from_snapshot(snapshot)
-            admission = get_admission(key=dict(key), target=dict(target))
-            if not isinstance(admission, Mapping):
-                return None
-            symbols = admission.get("scopeSymbols")
-            if not isinstance(symbols, list) or not symbols:
-                return None
-            now = datetime.now(timezone.utc)
-            if all(hithink_quote_admission_matches_current(
-                admission, asset_type=key["assetType"],
-                source=target["upstreamSource"], symbol=symbol,
-                credential_revision=credential_revision, now=now,
-            ) for symbol in symbols):
-                return admission
-            return None
+        if reader := event_admission_reader(key, target):
+            return reader(self.store, key, target, provider_manifest)
+        reader = getattr(CAPABILITY_SOURCES.source(provider_id), 'quote_admission_reader', None)
+        if (reader is not None and key.get('kind') == 'data' and key.get('capability') == 'REALTIME_QUOTE'
+                and CAPABILITY_SOURCES.resolve(key, target) is not None):
+            return reader(QuoteAdmissionContext(self.store, key, target, provider_manifest, credential_snapshot))
         credential_revision = None
-        if provider_id in {"hithink", "tushare"}:
+        if getattr(CAPABILITY_SOURCES.source(provider_id), 'credential_revision_kind', None) == 'hmac':
             if credential_snapshot is None:
                 try:
                     credential_snapshot = self.store.provider_credential_snapshot(provider_id)
@@ -542,7 +472,10 @@ class ThesisLedgerProviderRuntime:
         target: Mapping[str, Any],
         provider: Mapping[str, Any],
     ) -> bool:
-        if basic_market_price_route(key, target):
+        ready = local_rule_source_ready(key, target)
+        if ready is not None:
+            return ready
+        if basic_market_price_route(key, target) or configured_data_route(key, target):
             return basic_price_route_configured(self.store, key, target)
         return self._current_market_v3_admission(key, target, provider_manifest=provider) is not None
 
@@ -555,35 +488,23 @@ class ThesisLedgerProviderRuntime:
         probe: bool = False,
         market_v3_route_key: Mapping[str, Any] | None = None,
     ) -> Any:
-        if provider_id == "hithink":
-            injected = self.adapters.get(provider_id)
-            if injected is not None:
-                return injected
-            fetch_method = self._fetch_hithink_etf_bars
-            if market_v3_route_key is not None:
-                if market_v3_route_key.get("assetType") == "STOCK":
-                    fetch_method = self._fetch_hithink_stock_bars
-                elif market_v3_route_key.get("assetType") != "ETF":
-                    raise ProviderCallError("unsupported_source", "HiThink V3 未登记该 InstrumentType")
-            # V3 execution rebinds this method to the exact credential snapshot
-            # it compared against admission immediately before the source call.
-            if snapshot is None:
-                return SimpleNamespace(get_market_bars_v3=fetch_method)
-            return SimpleNamespace(
-                get_market_bars_v3=lambda request: fetch_method(
-                    request,
-                    credential_snapshot=snapshot,
-                )
-            )
+        source = CAPABILITY_SOURCES.source(provider_id)
+        factory = CAPABILITY_SOURCES.factory_for_route(provider_id, market_v3_route_key)
+        if factory is not None and source.factory_scope == "route":
+            return self.adapters.get(provider_id) or execute_source_factory(factory, ProviderCallError, ReadContext(
+                None, snapshot, timeout_seconds=5 if probe else DAILY_BAR_TARGET_TIMEOUT_SECONDS, probe=probe,
+                database_path=getattr(self.store, "database_path", None),
+            ))
+        if source is not None and market_v3_route_key is None and source.unscoped_factory is not None:
+            return self.adapters.get(provider_id) or execute_source_factory(source.unscoped_factory, ProviderCallError, ReadContext(None, snapshot, probe=probe))
         with self._adapter_cache_lock:
             if provider_id in self.adapters and provider_id not in self._adapter_versions:
                 return self.adapters[provider_id]
         try:
             snapshot = snapshot or self.store.provider_credential_snapshot(provider_id)
-            version = (snapshot.config_version, snapshot.credential_version, snapshot.source)
-            if provider_id == "tushare":
+            version = snapshot
+            if source is not None and source.require_credential_revision_for_cache:
                 revision = _provider_credential_revision_from_snapshot(snapshot)
-                version = (snapshot.config_version, snapshot.credential_version, f"{snapshot.source}:{revision}")
                 if revision is None:
                     cache = False
             with self._adapter_cache_lock:
@@ -594,50 +515,23 @@ class ThesisLedgerProviderRuntime:
                 ):
                     return self.adapters[provider_id]
             adapter_import = _PROVIDER_ADAPTER_IMPORTS.get(provider_id)
-            if adapter_import is None:
+            if adapter_import is None and source is None:
                 raise ProviderCallError("UNKNOWN_PROVIDER", "未知 Provider")
-            module_name, class_name = adapter_import
-            adapter_class = getattr(importlib.import_module(module_name), class_name)
+            adapter_class = None
+            if source is None:
+                module_name, class_name = adapter_import
+                adapter_class = getattr(importlib.import_module(module_name), class_name)
             values = snapshot.values
             manifest = PROVIDER_MANIFESTS.get(provider_id, {})
             if manifest.get("requiresCredential") and not values and not (
-                provider_id == "longbridge" and snapshot.source == "environment"
+                source is not None and source.allow_empty_environment_credentials and snapshot.source == "environment"
             ):
                 raise ProviderCallError("not_configured", "Provider 凭证未配置")
-            if provider_id == "tickflow":
-                from src.config import get_config
-
-                config = get_config()
-                adapter = adapter_class(
-                    api_key=values.get("apiKey"),
-                    timeout=5 if probe else 30.0,
-                    kline_adjust=getattr(config, "tickflow_kline_adjust", "none"),
-                    batch_daily_enabled=getattr(config, "tickflow_batch_daily_enabled", True),
-                    batch_size=getattr(config, "tickflow_batch_size", 100),
-                    priority=getattr(config, "tickflow_priority", 2),
-                )
-            elif provider_id == "tushare":
-                adapter = adapter_class(
-                    token=values.get("token"),
-                    request_timeout=5 if probe else 30,
-                    http_url=values.get("httpUrl"),
-                )
-            elif provider_id in {"finnhub", "alphavantage"}:
-                adapter = adapter_class(
-                    api_key=values.get("apiKey"),
-                    strict_errors=snapshot.source == "control",
-                )
-            elif provider_id == "longbridge" and snapshot.method == "oauth":
-                from src.services.provider_oauth_runtime import build_page_oauth
-
-                oauth_token = build_page_oauth(snapshot, self.store.database_path)
-                adapter = adapter_class(oauth_token=oauth_token)
-            elif provider_id == "longbridge" and values:
-                adapter = adapter_class(
-                    app_key=values.get("appKey"),
-                    app_secret=values.get("appSecret"),
-                    access_token=values.get("accessToken"),
-                )
+            if source is not None:
+                adapter = execute_source_factory(source.factory, ProviderCallError, ReadContext(
+                    None, snapshot, timeout_seconds=5 if probe else DAILY_BAR_TARGET_TIMEOUT_SECONDS, probe=probe,
+                    database_path=getattr(self.store, "database_path", None),
+                ))
             else:
                 adapter = adapter_class()
         except ProviderCallError:
@@ -664,162 +558,12 @@ class ThesisLedgerProviderRuntime:
     @staticmethod
     def _daily_frame(adapter_result: Any) -> Any:
         """兼容 BaseFetcher 的 DataFrame 与 manager 的 ``(frame, source)`` 返回值。"""
-        if isinstance(adapter_result, tuple):
-            if len(adapter_result) != 2:
-                raise ProviderCallError("invalid_response", "Provider 日线响应结构非法")
-            return adapter_result[0]
-        return adapter_result
-
-    def _fetch_hithink_etf_bars(
-        self,
-        request: ThesisLedgerDataRequest,
-        *,
-        credential_snapshot: ProviderCredentialSnapshot | None = None,
-    ) -> Any:
-        """Lazily invoke the exact HiThink ETF adapter after V3 admission checks."""
-        if (
-            request.capability != "DAILY_BAR"
-            or request.instrument_type != "ETF"
-            or request.timeframe != "1d"
-            or request.adjustment != "qfq"
-            or request.start is None
-            or request.end is None
-        ):
-            raise ProviderCallError("unsupported_source", "HiThink V3 仅登记 ETF qfq 日线")
-
-        listing = market_listing_fact_v3(request.symbol)
-        calendar = market_calendar_evidence_v3("CN", request.start, request.end)
-        if (
-            listing is None
-            or calendar is None
-            or not isinstance(calendar.get("expectedSessionDates"), list)
-        ):
-            raise ProviderCallError("not_covered", "HiThink ETF 缺少本地范围证据")
-
-        snapshot = credential_snapshot
-        if snapshot is None:
-            raise ProviderCallError("not_configured", "HiThink API 凭据未与当前 admission 复核")
-        api_key = snapshot.values.get("apiKey")
-        if (
-            snapshot.source != "environment"
-            or snapshot.method != "api_key"
-            or not isinstance(api_key, str)
-            or not api_key.strip()
-        ):
-            raise ProviderCallError("not_configured", "HiThink API 凭据未配置")
-
-        from src.services.thesis_ledger_hithink_etf import (
-            HiThinkETFAdapterError,
-            HiThinkETFCalendarEvidence,
-            fetch_hithink_etf_daily_bars,
-        )
-
-        calendar_evidence = HiThinkETFCalendarEvidence(
-            symbol=request.symbol,
-            calendar_name="SZSE",
-            calendar_version=str(calendar["revision"]),
-            market_sessions=tuple(calendar["expectedSessionDates"]),
-            listing_date=listing["firstTradingDate"],
-            listing_source=listing["source"],
-            listing_source_version=listing["revision"],
-        )
+        from .thesis_ledger_daily_probe_validation import daily_frame
+        from .thesis_ledger_capability_contracts import CapabilityContractError
         try:
-            result = fetch_hithink_etf_daily_bars(
-                symbol=request.symbol,
-                start=request.start,
-                end=request.end,
-                adjustment="qfq",
-                api_key=api_key,
-                calendar_evidence=calendar_evidence,
-                timeout_seconds=min(DAILY_BAR_TARGET_TIMEOUT_SECONDS, request.parameters.get("target_timeout_seconds", DAILY_BAR_TARGET_TIMEOUT_SECONDS)),
-                allow_missing_sessions=request.parameters.get("historical_tradability") is True,
-            )
-        except HiThinkETFAdapterError as exc:
-            raise ProviderCallError(
-                exc.code,
-                str(exc),
-                retryable=exc.retryable,
-                diagnostics=exc.diagnostics,
-            ) from exc
-
-        from src.services.thesis_ledger_hithink_etf_tradability import hithink_etf_frame
-        frame = hithink_etf_frame(
-            result, listing=listing, calendar=calendar,
-            upstream_source=HITHINK_ETF_HISTORY_SOURCE,
-            historical_tradability=request.parameters.get("historical_tradability") is True,
-        )
-        if result.volume_unit != "unknown" or result.turnover_unit != "unknown":
-            raise ProviderCallError("invalid_response", "HiThink ETF 适配器单位合同已变更")
-        from src.services.thesis_ledger_hithink_etf_units import hithink_etf_field_contract
-        from src.services.thesis_ledger_market_v3_facts import HITHINK_ETF_SOURCE_CONTRACT_REVISION_V1
-
-        frame.attrs["hithink_etf_field_units"] = hithink_etf_field_contract(
-            symbol=request.symbol,
-            start=request.start,
-            end=request.end,
-            source_revision=HITHINK_ETF_SOURCE_CONTRACT_REVISION_V1,
-        )
-        return frame
-
-    def _fetch_hithink_stock_bars(
-        self,
-        request: ThesisLedgerDataRequest,
-        *,
-        credential_snapshot: ProviderCredentialSnapshot | None = None,
-    ) -> Any:
-        """Invoke the explicit HiThink stock adjustment adapter after admission."""
-        if (
-            request.capability != "DAILY_BAR"
-            or request.instrument_type != "STOCK"
-            or request.timeframe != "1d"
-            or request.adjustment not in {"none", "qfq", "hfq"}
-            or request.start is None
-            or request.end is None
-        ):
-            raise ProviderCallError(
-                "unsupported_source",
-                "HiThink 股票 V3 仅登记 none/qfq/hfq 日线",
-            )
-        calendar = market_calendar_evidence_v3("CN", request.start, request.end)
-        if calendar is None or not isinstance(calendar.get("expectedSessionDates"), list):
-            raise ProviderCallError("not_covered", "HiThink 股票缺少本地范围证据")
-
-        if credential_snapshot is None:
-            raise ProviderCallError("not_configured", "HiThink API 凭据未与当前 admission 复核")
-        api_key = credential_snapshot.values.get("apiKey")
-        if (
-            credential_snapshot.provider_id != "hithink"
-            or credential_snapshot.source != "environment"
-            or credential_snapshot.method != "api_key"
-            or not isinstance(api_key, str)
-            or not api_key.strip()
-        ):
-            raise ProviderCallError("not_configured", "HiThink API 凭据未配置")
-
-        from src.services.thesis_ledger_hithink_stock import (
-            HiThinkStockError,
-            HiThinkStockHistoricalAdapter,
-        )
-
-        adapter = HiThinkStockHistoricalAdapter(
-            api_key=api_key,
-            timeout_seconds=DAILY_BAR_TARGET_TIMEOUT_SECONDS,
-        )
-        try:
-            return adapter.fetch_daily_bars(
-                request.symbol,
-                request.start,
-                request.end,
-                request.adjustment,
-                expected_sessions=tuple(calendar["expectedSessionDates"]),
-                calendar_revision=str(calendar["revision"]),
-            )
-        except HiThinkStockError as exc:
-            raise ProviderCallError(
-                exc.code,
-                str(exc),
-                retryable=exc.retryable,
-            ) from exc
+            return daily_frame(adapter_result)
+        except CapabilityContractError as error:
+            raise ProviderCallError(error.code, str(error)) from None
 
     @staticmethod
     def _realtime_quote(
@@ -838,7 +582,7 @@ class ThesisLedgerProviderRuntime:
     @staticmethod
     def _finite_number(value: Any, field: str, *, positive: bool = False) -> float:
         try:
-            number = float(value)
+            number = float(value) if not isinstance(value, bool) else math.nan
         except (TypeError, ValueError) as exc:
             raise ProviderCallError(
                 "invalid_response", f"Provider 响应字段 {field} 非法"
@@ -851,163 +595,23 @@ class ThesisLedgerProviderRuntime:
 
     @classmethod
     def _validate_quote(cls, value: Any) -> Any:
-        price = cls._finite_number(getattr(value, "price", None), "price", positive=True)
-        previous_close = getattr(value, "pre_close", None)
-        if previous_close is None:
-            change_amount = getattr(value, "change_amount", None)
-            if change_amount is not None:
-                try:
-                    derived = price - float(change_amount)
-                except (TypeError, ValueError):
-                    derived = None
-                if derived is not None and math.isfinite(derived) and derived >= 0:
-                    previous_close = derived
-            if previous_close is None:
-                change_pct = getattr(value, "change_pct", None)
-                if change_pct is not None:
-                    try:
-                        divisor = 1.0 + float(change_pct) / 100.0
-                        derived = price / divisor if divisor > 0 else None
-                    except (TypeError, ValueError, ZeroDivisionError):
-                        derived = None
-                    if derived is not None and math.isfinite(derived) and derived >= 0:
-                        previous_close = derived
-        if previous_close is None:
-            raise ProviderCallError("invalid_response", "Provider 响应字段 previousClose 缺失")
-        if getattr(value, "pre_close", None) is None:
-            try:
-                setattr(value, "pre_close", previous_close)
-            except (AttributeError, TypeError) as exc:
-                raise ProviderCallError(
-                    "invalid_response", "Provider 响应对象无法补齐 previousClose"
-                ) from exc
-        fields = {
-            "open": getattr(value, "open_price", None),
-            "high": getattr(value, "high", None),
-            "low": getattr(value, "low", None),
-            "price": price,
-            "previousClose": previous_close,
-            "volume": getattr(value, "volume", None),
-            "amount": getattr(value, "amount", None),
-        }
-        normalized = {
-            name: cls._finite_number(raw, name, positive=name == "price")
-            for name, raw in fields.items()
-        }
-        if normalized["high"] < max(
-            normalized["open"], normalized["low"], normalized["price"]
-        ) or normalized["low"] > min(
-            normalized["open"], normalized["high"], normalized["price"]
-        ):
-            raise ProviderCallError("invalid_response", "Provider Quote OHLC 非法")
-        return value
+        from src.services.thesis_ledger_quote_validation import validate_quote
+        from src.services.thesis_ledger_capability_contracts import CapabilityContractError
+        try:
+            return validate_quote(value)
+        except CapabilityContractError as error:
+            raise ProviderCallError(error.code, str(error)) from None
 
     @classmethod
     def _validate_bars(cls, frame: Any) -> Any:
-        if frame is None or getattr(frame, "empty", True):
-            raise ProviderCallError("not_covered", "Provider 未覆盖该标的")
-        required = {"date", "open", "high", "low", "close", "volume", "amount"}
-        if not required.issubset(set(getattr(frame, "columns", []))):
-            raise ProviderCallError("invalid_response", "Provider Bar 响应缺少必要字段")
-        timestamps: set[str] = set()
-        for _, row in frame.iterrows():
-            timestamp = str(row.get("date"))
-            if not timestamp or timestamp in timestamps:
-                raise ProviderCallError("invalid_response", "Provider Bar 时间重复或缺失")
-            timestamps.add(timestamp)
-            values = {
-                name: cls._finite_number(row.get(name), name)
-                for name in ("open", "high", "low", "close", "volume", "amount")
-            }
-            if values["high"] < max(values["open"], values["close"], values["low"]):
-                raise ProviderCallError("invalid_response", "Provider Bar 最高价非法")
-            if values["low"] > min(values["open"], values["close"], values["high"]):
-                raise ProviderCallError("invalid_response", "Provider Bar 最低价非法")
-        return frame
-
-    @classmethod
-    def _validate_fund_nav(cls, frame: Any) -> Any:
-        if frame is None or getattr(frame, "empty", True):
-            raise ProviderCallError("not_covered", "Provider 未覆盖该基金")
-        date_columns = ("净值日期", "日期", "date", "nav_date")
-        nav_columns = ("单位净值", "单位净值(元)", "unit_nav", "nav")
-        columns = set(getattr(frame, "columns", []))
-        date_column = next((column for column in date_columns if column in columns), None)
-        nav_column = next((column for column in nav_columns if column in columns), None)
-        if date_column is None or nav_column is None:
-            raise ProviderCallError("invalid_response", "Provider 净值响应缺少必要字段")
-        dates: set[str] = set()
-        for _, row in frame.iterrows():
-            try:
-                date_value = nav_datetime(row.get(date_column)).isoformat()
-            except (TypeError, ValueError) as exc:
-                raise ProviderCallError("invalid_response", "Provider 净值日期格式非法") from exc
-            if date_value in dates:
-                raise ProviderCallError("invalid_response", "Provider 净值日期缺失或重复")
-            dates.add(date_value)
-            cls._finite_number(row.get(nav_column), "unitNav", positive=True)
-        return frame
-
-    @classmethod
-    def _validate_fund_nav_history(cls, frame: Any) -> Any:
-        """复用单条净值字段校验并额外保证历史序列严格升序。"""
-        cls._validate_fund_nav(frame)
-        columns = set(getattr(frame, "columns", []))
-        date_column = next(
-            (column for column in ("净值日期", "日期", "date", "nav_date") if column in columns),
-            None,
-        )
-        nav_column = next(
-            (column for column in ("单位净值", "单位净值(元)", "unit_nav", "nav") if column in columns),
-            None,
-        )
-        if date_column is None or nav_column is None:
-            raise ProviderCallError("invalid_response", "Provider 净值响应缺少必要字段")
-        validate_fund_nav_history_rows(
-            [(row.get(date_column), row.get(nav_column)) for _, row in frame.iterrows()]
-        )
-        return frame
-
-    @classmethod
-    def _validate_fund_holdings(cls, frame: Any) -> Any:
-        """校验基金持仓披露，不归一或放大 Provider 权重。"""
-        if frame is None or getattr(frame, "empty", True):
-            raise ProviderCallError("not_covered", "Provider 未返回基金持仓披露")
+        from .thesis_ledger_daily_probe_validation import validate_bars
+        from .thesis_ledger_capability_contracts import CapabilityContractError
         try:
-            validate_holding_rows(frame)
-        except (TypeError, ValueError) as exc:
-            raise ProviderCallError("invalid_response", str(exc)) from exc
-        return frame
+            return validate_bars(frame)
+        except CapabilityContractError as error:
+            raise ProviderCallError(error.code, str(error)) from None
 
-    @classmethod
-    def _validate_chip_summary(cls, value: Any) -> Any:
-        """Validate one complete chip summary before exposing it to the facade."""
-        if value is None:
-            raise ProviderCallError("not_covered", "Provider 未返回筹码摘要")
-        cls._finite_number(getattr(value, "avg_cost", None), "averageCost", positive=True)
-        profit_ratio = cls._finite_number(getattr(value, "profit_ratio", None), "profitRatio")
-        concentration_90 = cls._finite_number(
-            getattr(value, "concentration_90", None),
-            "concentration",
-        )
-        concentration_70 = cls._finite_number(
-            getattr(value, "concentration_70", None),
-            "concentration70",
-        )
-        if profit_ratio > 100 or concentration_90 > 100 or concentration_70 > 100:
-            raise ProviderCallError("invalid_response", "Provider 筹码比例字段非法")
-        for field_name in (
-            "cost_70_low",
-            "cost_70_high",
-            "cost_90_low",
-            "cost_90_high",
-        ):
-            cls._finite_number(
-                getattr(value, field_name, None),
-                field_name,
-                positive=True,
-            )
-        return value
+
 
     def _execute_with_metadata(
         self,
@@ -1092,14 +696,12 @@ class ThesisLedgerProviderRuntime:
                     )
                 continue
             quote_guard = None
-            if quote_request and provider_id == "hithink":
-                quote_guard = current_hithink_quote_guard(
-                    self.store, asset_type=instrument_type, source=upstream_source,
-                    symbol=logged_symbol,
-                    expected_policy_revision=effective_policy.get("revision"),
-                )
+            guard_policy = getattr(CAPABILITY_SOURCES.source(provider_id), 'quote_guard_policy', None) if quote_request else None
+            if guard_policy is not None:
+                quote_guard = guard_policy.prepare(QuoteGuardContext(self.store, instrument_type,
+                    upstream_source, logged_symbol, effective_policy.get('revision')))
                 if quote_guard is None:
-                    last_error = ProviderCallError("not_admitted", "HiThink 报价缺少当前精确准入")
+                    last_error = ProviderCallError("not_admitted", guard_policy.rejected_message)
                     continue
             if budgeted_quote:
                 budget = self.store.claim_provider_request_budget(
@@ -1156,21 +758,17 @@ class ThesisLedgerProviderRuntime:
                     if provider_id not in attempted_providers:
                         attempted_providers.append(provider_id)
                     attempted_targets.append(target)
-                    adapter = self._adapter(provider_id)
-                    if quote_guard is not None:
-                        from src.services.thesis_ledger_hithink_quote import HiThinkSnapshotAdapter
-
-                        adapter = self.adapters.get(provider_id) or HiThinkSnapshotAdapter(
-                            api_key=quote_guard.snapshot.values["apiKey"],
+                    if quote_guard is None:
+                        adapter = self._adapter(provider_id)
+                    else:
+                        adapter = self._adapter(provider_id, quote_guard.snapshot,
+                            market_v3_route_key=current_data_route_key(capability, instrument_type, logged_symbol),
                         )
                     result = operation(provider_id, adapter, upstream_source)
                     if result is None:
                         raise ProviderCallError("not_covered", "Provider 未覆盖该标的")
-                    if quote_guard is not None and not hithink_quote_guard_still_current(
-                        self.store, quote_guard, asset_type=instrument_type,
-                        source=upstream_source, symbol=logged_symbol,
-                    ):
-                        raise ProviderCallError("not_admitted", "HiThink 报价准入已变更")
+                    if quote_guard is not None and quote_guard.still_current() is not True:
+                        raise ProviderCallError("not_admitted", guard_policy.changed_message)
                     if quote_request:
                         _log_quote_event(
                             stage="provider-call",
@@ -1308,7 +906,9 @@ class ThesisLedgerProviderRuntime:
         if last_error.code == "circuit_open" and not attempted_providers:
             raise NoEligibleProviderError(capability, instrument_type)
         if not budgeted_quote:
-            if last_error.code in {"not_covered", "unsupported", "circuit_open"}:
+            exact_bar = (capability == "DAILY_BAR" and isinstance(effective_policy_override, Mapping)
+                         and effective_policy_override.get("contractVersion") == 3)
+            if not exact_bar and capability not in LOCAL_RULE_CAPABILITIES and last_error.code in {"not_covered", "unsupported", "circuit_open"}:
                 raise ProviderCallError(
                     "upstream_unavailable",
                     "没有 Provider 返回可用数据",
@@ -1361,6 +961,7 @@ class ThesisLedgerProviderRuntime:
             or route_key.get("timeframe") != request.timeframe
             or route_key.get("adjustment") != request.adjustment
             or route_key.get("assetType") != request.instrument_type
+            or route_key.get("market") != current_data_route_key(request.capability, request.instrument_type, request.symbol)["market"]
         ):
             raise ProviderCallError("invalid_request", "Data V3 BarSeries 请求与精确 RouteKey 不匹配")
         pinned_target: dict[str, Any] | None = None
@@ -1566,118 +1167,10 @@ class ThesisLedgerProviderRuntime:
                 raise ProviderCallError("unsupported_adjustment", "来源不支持请求的价格口径")
             raise ProviderCallError("NO_ELIGIBLE_PROVIDER", "Control V3 没有可执行的精确行情来源")
 
-        provider_symbol = provider_symbol_for_contract(request.symbol)
-        requested_adjustment = request.adjustment
-        requested_days = (date.fromisoformat(request.end) - date.fromisoformat(request.start)).days + 1
-
         def operation(provider_id: str, adapter: Any, upstream_source: str | None) -> Any:
-            exact_target = {
-                "providerId": provider_id,
-                "upstreamSource": str(upstream_source or "").strip().lower(),
-            }
-            credential_snapshot = None
-            if provider_id in {"hithink", "tushare"}:
-                try:
-                    credential_snapshot = self.store.provider_credential_snapshot(provider_id)
-                except (AttributeError, ControlContractError, ValueError):
-                    raise ProviderCallError(
-                        "NO_ELIGIBLE_PROVIDER",
-                        "Control V3 RouteTarget admission 已失效或修订不匹配",
-                    ) from None
-                credential_ready = (basic_price_credential_ready(credential_snapshot)
-                                    if basic_market_price_route(route_key, exact_target)
-                                    else _provider_credential_revision_from_snapshot(credential_snapshot) is not None)
-                if not credential_ready:
-                    raise ProviderCallError(
-                        "NO_ELIGIBLE_PROVIDER",
-                        "Control V3 RouteTarget admission 已失效或修订不匹配",
-                    )
-            admission, admission_reason = price_route_admission(
-                self._current_market_v3_admission, request, route_key, exact_target,
-                credential_snapshot=credential_snapshot,
-            )
-            if admission_reason is not None:
-                raise ProviderCallError(admission_reason, "来源未就绪或请求超出该能力的审核范围")
-            if provider_id in {"hithink", "tushare"}:
-                verified_adapter = self._adapter(
-                    provider_id,
-                    snapshot=credential_snapshot,
-                    cache=provider_id == "tushare",
-                    market_v3_route_key=route_key,
-                )
-                method_name = "get_market_bars_v3" if provider_id == "hithink" else "get_daily_data_for_source"
-                source_method = getattr(verified_adapter, method_name, None)
-            else:
-                source_method = getattr(adapter, "get_daily_data_for_source", None)
-            if market_v3_bar_adapter_reason(route_key, exact_target) is not None:
-                raise ProviderCallError("unsupported_adjustment", "来源未证明支持请求的价格口径")
-            if not callable(source_method) or not upstream_source:
-                raise ProviderCallError("unsupported_source", "来源没有精确日线适配器")
-            if provider_id == "hithink":
-                source_result = source_method(request)
-            else:
-                source_result = source_method(
-                    provider_symbol, upstream_source,
-                    start_date=request.start, end_date=request.end,
-                    days=max(1, requested_days), adjustment=requested_adjustment,
-                    timeout_seconds=DAILY_BAR_TARGET_TIMEOUT_SECONDS,
-                    **({"asset_type": request.instrument_type} if provider_id == "tencent" else {}),
-                )
-            frame = self._daily_frame(source_result)
-            attrs = getattr(frame, "attrs", None)
-            declared_source = attrs.get("upstream_source") if isinstance(attrs, Mapping) else None
-            if declared_source is not None and str(declared_source).strip().lower() != upstream_source:
-                raise ProviderCallError("invalid_response", "来源日线响应与 RouteTarget 不一致")
-            if request.parameters.get("historical_tradability") is True and getattr(frame, "empty", False) and isinstance(attrs, Mapping) and attrs.get("daily_tradability_input"):
-                validated = frame
-            else:
-                validated = self._validate_bars(frame)
-            pagination_contract = market_pagination_contract_v3(
-                request.instrument_type or "",
-                provider_id,
-                upstream_source,
-            )
-            if (
-                pagination_contract is None
-                and provider_id == "hithink"
-                and request.instrument_type == "STOCK"
-                and upstream_source == HITHINK_STOCK_HISTORY_SOURCE
-            ):
-                pagination_contract = {
-                    "protocol": HITHINK_STOCK_SINGLE_RESPONSE_PROTOCOL_V1,
-                    "maximumRows": None,
-                }
-            attrs = getattr(validated, "attrs", None)
-            if pagination_contract is None or not isinstance(attrs, dict):
-                raise ProviderCallError("invalid_response", "来源缺少已知的完整窗口读取契约")
-            if provider_id == "tushare":
-                if self._current_market_v3_admission(route_key, exact_target) != admission:
-                    raise ProviderCallError("NO_ELIGIBLE_PROVIDER", "来源准入或凭据在读取期间发生变化")
-                try:
-                    market_pagination_proof_v3(
-                        validated, asset_type=request.instrument_type, provider=provider_id,
-                        upstream_source=upstream_source, expected_session_count=0,
-                        requested_start=request.start, requested_end=request.end,
-                    )
-                except MarketPaginationError as error:
-                    raise ProviderCallError(error.code, "来源分段传输证明无效") from None
-                return validated
-            pages_fetched = 1
-            if provider_id == "tencent" and upstream_source == "tencent":
-                retrieval = attrs.get("tencentDailyRetrieval")
-                partitions = retrieval.get("partitions") if isinstance(retrieval, dict) else None
-                if not isinstance(partitions, list) or not partitions:
-                    raise ProviderCallError("invalid_response", "腾讯日线缺少逐年传输证据")
-                pages_fetched = len(partitions)
-            attrs["thesis_ledger_v3_pagination"] = {
-                "status": "complete",
-                "pagesFetched": pages_fetched,
-                "continuationPending": False,
-                "requestedStart": request.start,
-                "requestedEnd": request.end,
-                **pagination_contract,
-            }
-            return validated
+            from src.services.thesis_ledger_exact_bar_execution import execute_exact_bar
+
+            return execute_exact_bar(self, request, route_key, effective_policy, provider_id, adapter, upstream_source)
 
         try:
             return self._execute_with_metadata(
@@ -1700,114 +1193,9 @@ class ThesisLedgerProviderRuntime:
                 diagnostics=exc.diagnostics,
             ) from exc
 
-    def market_route_catalog_v3(self) -> dict[str, Any]:
-        """Return exact source-pinned V3 routes and current provider admission."""
-        integrity = "complete"
-        registry = self.store.provider_registry()
-        if not isinstance(registry, list):
-            registry = []
-            integrity = "partial"
-
-        providers: dict[str, Mapping[str, Any]] = {}
-        ambiguous_providers: set[str] = set()
-        for item in registry:
-            if not isinstance(item, Mapping):
-                integrity = "partial"
-                continue
-            provider_value = item.get("providerId")
-            provider_id = provider_value.strip().lower() if isinstance(provider_value, str) else ""
-            if not provider_id:
-                integrity = "partial"
-                continue
-            if provider_id in providers:
-                ambiguous_providers.add(provider_id)
-                integrity = "partial"
-                continue
-            providers[provider_id] = item
-
-        entries: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        inventory = [
-            (key, target, False) for key, target in iter_market_v3_bar_adapters()
-        ]
-        inventory.extend(
-            (key, target, True) for key, target in iter_market_v3_gated_bar_adapters()
-        )
-        inventory.extend(iter_event_adapters())
-        inventory.extend(
-            (key, target, True) for key, target in iter_hithink_quote_routes()
-        )
-        inventory.extend(
-            (key, target, True) for key, target in iter_current_data_adapters()
-        )
-        for key, target, gated in inventory:
-            identity = json.dumps(
-                [key, target], ensure_ascii=True, sort_keys=True, separators=(",", ":")
-            )
-            if identity in seen:
-                integrity = "partial"
-                entries = []
-                break
-            seen.add(identity)
-
-            provider_id = target["providerId"]
-            provider = providers.get(provider_id)
-            if gated and provider is None:
-                continue
-            state = "not_admitted"
-            if provider is None or provider_id in ambiguous_providers:
-                integrity = "partial"
-            elif not self._catalog_manifest_matches(provider, key, target):
-                # A broad manifest drifted away from the concrete adapter inventory.
-                integrity = "partial"
-            elif provider.get("enabled") is False or provider.get("tombstone") is not None:
-                state = "not_admitted"
-            elif provider.get("enabled") is not True:
-                integrity = "partial"
-            elif provider.get("configured") is False:
-                state = "not_admitted"
-            elif provider.get("configured") is not True:
-                integrity = "partial"
-            elif provider.get("requiresCredential") is True:
-                credential_configured = provider.get("credentialConfigured")
-                if not isinstance(credential_configured, bool):
-                    integrity = "partial"
-                elif credential_configured:
-                    state = (
-                        "ready"
-                        if self._catalog_market_v3_admission_is_current(key, target, provider)
-                        else "not_admitted"
-                    )
-                else:
-                    state = "credential_missing"
-            elif provider.get("requiresCredential") is False:
-                if self._catalog_market_v3_admission_is_current(key, target, provider):
-                    # Ready means an exact, current admission exists for its
-                    # recorded scope. Data V3 checks that scope on every request.
-                    state = "ready"
-                else:
-                    state = "not_admitted"
-            else:
-                integrity = "partial"
-
-            entries.append({"key": key, "target": target, "state": state})
-
-        revision_input = json.dumps(
-            {"integrity": integrity, "entries": entries},
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        catalog_revision = int(hashlib.sha256(revision_input).hexdigest()[:13], 16) or 1
-        generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        return {
-            "contractVersion": 3,
-            "consumer": "thesis-ledger",
-            "catalogRevision": catalog_revision,
-            "generatedAt": generated_at,
-            "integrity": integrity,
-            "entries": entries,
-        }
+    def market_route_catalog_v3(self, *, event_admissions=False) -> dict[str, Any]:
+        from src.services.thesis_ledger_route_catalog import build_runtime_route_catalog
+        return build_runtime_route_catalog(self, event_admissions=event_admissions)
 
     _catalog_manifest_matches = staticmethod(catalog_manifest_matches_v3)
 
@@ -1818,13 +1206,16 @@ class ThesisLedgerProviderRuntime:
 
         capability = request.capability
         instrument_type = request.instrument_type or instrument_type_for_symbol(request.symbol)
+        reference_operation = reference_data_operation(request, ProviderCallError, self)
+        if reference_operation is not None:
+            return self._execute_request_with_boundary(request, capability, instrument_type, reference_operation)
         if capability == "REALTIME_QUOTE":
             provider_symbol = provider_symbol_for_contract(request.symbol)
 
             def operation(provider_id: str, adapter: Any, upstream_source: str | None = None) -> Any:
                 value = self._realtime_quote(
                     adapter, provider_id,
-                    request.symbol if provider_id == "hithink" else provider_symbol,
+                    request.symbol,
                     instrument_type, upstream_source,
                 )
                 if value is None:
@@ -1847,69 +1238,8 @@ class ThesisLedgerProviderRuntime:
                     "当前日线合同只支持 1d bars",
                     request,
                 )
-            provider_symbol = provider_symbol_for_contract(request.symbol)
-            days = request.limit or 90
-            adjustment = request.adjustment
-
             def operation(provider_id: str, adapter: Any, upstream_source: str | None = None) -> Any:
-                options: dict[str, Any] = {"days": days}
-                if adjustment is not None:
-                    options["adjustment"] = adjustment
-                if request.start is not None:
-                    options["start_date"] = request.start
-                if request.end is not None:
-                    options["end_date"] = request.end
-                source_method = getattr(adapter, "get_daily_data_for_source", None)
-                unsupported_adjustment = adjustment is not None and provider_id not in {
-                    "akshare",
-                    "tencent",
-                }
-                if provider_id == "tencent" and adjustment not in (None, "qfq", "none"):
-                    unsupported_adjustment = True
-                if provider_id == "tencent" and adjustment == "none":
-                    unsupported_adjustment = not (
-                        callable(source_method) and upstream_source == "tencent"
-                    )
-                if unsupported_adjustment:
-                    raise ProviderCallError(
-                        "unsupported_adjustment",
-                        f"{provider_id}/{upstream_source or provider_id} 未证明支持 adjustment={adjustment}",
-                    )
-                if callable(source_method) and upstream_source:
-                    frame = self._daily_frame(
-                        source_method(
-                            provider_symbol,
-                            upstream_source,
-                            **options,
-                            timeout_seconds=DAILY_BAR_TARGET_TIMEOUT_SECONDS,
-                        )
-                    )
-                elif provider_id == "tencent" and upstream_source == "tencent":
-                    frame = self._daily_frame(adapter.get_daily_data(provider_symbol, **options))
-                elif provider_id == "efinance" and upstream_source == "eastmoney":
-                    frame = self._daily_frame(adapter.get_daily_data(provider_symbol, **options))
-                elif upstream_source == provider_id:
-                    frame = self._daily_frame(adapter.get_daily_data(provider_symbol, **options))
-                elif upstream_source:
-                    raise ProviderCallError(
-                        "unsupported_source",
-                        f"{provider_id} 未提供 source={upstream_source} 的显式适配器",
-                    )
-                elif adjustment == "none":
-                    raw_method = getattr(adapter, "get_daily_data_v2_raw", None)
-                    if not callable(raw_method):
-                        raise ProviderCallError("unsupported", "Provider 不支持不复权日线")
-                    raw_options = {key: value for key, value in options.items() if key != "adjustment"}
-                    frame = self._daily_frame(raw_method(provider_symbol, **raw_options))
-                else:
-                    frame = self._daily_frame(adapter.get_daily_data(provider_symbol, **options))
-                attrs = getattr(frame, "attrs", None)
-                if isinstance(attrs, dict) and not attrs.get("upstream_source"):
-                    if provider_id == "tencent":
-                        attrs["upstream_source"] = "tencent"
-                    elif provider_id == "efinance":
-                        attrs["upstream_source"] = "eastmoney"
-                return self._validate_bars(frame)
+                raise ProviderCallError("unsupported_capability", "日线读取需要显式 V3 bar 目标")
 
             return self._execute_request_with_boundary(
                 request,
@@ -1919,14 +1249,9 @@ class ThesisLedgerProviderRuntime:
             )
 
         if capability == "FUND_NAV":
-            def latest_nav(provider_id: str, adapter: Any, _upstream_source=None) -> Any:
-                frame = self._validate_fund_nav(
-                    self._fund_nav_from_provider(provider_id, request.symbol, adapter)
-                )
-                try:
-                    return select_nav_rows(frame, latest_only=True)
-                except ValueError as exc:
-                    raise ProviderCallError("not_covered", str(exc)) from exc
+            from src.services.thesis_ledger_fund_nav_query import read_latest_nav
+            def latest_nav(provider_id: str, adapter: Any, upstream_source=None) -> Any:
+                return read_latest_nav(request, provider_id, adapter, upstream_source, ProviderCallError)
 
             return self._execute_request_with_boundary(
                 request,
@@ -1936,16 +1261,9 @@ class ThesisLedgerProviderRuntime:
             )
 
         if capability == "FUND_NAV_HISTORY":
-            def history_nav(provider_id: str, adapter: Any, _upstream_source=None) -> Any:
-                frame = self._validate_fund_nav_history(
-                    self._fund_nav_from_provider(provider_id, request.symbol, adapter)
-                )
-                try:
-                    return select_nav_rows(
-                        frame, start=request.start, end=request.end, limit=request.limit,
-                    )
-                except ValueError as exc:
-                    raise ProviderCallError("not_covered", str(exc)) from exc
+            from src.services.thesis_ledger_fund_nav_history_query import read_nav_history
+            def history_nav(provider_id: str, adapter: Any, upstream_source=None) -> Any:
+                return read_nav_history(request, provider_id, adapter, upstream_source, ProviderCallError)
 
             return self._execute_request_with_boundary(
                 request,
@@ -1955,13 +1273,13 @@ class ThesisLedgerProviderRuntime:
             )
 
         if capability == "FUND_HOLDINGS":
+            from .thesis_ledger_fund_holdings_query import read_holdings
             return self._execute_request_with_boundary(
                 request,
                 capability,
                 "MUTUAL_FUND",
-                lambda provider_id, adapter, _upstream_source=None: self._validate_fund_holdings(
-                    self._fund_holdings_from_provider(provider_id, request.symbol, adapter)
-                ),
+                lambda provider_id, adapter, upstream_source=None: read_holdings(
+                    request, provider_id, adapter, upstream_source, ProviderCallError),
             )
 
         if capability == "CHIP_SUMMARY":
@@ -1971,19 +1289,13 @@ class ThesisLedgerProviderRuntime:
                     "当前筹码合同只支持 STOCK 的 CHIP_SUMMARY",
                     request,
                 )
-            provider_symbol = provider_symbol_for_contract(request.symbol)
-
-            def operation(_provider_id: str, adapter: Any, _upstream_source: str | None = None) -> Any:
-                method = getattr(adapter, "get_chip_distribution", None)
-                if method is None:
-                    raise ProviderCallError("unsupported", "Provider 不支持筹码摘要")
-                return self._validate_chip_summary(method(provider_symbol))
+            from .thesis_ledger_chip_summary_query import read_chip
 
             return self._execute_request_with_boundary(
                 request,
                 capability,
                 instrument_type,
-                operation,
+                lambda provider, adapter, upstream=None: read_chip(request, provider, adapter, upstream, ProviderCallError),
             )
 
         raise ThesisLedgerGatewayError(
@@ -1993,129 +1305,16 @@ class ThesisLedgerProviderRuntime:
         )
 
     def _execute_request_with_boundary(
-        self,
-        request: ThesisLedgerDataRequest,
-        capability: str,
-        instrument_type: str,
-        operation: Callable[[str, Any], Any],
-        *,
-        budget_symbol: str | None = None,
-        request_id: str | None = None,
-    ) -> ProviderExecution:
-        """Execute the current data route and attach request identity."""
-        try:
-            effective = self.store.effective_policy_v3()
-            targets = select_current_data_targets(
-                effective, capability=capability, instrument_type=instrument_type,
-                symbol=request.symbol,
-            )
-            route_key = current_data_route_key(capability, instrument_type, request.symbol)
-            market_timezone = {
-                "CN": "Asia/Shanghai", "HK": "Asia/Hong_Kong", "US": "America/New_York",
-            }[route_key["market"]]
-            today = datetime.now(ZoneInfo(market_timezone)).date().isoformat()
-            date_from = request.start or today
-            date_to = request.end or today
-            scoped_targets = []
-            for provider_id, source, route_index in targets:
-                target = {"providerId": provider_id, "upstreamSource": source}
-                admission = self._current_market_v3_admission(
-                    route_key, target,
-                )
-                if admission and admission.get("admissionState") == "admitted" and route_admission_scope_applies(
-                    admission, symbol=request.symbol, date_from=date_from, date_to=date_to,
-                ):
-                    scoped_targets.append(RouteTarget(provider_id, source, route_index))
-            if not scoped_targets:
-                raise CurrentDataRouteError("not_admitted", "当前来源准入未覆盖请求标的或日期")
-            result = self._execute_with_metadata(
-                capability,
-                instrument_type,
-                operation,
-                budget_symbol=budget_symbol,
-                request_id=request_id or request.request_id,
-                symbol=request.symbol,
-                effective_policy_override=effective,
-                route_targets_override=scoped_targets,
-            )
-            current = self.store.effective_policy_v3()
-            if not isinstance(current, Mapping) or current.get("revision") != effective.get("revision"):
-                raise CurrentDataRouteError("not_admitted", "数据返回前当前策略已变更")
-            try:
-                current_targets = select_current_data_targets(
-                    current, capability=capability, instrument_type=instrument_type,
-                    symbol=request.symbol,
-                )
-            except CurrentDataRouteError as exc:
-                raise CurrentDataRouteError("not_admitted", "数据返回前目标已失效") from exc
-            if (result.provider, result.upstream_source) not in {
-                (provider_id, source) for provider_id, source, _index in current_targets
-            }:
-                raise CurrentDataRouteError("not_admitted", "数据返回前目标已失效")
-            admission = self._current_market_v3_admission(
-                route_key, {"providerId": result.provider,
-                            "upstreamSource": result.upstream_source},
-            )
-            if not admission or not route_admission_scope_applies(
-                admission, symbol=request.symbol, date_from=date_from, date_to=date_to,
-            ):
-                raise CurrentDataRouteError("not_admitted", "数据返回前准入已失效")
-            if capability in {"FUND_NAV", "FUND_NAV_HISTORY"}:
-                columns = set(getattr(result.value, "columns", []))
-                date_column = next(
-                    (column for column in ("净值日期", "日期", "date", "nav_date") if column in columns),
-                    None,
-                )
-                if date_column is None:
-                    raise CurrentDataRouteError("not_admitted", "基金净值缺少可核对的来源日期")
-                returned_dates = [
-                    str(row.get(date_column)).strip()[:10]
-                    for _, row in result.value.iterrows()
-                ]
-                if not returned_dates or not route_admission_scope_applies(
-                    admission, symbol=request.symbol,
-                    date_from=min(returned_dates), date_to=max(returned_dates),
-                ):
-                    raise CurrentDataRouteError("not_admitted", "基金净值返回日期超出来源准入范围")
-            return result
-        except ThesisLedgerGatewayError:
-            raise
-        except CurrentDataRouteError as exc:
-            if capability.upper() == "REALTIME_QUOTE":
-                _log_quote_event(
-                    stage="provider-selection", request_id=request_id or request.request_id,
-                    symbol=request.symbol, instrument_type=instrument_type,
-                    status="rejected", duration_ms=0.0,
-                    error_code=exc.code, providers=[],
-                )
-            raise ThesisLedgerGatewayError(exc.code, str(exc), request) from exc
-        except ProviderCallError as exc:
-            raise ThesisLedgerGatewayError(
-                exc.code,
-                str(exc),
-                request,
-                retryable=exc.retryable,
-                diagnostics=exc.diagnostics,
-            ) from exc
+        self, request, capability, instrument_type, operation,
+        *, budget_symbol=None, request_id=None,
+    ):
+        from src.services.thesis_ledger_current_data_execution import execute_current_data_request
 
-    @staticmethod
-    def _fund_nav_from_provider(provider_id: str, symbol: str, adapter: Any) -> Any:
-        """通过 Provider adapter 的兼容方法获取基金净值历史。
+        return execute_current_data_request(
+            self, request, capability, instrument_type, operation,
+            budget_symbol=budget_symbol, request_id=request_id,
+        )
 
-        Provider SDK 只允许出现在对应 adapter 内部。runtime 负责能力路由和
-        响应校验，不再根据 provider id 直接 import 或调用具体 SDK。
-        """
-        method = getattr(adapter, "get_fund_nav_history", None)
-        if method is None:
-            raise ProviderCallError("unsupported", f"{provider_id} 不支持基金净值")
-        return method(symbol.removesuffix(".OF"))
-
-    @staticmethod
-    def _fund_holdings_from_provider(provider_id: str, symbol: str, adapter: Any) -> Any:
-        method = getattr(adapter, "get_fund_holdings", None)
-        if method is None:
-            raise ProviderCallError("unsupported", f"{provider_id} 不支持基金持仓披露")
-        return method(symbol.removesuffix(".OF"))
 
     def smoke(
         self,
@@ -2125,108 +1324,12 @@ class ThesisLedgerProviderRuntime:
         credential_snapshot: ProviderCredentialSnapshot | None = None,
         draft_probe: bool | None = None,
     ) -> dict[str, Any]:
-        """Run one bounded, read-only representative call without changing policy."""
-        normalized_capability = capability.strip().upper()
-        instrument_type = (
-            "MUTUAL_FUND"
-            if normalized_capability in {"FUND_NAV", "FUND_NAV_HISTORY", "FUND_HOLDINGS"}
-            else "STOCK"
-        )
-        started = self.clock()
-        if draft_probe is None:
-            draft_probe = credential_snapshot is not None
-        circuit_key = f"thesis-ledger:{provider_id}:{normalized_capability}:{instrument_type}"
-        manifest = PROVIDER_MANIFESTS.get(provider_id, {})
-        sample_contract_symbol = (
-            "AAPL.US" if "US" in manifest.get("markets", ()) else "600519.SH"
-        )
-        sample_symbol = provider_symbol_for_contract(sample_contract_symbol)
+        from src.services.thesis_ledger_provider_smoke import smoke_provider
 
-        def record_failure(code: str) -> None:
-            if draft_probe:
-                return
-            self.store.record_health(
-                provider_id,
-                normalized_capability,
-                instrument_type,
-                state="degraded",
-                circuit=self.circuit.state(circuit_key, self.clock()),
-                error_code=code,
-            )
-
-        try:
-            adapter = self._adapter(
-                provider_id,
-                credential_snapshot,
-                cache=False,
-                probe=True,
-            )
-            if normalized_capability == "REALTIME_QUOTE":
-                value = self._realtime_quote(
-                    adapter,
-                    provider_id,
-                    sample_symbol,
-                )
-                if value is None or getattr(value, "price", None) is None:
-                    raise ProviderCallError("not_covered", "Provider 未返回代表性行情")
-            elif normalized_capability == "DAILY_BAR":
-                if provider_id in {"finnhub", "alphavantage"}:
-                    daily_data = adapter.get_daily_data(sample_symbol, days=5, strict=True)
-                else:
-                    daily_data = adapter.get_daily_data(sample_symbol, days=5)
-                frame = self._daily_frame(daily_data)
-                self._validate_bars(frame)
-            elif normalized_capability == "FUND_NAV":
-                value = self._fund_nav_from_provider(provider_id, "000001.OF", adapter)
-                self._validate_fund_nav(value)
-            elif normalized_capability == "FUND_NAV_HISTORY":
-                value = self._fund_nav_from_provider(provider_id, "000001.OF", adapter)
-                self._validate_fund_nav_history(value)
-            elif normalized_capability == "FUND_HOLDINGS":
-                value = self._fund_holdings_from_provider(provider_id, "000001.OF", adapter)
-                self._validate_fund_holdings(value)
-            elif normalized_capability == "CHIP_SUMMARY":
-                method = getattr(adapter, "get_chip_distribution", None)
-                if method is None:
-                    raise ProviderCallError("unsupported", "Provider 不支持筹码摘要")
-                self._validate_chip_summary(method(sample_symbol))
-            else:
-                raise ProviderCallError("unsupported", "Provider 不支持该 Capability")
-        except ProviderCallError as exc:
-            record_failure(exc.code)
-            raise
-        except (TimeoutError, ConnectionError, OSError) as exc:
-            code = classify_provider_exception(exc)
-            record_failure(code)
-            raise ProviderCallError(code, "Provider 暂时不可用", retryable=True) from exc
-        except Exception as exc:  # adapter boundary; never expose raw smoke errors.
-            code = classify_provider_exception(exc)
-            logger.warning(
-                "ThesisLedger Provider smoke failure provider=%s capability=%s code=%s",
-                provider_id,
-                normalized_capability,
-                code,
-            )
-            record_failure(code)
-            raise ProviderCallError(code, "Provider smoke 调用失败") from exc
-        elapsed_ms = max(0, int((self.clock() - started) * 1000))
-        if not draft_probe:
-            self.circuit.success(circuit_key)
-            self.store.record_health(
-                provider_id,
-                normalized_capability,
-                instrument_type,
-                state="healthy",
-                circuit="closed",
-                consecutive_failures=0,
-                latency_ms=elapsed_ms,
-            )
-        return {
-            "status": "healthy",
-            "attempted": True,
-            "readOnly": True,
-            "latencyMs": elapsed_ms,
-        }
+        return smoke_provider(
+            self, provider_id, capability,
+            credential_snapshot=credential_snapshot, draft_probe=draft_probe,
+        )
 
 
 @dataclass(frozen=True)

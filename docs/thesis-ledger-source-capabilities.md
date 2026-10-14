@@ -9,7 +9,9 @@
 | `hithink/fund-market-historical` | CN ETF / 1d | qfq | 已配置 API Key、来源启用、精确路由保存 |
 | `tencent/tencent` | CN ETF / 1d | none、qfq、hfq | 来源启用、精确路由保存 |
 
-上述四个条目取消人工窗口准入前置，日级状态从实际行情自动整理。HiThink qfq、腾讯 qfq/hfq 的真实普通回测和重放已验证，同口径整窗备用用于图表和固定快照归一化价格研究。原生量额语义未知时保持未知，只限制使用相应字段的规则。股票、实时报价、公司行动、严格 PIT 及下文其他能力分别按实际状态开放；历史静态清单不能覆盖本节当前结论。证据见[主仓当前验收](../../thesis-ledger/docs/tasks/evidence/2026-10-03-common-price-baseline.md)。
+上述四个条目取消人工窗口准入前置，日级状态从实际行情自动整理。HiThink qfq、腾讯 qfq/hfq 的真实普通回测和重放已验证，同口径整窗备用用于图表和固定快照归一化价格研究。原生量额语义未知时保持未知，只限制使用相应字段的规则。股票、公司行动、严格 PIT 及下文其他能力分别按实际状态开放；历史静态清单不能覆盖本节当前结论。证据见[主仓当前验收](../../thesis-ledger/docs/tasks/evidence/2026-10-03-common-price-baseline.md)。HiThink 页面 API Key 与环境备用的当前规则见[凭证与连接测试](thesis-ledger-hithink-credentials.md)。
+
+2026-10-06 续接：`tencent/tencent` 已实现 CN ETF 单标 REALTIME_QUOTE 基础路径，复用精确响应身份与原上游时间，量额返回 null/unknown；目录按配置显示 ready，保留策略前后复核。预研中 510300.SH/159516.SZ 的实际报价原文已通过新解析器重验。目标部署与路由启用结果由[主仓当前 Task](../../thesis-ledger/docs/tasks/2026-10-03-multi-source-remaining-acceptance.md)的 PR06～PR08 记录；本条不授予股票 Quote 或完整专业行情资格。其他来源的现行准入条件保持，专题见[基础 Quote](thesis-ledger-basic-quote.md)。
 
 ## 1. 判定口径
 
@@ -115,7 +117,7 @@ Spec §4.2 的五类能力范围（行情、基金、事件、基础、研究）
 | efinance / eastmoney | 同一 EastMoney HTTPS 历史净值分页 Reader | MUTUAL_FUND | FUND_NAV_HISTORY | 日期序列，来源可见时间未知 | 新建默认 RouteTarget，不改历史 alias | 旧/新/V1 最近 open 在本能力内共用健康与熔断；完整覆盖、修订与 G0-M 待验，不算独立备用 |
 | efinance / eastmoney | EastMoney 来源分类；与旧 alias 同调 Runtime `get_daily_data`，精确 URL 待核 | STOCK | DAILY_BAR | 1d / 无显式 adjustment | Bar 来源端数据，DSA 清洗；显式 adjustment 当前拒绝 | 旧/新/V1 在股票日线内共用健康与熔断；与 AKShare EastMoney 的独立性按真实请求核对，G0-M 待验 |
 | efinance / eastmoney | 与旧 alias 同一 Runtime `get_daily_data` | ETF | DAILY_BAR | 1d / 无显式 adjustment | 同上 | 本组旧/新/V1 健康与熔断共用，ETF 与股票隔离；单标覆盖、价格口径与 G0-M 待验，不得当独立备用 |
-| tencent / tencent | 腾讯直连；精确 V3 走 `newfqkline/get`，普通旧路径仍走 `fqkline/get`；同一腾讯上游 | STOCK | DAILY_BAR | 1d / none | 精确路径逐年读取 OHLCV 与响应第 8 位原生成交额；按锁定版 AKShare 的手/万元约定换算；股票未实探 | 缺字段、坏窗口或分段证据整窗拒绝；单位、许可与历史覆盖待 G0-M，旧路径不能充当精确证据 |
+| tencent / tencent | 腾讯直连；精确 V3 走 `newfqkline/get`，普通旧路径仍走 `fqkline/get`；同一腾讯上游 | STOCK | DAILY_BAR | 1d / none | 精确路径逐年读取 OHLCV 与响应第 8 位原生成交额；按锁定版 AKShare 的手/万元约定换算；股票未实探 | 缺字段、坏窗口或分段证据整窗拒绝；完整窗口边界见[周期窗口契约](specs/2026-10-05-tencent-period-window.md)；单位、许可与历史覆盖待 G0-M，旧路径不能充当精确证据 |
 | tencent / tencent | 同上，保持同一来源关系 | STOCK | DAILY_BAR | 1d / qfq | 同上；股票未实探 | 价格锚点与窗口待 G0-M；STOCK hfq 不登记 |
 | tencent / tencent | 同上，保持同一来源关系 | ETF | DAILY_BAR | 1d / none | `159516.SZ` 拆分事件短窗精确接口返回原生量额字段；`fqkline/get` 六字段旧响应仍缺额 | 精确路径保留逐年响应摘要；ETF 单位、历史覆盖、使用条款与准入待 G0-M |
 | tencent / tencent | 同上，保持同一来源关系 | ETF | DAILY_BAR | 1d / qfq | 同窗 qfq 价格与 raw 可不同，量额原文一致；不将金额由 qfq 价乘量推算 | qfq 锚点、覆盖和真实准入待 G0-M；hfq 另走独立适配器及准入 |
@@ -124,7 +126,8 @@ Spec §4.2 的五类能力范围（行情、基金、事件、基础、研究）
 | tushare / tushare | Tushare Pro daily；旧 Contract 未提供 adjustment 维度 | STOCK | DAILY_BAR | 1d / 股票精确 V3 尚未登记 | 来源响应原生；A 股成交量/成交额按 DSA 代码换算；requiresCredential=true | ThesisLedger/native Bar、选股；复权因子权限、单位、历史覆盖待 G0-M |
 | tushare / tushare | Tushare Pro fund_daily；Token 与实际 HTTP 地址绑定内部准入修订 | CN ETF | DAILY_BAR | 1d / none；日期分段每段最多 366 日、最多 32 段 | 原始日线，手转份、千元转元；独立日历覆盖校验 | ThesisLedger V3 Bar Reader；M24-b2 本地接线完成，M24-b3 真实权限/覆盖与 G0-M 待验收，默认未准入 |
 | tickflow / tickflow | TickFlow 官方 SDK quotes | CN STOCK | REALTIME_QUOTE | 采样时点、频率未知 | 来源行情经 DSA 字段标准化；requiresCredential=true，DSA 环境 API Key | ThesisLedger/native quote；Key、套餐、字段、授权未知 |
-| tickflow / tickflow | TickFlow 官方 SDK K-line，period=1d | CN STOCK | DAILY_BAR | 1d / Contract adjustment 未证明 | 成交量有手转股本地标准化；requiresCredential=true | ThesisLedger/native Bar；单位、套餐、范围、口径待 G0-M |
+| tickflow / tickflow | TickFlow完整服务官方 SDK K-line，period=1d | CN STOCK | DAILY_BAR | 1d / none、qfq、hfq既有精确映射 | V3精确路径保留量额原值；原Fetcher有手转股；requiresCredential=true | 原完整服务绑定/Key保持；真实账号/单位/套餐范围不由免费样本替代 |
+| tickflow-free / tickflow-free-history | 官方free-api端点，同一SDK/精确日线规范化 | 沪深A股 STOCK | DAILY_BAR | 1d / none、qfq、hfq；固定来源研究 | 当前股票元数据核验，K线请求绑定；原量额保留/单位unknown，无Key/自动重试 | 两证券六组及正常新Run/独立复算/新旧重放已过；调整锚点/历史PIT未知，不扩B股/基金/指数/北交所/实时/分钟；正式update.sh dsa固化及源哈希/新旧重放复验通过。见主仓TF-F |
 | pytdx / pytdx | 社区 pytdx / 行情服务器协议；不是官方 TdxAiData | CN STOCK | REALTIME_QUOTE | 采样时点、服务器状态未知 | 响应原生，DSA 做格式/字段标准化；内置 | native A 股回退、ThesisLedger quote；服务身份、单位和使用授权未知 |
 | pytdx / pytdx | 同上，保持同一来源关系 | CN STOCK | DAILY_BAR | 1d / adjustment 未知 | 行情服务器 K 线原生，DSA 字段标准化；内置 | Runtime 未证明 adjustment；窗口、标识、单位待 G0-M |
 | baostock / baostock | BaoStock 服务 | CN STOCK | DAILY_BAR | 1d / native 默认 adjustflag=2（前复权） | 服务响应由 DSA 映射到标准列；内置 | ThesisLedger/native Reader；Contract 无 adjustment 维度，上市历史/授权/目标窗口待核 |

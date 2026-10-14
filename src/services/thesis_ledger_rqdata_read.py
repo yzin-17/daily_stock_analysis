@@ -9,30 +9,34 @@ from src.services.provider_credential_revision import provider_credential_revisi
 from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
 
 
+class RqDataCredentialNotAdmitted(ValueError):
+    """账号或主密钥修订不再符合本次准入；不包含凭据原文。"""
+
+
 def read_rqdata_fund_event_with_credentials(
     kind, symbol, *, admitted_credential_revision, read_credentials, read_master_key,
-    timeout_seconds, **options,
+    timeout_seconds, build_factory=None, **options,
 ):
     """只把首次核验的不可变账号快照传给子进程；晚到数据不跨账号修订。"""
     if (not isinstance(admitted_credential_revision, str)
             or re.fullmatch(r'hmac-sha256-v1:[0-9a-f]{64}', admitted_credential_revision) is None):
-        raise ValueError('rqdata_credential_not_admitted')
+        raise RqDataCredentialNotAdmitted('rqdata_credential_not_admitted')
 
     def checked_snapshot():
         snapshot = read_credentials()
         if (not isinstance(snapshot, ProviderCredentialSnapshot) or snapshot.provider_id != 'rqdata'
                 or snapshot.method != 'username_password'):
-            raise ValueError('rqdata_credential_not_admitted')
+            raise RqDataCredentialNotAdmitted('rqdata_credential_not_admitted')
         version, key = read_master_key()
         if not isinstance(version, str) or not version or not isinstance(key, bytes) or not key:
-            raise ValueError('rqdata_credential_not_admitted')
+            raise RqDataCredentialNotAdmitted('rqdata_credential_not_admitted')
         revision = provider_credential_revision(snapshot, version, key)
         if revision is None or not hmac.compare_digest(revision, admitted_credential_revision):
-            raise ValueError('rqdata_credential_not_admitted')
+            raise RqDataCredentialNotAdmitted('rqdata_credential_not_admitted')
         return snapshot
 
     snapshot = checked_snapshot()
-    factory = RqDataClientFactory(snapshot.values['username'], snapshot.values['password'])
+    factory = build_factory(snapshot) if build_factory else RqDataClientFactory(snapshot.values['username'], snapshot.values['password'])
     result = read_rqdata_fund_event_isolated(factory, kind, symbol, timeout_seconds=timeout_seconds, **options)
     checked_snapshot()
     return result

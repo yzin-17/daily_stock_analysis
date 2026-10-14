@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "symbol": "00147.HK",
+  "sourceSymbol": "0147.HK",
+  "market": "HK",
+  "currency": "HKD",
+  "timezone": "Asia/Hong_Kong",
+  "upstreamSource": "yahoo-hk-share-window",
+  "coverage": {"start": "2025-08-06", "end": "2025-08-11"},
+  "rawFile": "hk00147-share-window.raw.json",
+  "rawSha256": "926d9b9a9da30c0fb31babbc5cf22aebc8a75f1a50ec56a1e83252ef753096b7",
+  "rawBytes": 1623,
+  "observedAt": "2026-10-07T18:50:59.592746+00:00",
+  "sourceUrl": "https://query1.finance.yahoo.com/v8/finance/chart/0147.HK?period1=1754438400&period2=1754956800&interval=1d&events=div%2Csplits%2CcapitalGains",
+  "eventObservation": {
+    "events": {}, "observations": 290,
+    "observedAt": "2026-10-08T04:53:19.095084+00:00",
+    "sha256": "d04f10bac6a7a1acd7ba2b9ee6fbfc6fea05f4c6609e78ec1abb5d709088b50b",
+    "description": "从窗口起至实际观察时点未返回事件，不声明全历史公司行动覆盖完整。"
+  },
+  "lotReference": {
+    "sharesPerLot": "5000", "provider": "webull-current-quote",
+    "sourceUrl": "https://www.webull.hk/quote/hkg-00147",
+    "observedAt": "2026-10-08T08:57:12.937458+00:00",
+    "sha256": "2d51730936182094b6fb9898b711abe7979810e845c8f6a656fa26a9377f55cc",
+    "historicalChanges": "unverified",
+    "description": "当前页面及响应lotSize为5000，仅作可覆盖的研究默认，不回填历史整手。"
+  },
+  "priceGrid": {
+    "minimumTick": "0.001", "representationTolerance": "0.00000005",
+    "effectiveFrom": "2025-08-04",
+    "sourceUrl": "https://www.hkex.com.hk/-/media/HKEX-Market/Services/Circulars-and-Notices/Participant-and-Members-Circulars/SEHK/2025/030_25_SEHK_Reduction-of-minimum-spreads_e.pdf",
+    "observedAt": "2026-10-08T05:00:15.852017+00:00",
+    "sha256": "ea10fc5f105dc110dd047d910056e8d68506f48a7efba291cf63d734d78a5a3e",
+    "description": "只支持本窗口0.01至0.50价位；不高于0.25用0.001，超过0.25用0.005。市场单采用已核对Bar价格，最小坐标网格为0.001。"
+  },
+  "description": "已保存的港股每股价格有界窗口；08-07零量观察不可成交，上市日与日级状态保持未知。"
+}

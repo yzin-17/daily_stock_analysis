@@ -39,10 +39,10 @@ END = "2026-05-20"
 TEST_API_KEY = "synthetic-current-hithink-key"
 
 
-def _snapshot(api_key: str) -> ProviderCredentialSnapshot:
+def _snapshot(api_key: str, source="environment") -> ProviderCredentialSnapshot:
     return ProviderCredentialSnapshot.create(
         "hithink",
-        "environment",
+        source,
         "api_key",
         {"apiKey": api_key} if api_key else {},
         config_version=0,
@@ -121,7 +121,7 @@ class _AdmissionStore:
             if self.on_second_snapshot:
                 self.on_second_snapshot()
             if self.second_snapshot is not None:
-                return self.second_snapshot
+                self.snapshot = self.second_snapshot
         return self.snapshot
 
     def get_route_admission_v3(self, *, key, target):
@@ -162,11 +162,11 @@ def _runtime(monkeypatch, store):
     runtime = ThesisLedgerProviderRuntime(store)
     calls = []
 
-    def fake_hithink_fetch(request, *, credential_snapshot=None):
-        calls.append((request, credential_snapshot))
+    def fake_hithink_fetch(request, snapshot, timeout_seconds=4.5):
+        calls.append((request, snapshot))
         return _frame()
 
-    monkeypatch.setattr(runtime, "_fetch_hithink_etf_bars", fake_hithink_fetch)
+    monkeypatch.setattr("data_provider.hithink_etf_capability.read_full_etf", fake_hithink_fetch)
     monkeypatch.setattr(runtime, "_validate_bars", lambda frame: frame)
     return runtime, calls
 
@@ -179,7 +179,8 @@ def _execute(runtime):
     )
 
 
-def test_hithink_fetch_projects_only_reviewed_native_units_without_conversion(monkeypatch):
+@pytest.mark.parametrize("source", ["environment", "control"])
+def test_hithink_fetch_projects_only_reviewed_native_units_without_conversion(monkeypatch, source):
     import src.services.thesis_ledger_hithink_etf as hithink_etf
 
     series = HiThinkETFBarSeries(
@@ -196,9 +197,8 @@ def test_hithink_fetch_projects_only_reviewed_native_units_without_conversion(mo
     monkeypatch.setattr(hithink_etf, "fetch_hithink_etf_daily_bars", lambda **_kwargs: series)
     runtime = ThesisLedgerProviderRuntime(store=object())
 
-    frame = runtime._fetch_hithink_etf_bars(
-        _request(), credential_snapshot=_snapshot(TEST_API_KEY)
-    )
+    from data_provider.hithink_etf_capability import read_full_etf
+    frame = read_full_etf(_request(), _snapshot(TEST_API_KEY, source))
 
     assert frame.attrs["hithink_etf_field_units"] == hithink_etf_field_contract(
         symbol=SYMBOL, start=START, end=END,
@@ -287,9 +287,10 @@ def test_hithink_basic_catalog_and_data_use_current_credential_without_admission
     assert execution.provider == "hithink"
     assert execution.route_index == 0
     assert len(calls) == 1
-    assert calls[0][0] == _request()
+    from src.services.thesis_ledger_capability_contracts import DailyQuery
+    assert calls[0][0] == DailyQuery.from_request(_request())
     assert calls[0][1] is snapshot
-    assert store.snapshot_reads == catalog_snapshot_reads + 1
+    assert store.snapshot_reads == catalog_snapshot_reads + 2
     assert store.admission_reads == catalog_admission_reads
 
 
@@ -338,7 +339,7 @@ def test_hithink_basic_data_uses_rotated_key_without_manual_readmission(
     assert runtime._catalog_market_v3_admission_is_current(ROUTE_KEY, TARGET, PROVIDER_MANIFESTS["hithink"])
     execution = _execute(runtime)
     assert execution.provider == "hithink"
-    assert store.snapshot_reads == 2
+    assert store.snapshot_reads == 3
     assert store.admission_reads == 0
     assert len(calls) == 1
     expected_snapshot = rotated_snapshot if rotation == "api_key" else initial_snapshot

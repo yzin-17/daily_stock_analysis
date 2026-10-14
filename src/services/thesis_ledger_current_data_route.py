@@ -4,26 +4,22 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 
 
 # Each entry names the source actually selected by the quote adapter. Provider
 # manifest aliases alone do not establish an executable exact source.
-_DATA_ADAPTERS = {
-    ("CN", "STOCK", "REALTIME_QUOTE", "akshare", "eastmoney"): ("akshare-stock-em-v1", "akshare-stock-spot-em-v1"),
-    ("CN", "STOCK", "REALTIME_QUOTE", "akshare", "sina"): ("akshare-stock-sina-v1", "akshare-stock-spot-sina-v1"),
-    ("CN", "STOCK", "REALTIME_QUOTE", "akshare", "tencent"): ("akshare-stock-tencent-v1", "akshare-stock-spot-tencent-v1"),
-    ("CN", "STOCK", "REALTIME_QUOTE", "efinance", "eastmoney"): ("efinance-stock-em-v1", "efinance-stock-quote-em-v1"),
-    ("CN", "ETF", "REALTIME_QUOTE", "efinance", "eastmoney"): ("efinance-etf-single-em-v1", "efinance-snapshot-em-v1"),
-    ("CN", "STOCK", "REALTIME_QUOTE", "pytdx", "pytdx"): ("pytdx-stock-quote-v1", "pytdx-direct-v1"),
-    ("CN", "STOCK", "REALTIME_QUOTE", "yfinance", "yfinance"): ("yfinance-stock-quote-v1", "yfinance-direct-v1"),
-    ("CN", "ETF", "REALTIME_QUOTE", "yfinance", "yfinance"): ("yfinance-etf-quote-v1", "yfinance-direct-v1"),
-    ("CN", "MUTUAL_FUND", "FUND_NAV", "akshare", "eastmoney"): ("akshare-fund-nav-em-v1", "akshare-fund-open-info-em-v1"),
-    ("CN", "MUTUAL_FUND", "FUND_NAV", "efinance", "eastmoney"): ("efinance-fund-nav-em-v1", "efinance-fund-nav-em-v1"),
-    ("CN", "MUTUAL_FUND", "FUND_NAV_HISTORY", "akshare", "eastmoney"): ("akshare-fund-nav-em-v1", "akshare-fund-open-info-em-v1"),
-    ("CN", "MUTUAL_FUND", "FUND_NAV_HISTORY", "efinance", "eastmoney"): ("efinance-fund-nav-raw-v1", "eastmoney-fund-nav-raw-v1"),
-    ("CN", "MUTUAL_FUND", "FUND_HOLDINGS", "akshare", "eastmoney"): ("akshare-fund-holdings-em-v1", "akshare-fund-portfolio-em-v1"),
-    ("CN", "STOCK", "CHIP_SUMMARY", "akshare", "eastmoney"): ("akshare-stock-chip-em-v1", "akshare-stock-cyq-em-v1"),
-}
+_DATA_ADAPTERS = {}
+
+from src.services.thesis_ledger_multimarket_rules import SOURCES
+
+for (market, capability, provider, source), filename in SOURCES.items():
+    if CAPABILITY_SOURCES.resolve({'kind':'data','market':market,'assetType':'STOCK','capability':capability},
+                                  {'providerId':provider,'upstreamSource':source}) is not None:
+        continue
+    _DATA_ADAPTERS[(market, "STOCK", capability, provider, source)] = (
+        "bounded-multimarket-rules-adapter-v1", filename + ":v1",
+    )
 
 
 def current_data_adapter_revisions(
@@ -31,6 +27,12 @@ def current_data_adapter_revisions(
 ) -> dict[str, str] | None:
     if key.get("kind") != "data":
         return None
+    binding = CAPABILITY_SOURCES.resolve(key, target)
+    if binding is not None:
+        if getattr(binding, 'execution_domain', 'current-data') == 'event':
+            return None
+        return {"adapterRevision": binding.adapter_revision, "sourceRevision": binding.source_revision,
+                "credentialRevision": "not-required"}
     identity = (
         key.get("market"), key.get("assetType"), key.get("capability"),
         target.get("providerId"), target.get("upstreamSource"),
@@ -46,6 +48,9 @@ def current_data_adapter_revisions(
 
 
 def iter_current_data_adapters():
+    for key, target, binding in CAPABILITY_SOURCES.routes():
+        if key["kind"] == "data" and getattr(binding, 'execution_domain', 'current-data') != 'event':
+            yield key, target
     for market, asset_type, capability, provider_id, source in sorted(_DATA_ADAPTERS):
         yield (
             {"kind": "data", "market": market, "assetType": asset_type,

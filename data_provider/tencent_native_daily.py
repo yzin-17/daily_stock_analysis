@@ -20,10 +20,10 @@ from .base import DataFetchError
 TENCENT_NATIVE_DAILY_URL = (
     "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get"
 )
-TENCENT_NATIVE_DAILY_PROTOCOL = "tencent-newfqkline-year-partitions-v2"
+TENCENT_NATIVE_DAILY_PROTOCOL = "tencent-newfqkline-year-partitions-v3"
 MAX_RESPONSE_BYTES = 1_048_576
-MAX_PARTITIONS = 8
-MAX_ROWS = 800
+MAX_PARTITIONS = 16
+MAX_ROWS = 3650
 MAX_ROWS_PER_RESPONSE = 640
 
 
@@ -74,6 +74,10 @@ def _parse_response(
     key = {"none": "day", "qfq": "qfqday", "hfq": "hfqday"}.get(adjustment)
     if key is None:
         raise DataFetchError("腾讯原生日线复权口径非法")
+    if isinstance(body, dict) and key not in body and body.get("day") == [] \
+            and not any(basis in body for basis in ("qfqday", "hfqday")):
+        # 上游对尚无历史的年份仅返回空原生数组；保留零事实，不转换另一口径。
+        return []
     if not isinstance(body, dict) or not isinstance(body.get(key), list):
         raise DataFetchError("腾讯原生日线响应口径或行结构非法")
     raw_rows = body[key]
@@ -182,7 +186,9 @@ def fetch_tencent_native_daily(
     revision = sha256(json.dumps(
         retrieval_parts, sort_keys=True, separators=(",", ":"),
     ).encode("utf-8")).hexdigest()
-    return pd.DataFrame(all_rows), {
+    return pd.DataFrame(all_rows, columns=[
+        "date", "open", "close", "high", "low", "volume", "amount",
+    ]), {
         "endpoint": "newfqkline/get",
         "adjustment": adjustment,
         "partitionComplete": True,

@@ -10,23 +10,27 @@ from src.services.thesis_ledger_control import _encrypt_secret
 
 
 def build_page_oauth(
-    snapshot: ProviderCredentialSnapshot, database_path: str, *, builder_factory=sdk_oauth_builder
+    snapshot: ProviderCredentialSnapshot, database_path: str, *, builder_factory=sdk_oauth_builder, read_only=False
 ):
     if (
         snapshot.provider_id != "longbridge"
-        or snapshot.source != "control"
+        or snapshot.source not in {"control", "environment"}
         or snapshot.method != "oauth"
     ):
         raise OAuthStateError("OAUTH_CREDENTIAL_INVALID")
     client_id = snapshot.values.get("clientId", "")
     token_json = snapshot.values.get("tokenJson", "")
     validate_oauth_token(client_id, token_json)
-    repository = ProviderOAuthStore(database_path, encrypt=_encrypt_secret)
+    repository = None if read_only or snapshot.source == "environment" else ProviderOAuthStore(database_path, encrypt=_encrypt_secret)
     expected_version = [snapshot.credential_version]
     lock = threading.Lock()
 
     def save(token: str):
+        if read_only or snapshot.source == "environment":
+            validate_oauth_token(client_id, token)
+            return
         with lock:
+            assert repository is not None
             expected_version[0] = repository.save_refreshed_token(
                 client_id, token, expected_version[0]
             )

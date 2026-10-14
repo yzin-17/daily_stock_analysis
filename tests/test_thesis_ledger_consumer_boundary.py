@@ -58,8 +58,8 @@ def test_consumer_facade_has_no_native_manager_or_provider_sdk_bypass():
     assert not violations, "consumer facade 存在越过 gateway 的调用: " + ", ".join(violations)
 
 
-def test_provider_runtime_delegates_fund_nav_to_adapter_compatibility_method():
-    """Fund NAV SDK 调用必须通过 adapter 的兼容方法进入 runtime。"""
+def test_standard_fund_nav_handler_delegates_sdk_read_only_to_source_adapter():
+    """Fund NAV 数据通过来源 SDK 接缝转换为标准模型。"""
 
     class _Adapter:
         def __init__(self) -> None:
@@ -67,17 +67,18 @@ def test_provider_runtime_delegates_fund_nav_to_adapter_compatibility_method():
 
         def get_fund_nav_history(self, fund_code: str):
             self.calls.append(fund_code)
-            return "fund-nav-frame"
+            import pandas as pd
+            return pd.DataFrame({"日期": ["2026-01-01"], "单位净值": [1.2]})
 
     adapter = _Adapter()
 
-    result = ThesisLedgerProviderRuntime._fund_nav_from_provider(
-        "akshare",
-        "000001.OF",
-        adapter,
-    )
+    from src.services.thesis_ledger_fund_nav_query import read_latest_nav
+    from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest, ProviderCallError
+    result = read_latest_nav(ThesisLedgerDataRequest('FUND_NAV', '000001.OF'),
+                             'akshare', adapter, 'eastmoney', ProviderCallError)
 
-    assert result == "fund-nav-frame"
+    assert result.point.unit_nav == 1.2
+    assert result.symbol == "000001.OF"
     assert adapter.calls == ["000001"]
 
 

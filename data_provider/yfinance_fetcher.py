@@ -791,19 +791,11 @@ class YfinanceFetcher(BaseFetcher):
             logger.warning(f"[Yfinance] 获取美股指数 {user_code} 实时行情失败: {e}")
             return None
 
-    def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
-        """
-        获取美股/美股指数实时行情数据
-
-        支持美股股票（AAPL、TSLA）和美股指数（SPX、DJI 等）。
-        数据来源：yfinance Ticker.info
-
-        Args:
-            stock_code: 美股代码或指数代码，如 'AMD', 'AAPL', 'SPX', 'DJI'
-
-        Returns:
-            UnifiedRealtimeQuote 对象，获取失败返回 None
-        """
+    def get_realtime_quote(self, stock_code: str, *, strict_source: bool = False, instrument_type: Optional[str] = None) -> Optional[UnifiedRealtimeQuote]:
+        """读取报价；精确模式固定 Yahoo 单标响应，字段和身份由独立读取器核验。"""
+        if strict_source:
+            from data_provider.exact_foreign_quotes import yahoo_quote
+            return yahoo_quote(self, stock_code, instrument_type)
         import yfinance as yf
 
         # 美股指数：使用映射（SPX -> ^GSPC）

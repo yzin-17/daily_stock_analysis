@@ -1,6 +1,33 @@
 """精确东财日线的原生字段契约；未知单位不由其他资产推断。"""
 
 from typing import Any
+from collections.abc import Mapping
+
+from src.services.thesis_ledger_daily_units_contract import DailyFieldUnits
+
+
+def project_public_units(context):
+    contract = context.metadata.get('native_daily_contract')
+    if contract is None:
+        return None
+    key = context.key
+    stock = key['assetType'] == 'STOCK'
+    expected = {
+        'contractVersion': 'akshare-eastmoney-native-fields-v1',
+        'providerId': 'akshare', 'upstreamSource': 'eastmoney',
+        'independentSourceId': 'eastmoney',
+        'assetType': key['assetType'], 'adjustment': key['adjustment'],
+        'nativeAdjust': '' if key['adjustment'] == 'none' else key['adjustment'],
+        'endpoint': 'stock_zh_a_hist' if stock else 'fund_etf_hist_em',
+        'volumeUnit': 'hand' if stock else 'unknown',
+        'amountUnit': 'CNY' if stock else 'unknown',
+        'volumeAdjustment': 'unknown',
+    }
+    if (not isinstance(contract, Mapping)
+            or any(contract.get(name) != value for name, value in expected.items())
+            or contract.get('valuesConverted') is not False):
+        raise ValueError('invalid native field contract')
+    return DailyFieldUnits(volume=contract['volumeUnit'], amount=contract['amountUnit'])
 
 
 def annotate_exact_daily_contract(frame: Any, instrument_kind: str, source: str, adjustment: str) -> Any:

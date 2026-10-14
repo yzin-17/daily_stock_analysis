@@ -1,0 +1,106 @@
+{
+  "market": "HK",
+  "symbol": "00147.HK",
+  "upstreamSource": "hk-stock-public-fees",
+  "datasetId": "hk-00147-public-fees-2025-08-v1",
+  "coverage": {
+    "start": "2025-08-06",
+    "end": "2025-08-11"
+  },
+  "exchange": "XHKG",
+  "tradingMethod": "exchangeTrading",
+  "calculationSettings": "executionModel",
+  "coverageDescription": "本费用来源提供港股印花税、港交所交易费、SFC及AFRC交易征费。印花税每笔整港元进位，其余各费项分别按显式两位四舍五入模型计算；计费基数为成交额，数量口径与券商成本由已选执行模型决定。CCASS转嫁及其他未选费用不在本来源范围，非完整账单。",
+  "segments": [
+    {
+      "range": {
+        "start": "2025-08-06",
+        "endExclusive": "2025-08-12"
+      },
+      "charges": [
+        {
+          "code": "handlingFee",
+          "side": "both",
+          "currency": "HKD",
+          "rate": "0.0000565",
+          "basis": "turnover",
+          "sourceDocumentIds": [
+            "hkex-086-2022"
+          ]
+        },
+        {
+          "code": "stampDuty",
+          "side": "both",
+          "currency": "HKD",
+          "rate": "0.001",
+          "basis": "turnover",
+          "amountRounding": {
+            "mode": "ceil",
+            "decimalPlaces": 0
+          },
+          "sourceDocumentIds": [
+            "hkex-stamp-158-2023"
+          ]
+        },
+        {
+          "code": "regulatoryFee",
+          "side": "both",
+          "currency": "HKD",
+          "rate": "0.000027",
+          "basis": "turnover",
+          "sourceDocumentIds": [
+            "hkex-sfc-053-2014"
+          ]
+        },
+        {
+          "code": "afrcLevy",
+          "side": "both",
+          "currency": "HKD",
+          "rate": "0.0000015",
+          "basis": "turnover",
+          "sourceDocumentIds": [
+            "hkex-frc-086-2021"
+          ]
+        }
+      ]
+    }
+  ],
+  "sourceDocuments": [
+    {
+      "id": "hkex-086-2022",
+      "title": "港交所交易费调整通告 LSD/086/2022",
+      "url": "https://www.hkex.com.hk/-/media/HKEX-Market/Services/Circulars-and-Notices/Participant-and-Members-Circulars/SEHK/2022/086_22_SEHK_OP_Trading-Fee_e.pdf",
+      "publishedDate": "2022-11-14",
+      "kind": "officialPublication",
+      "sha256": "ebf57bb5b3041ec0ae7bc209b07a22517acce0d3904c0dee12c4a2fdf0efbd1d",
+      "observedAt": "2026-10-07T08:12:18.131611+00:00"
+    },
+    {
+      "id": "hkex-stamp-158-2023",
+      "title": "港股印花税自2023-11-17降为0.1%的通告",
+      "url": "https://www.hkex.com.hk/-/media/HKEX-Market/Services/Circulars-and-Notices/Participant-and-Members-Circulars/SEHK/2023/ce_SEHK_CT_158_2023.pdf",
+      "publishedDate": "2023-11-15",
+      "kind": "officialPublication",
+      "sha256": "c3810abf83dd53b22f6f58a9301525a01b80bb922e52f88543e411b2f90689d3",
+      "observedAt": "2026-10-07T14:10:45.573411+00:00"
+    },
+    {
+      "id": "hkex-sfc-053-2014",
+      "title": "SFC交易征费自2014-11-01降为0.0027%的通告",
+      "url": "https://www.hkex.com.hk/-/media/hkex-market/services/circulars-and-notices/participant-and-members-circulars/sehk/2014/ct05314b",
+      "publishedDate": "2014-10-20",
+      "kind": "officialPublication",
+      "sha256": "5635f20beba7574dae3a7847c7e2ecfe0767c669eaab90af8776c072feec6a06",
+      "observedAt": "2026-10-07T14:10:46.732896+00:00"
+    },
+    {
+      "id": "hkex-frc-086-2021",
+      "title": "FRC交易征费自2022-01-01按0.00015%独立计算的通告",
+      "url": "https://www.hkex.com.hk/-/media/HKEX-Market/Services/Circulars-and-Notices/Participant-and-Members-Circulars/SEHK/2021/ce_SEHK_CT_086_2021.pdf",
+      "publishedDate": "2021-06-28",
+      "kind": "officialPublication",
+      "sha256": "7757088a8e24e912ccdbeed7964a226143bd648d7d68bf20944b817017fa8079",
+      "observedAt": "2026-10-07T14:10:47.703022+00:00"
+    }
+  ]
+}

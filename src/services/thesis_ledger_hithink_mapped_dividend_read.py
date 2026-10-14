@@ -42,7 +42,7 @@ def _checked_snapshot(read_credentials, read_master_key, admitted_revision):
     try:
         original = read_credentials()
         if (not isinstance(original, ProviderCredentialSnapshot) or original.provider_id != "hithink"
-                or original.source != "environment" or original.method != "api_key"):
+                or original.source not in {"environment", "control"} or original.method != "api_key"):
             raise ValueError()
         snapshot = ProviderCredentialSnapshot.create(
             original.provider_id, original.source, original.method, original.values,

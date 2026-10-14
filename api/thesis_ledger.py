@@ -15,12 +15,11 @@ import json
 import uuid
 import re
 from decimal import Decimal
-from contextvars import ContextVar
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Mapping, Optional
+from typing import Any, Literal, Mapping, Optional
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from api.thesis_ledger_source_basis import native_field_units, native_source_basis
 from api.thesis_ledger_source_identity import upstream_source as _upstream_source
@@ -35,29 +34,27 @@ from src.services.provider_credentials import CredentialValue, merge_credential_
 from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
 from src.services.thesis_ledger_dependency_facts import (
     DependencyFactError,
-    calendar_fact,
-    fixture_calendar,
     parse_data_as_of,
     response as dependency_response,
     instrument_facts_response,
-    validate_cn_stock,
-    validate_calendar_range,
 )
+from src.services.thesis_ledger_reference_identity import validate_instrument_request
 from src.services.thesis_ledger_market_v3_facts import (
     canonical_market_coverage_proof_v3,
     market_calendar_evidence_v3,
-    market_coverage_context_v3,
 )
+from src.services.thesis_ledger_research_calendar import research_market_coverage_context
 
-CONTRACT_VERSION = 3
+from api.thesis_ledger_auth import (
+    CONTRACT_VERSION as CONTRACT_VERSION, _error, _request_id_context, require_contract_token, require_control_token,
+)
 PROVIDER_ID = "akshare"
 ENGINE_VERSION = "dsa-thesis-ledger-v1"
 LOCAL_FIXTURE_VERSION = "dsa-thesis-ledger-fixture-v1"
 MARKET_DATA_V3_METHOD_VERSION = "dsa-market-bars-v3-native-source-v1"
-MARKET_DATA_V3_SUPPORTED_PROVIDER_IDS = frozenset({"akshare", "tencent", "hithink", "tushare"})
+from src.services.thesis_ledger_market_v3_adapters import market_v3_bar_provider_ids, MARKET_DATA_V3_SUPPORTED_PROVIDER_IDS
 FX_CURRENCIES = {"CNY", "HKD", "USD"}
 FX_MAX_AGE_DAYS = 7
-_request_id_context: ContextVar[str | None] = ContextVar("thesis_ledger_request_id", default=None)
 logger = logging.getLogger(__name__)
 
 router_v3 = APIRouter(
@@ -65,55 +62,11 @@ router_v3 = APIRouter(
     tags=["ThesisLedger Market Contract V3"],
 )
 
-_MARKET_DATA_V3_ERROR_MESSAGES = {
-    "unsupported_data_contract_version": "不支持请求的数据契约版本",
-    "unsupported_price_basis": "来源不支持请求的价格口径",
-    "insufficient_coverage": "请求区间的数据覆盖不足",
-    "upstream_failure": "行情上游暂时不可用",
-    "invalid_response": "行情上游响应格式无效",
-}
+from api.thesis_ledger_reference_data import build_reference_data_router
+router_v3.include_router(build_reference_data_router())
 
-
-def _error(code: str, message: str, status_code: int, request_id: str | None = None) -> None:
-    stable_request_id = request_id or _request_id_context.get() or str(uuid.uuid4())
-    raise HTTPException(
-        status_code=status_code,
-        detail={
-            "contractVersion": CONTRACT_VERSION,
-            "code": code,
-            "message": message,
-            "requestId": stable_request_id,
-            "diagnosticId": stable_request_id,
-        },
-    )
-
-
-def require_contract_token(
-    request: Request,
-    authorization: Optional[str] = Header(default=None),
-) -> None:
-    """校验 ThesisLedger 专用 token，不依赖 DSA 管理员 session。"""
-    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
-    _request_id_context.set(request_id)
-    expected = os.getenv("THESIS_LEDGER_DSA_TOKEN", "").strip()
-    if not expected:
-        _error("service_misconfigured", "THESIS_LEDGER_DSA_TOKEN 未配置", 503, request_id)
-    if authorization != f"Bearer {expected}":
-        _error("unauthorized", "需要有效的 ThesisLedger DSA Bearer Token", 401, request_id)
-
-
-def require_control_token(
-    request: Request,
-    authorization: Optional[str] = Header(default=None),
-) -> None:
-    """校验独立 Control Token；客户端永远不应获得该 token。"""
-    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
-    _request_id_context.set(request_id)
-    expected = os.getenv("THESIS_LEDGER_CONTROL_TOKEN", "").strip()
-    if not expected:
-        _error("service_misconfigured", "THESIS_LEDGER_CONTROL_TOKEN 未配置", 503, request_id)
-    if authorization != f"Bearer {expected}":
-        _error("unauthorized", "需要有效的 ThesisLedger Control Token", 401, request_id)
+from src.services.thesis_ledger_market_errors_v3 import market_runtime_error
+from api.thesis_ledger_market_errors import market_data_error_v3 as _market_data_v3_error
 
 
 def _control_store() -> ThesisLedgerControlStore:
@@ -601,50 +554,32 @@ def _real_fx_rates(base_currency: str, currencies: list[str], as_of: date) -> di
 
 
 def _real_fund_nav(symbol: str, request_id: str | None = None) -> dict[str, Any]:
+    from pydantic import ValidationError
+    from src.services.thesis_ledger_fund_nav_contract_v1 import LatestNavResult
     canonical = _canonical_fund_symbol(symbol)
     request_id = request_id or _request_id_context.get()
     try:
         from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
-
-        gateway_result = get_thesis_ledger_data_gateway().fund_nav(
-            canonical,
-            request_id=request_id,
-        )
-        frame = gateway_result.data
-        provider = gateway_result.provider
-        fallback_used = gateway_result.fallback_used
+        gateway_result = get_thesis_ledger_data_gateway().fund_nav(canonical, request_id=request_id)
     except Exception as exc:  # noqa: BLE001 - gateway maps provider failures to diagnostics.
-        _data_gateway_error(
-            exc,
-            "基金单位净值暂时不可用",
-            no_eligible_message="当前策略没有可用的基金净值 Provider",
-        )
-    if frame is None or getattr(frame, "empty", True):
-        _error("upstream_unavailable", f"没有 {canonical} 的单位净值数据", 503)
-
-    date_columns = ("净值日期", "日期", "date", "nav_date")
-    nav_columns = ("单位净值", "单位净值(元)", "unit_nav", "nav")
-    date_column = next((column for column in date_columns if column in frame.columns), None)
-    nav_column = next((column for column in nav_columns if column in frame.columns), None)
-    if date_column is None or nav_column is None:
-        _error("upstream_invalid_response", "基金净值响应缺少日期或单位净值字段", 502)
-    from src.services.thesis_ledger_nav_dates import nav_datetime
-
-    latest = max((row for _, row in frame.iterrows()), key=lambda row: nav_datetime(row[date_column]))
-    nav_date = _iso_timestamp(latest[date_column])
-    unit_nav = _number(latest[nav_column], "unitNav", allow_zero=False)
-    parsed_date = datetime.fromisoformat(nav_date.replace("Z", "+00:00"))
+        _data_gateway_error(exc, "基金单位净值暂时不可用", no_eligible_message="当前策略没有可用的基金净值 Provider")
+    try:
+        nav = LatestNavResult.model_validate(gateway_result.data)
+    except ValidationError:
+        _error("upstream_invalid_response", "最新净值未通过标准结果合同", 502)
+    if nav.symbol != canonical or nav.provider != gateway_result.provider:
+        _error("upstream_invalid_response", "最新净值证券或来源不匹配", 502)
+    parsed_date = datetime.fromisoformat(nav.point.nav_date)
     age_days = max(0, (datetime.now(timezone.utc).date() - parsed_date.date()).days)
-    freshness = "stale" if age_days > 7 else "delayed"
     return {
         "version": 3,
         "symbol": canonical,
-        "unitNav": unit_nav,
-        "navDate": nav_date,
-        "provider": provider,
+        "unitNav": nav.point.unit_nav,
+        "navDate": nav.point.nav_date,
+        "provider": gateway_result.provider,
         "fetchedAt": _now_iso(),
-        "freshness": freshness,
-        "fallbackUsed": fallback_used,
+        "freshness": "stale" if age_days > 7 else "delayed",
+        "fallbackUsed": gateway_result.fallback_used,
     }
 
 
@@ -655,6 +590,8 @@ def _real_fund_nav_history(
     limit: int,
     request_id: str | None = None,
 ) -> list[dict[str, Any]]:
+    from pydantic import ValidationError
+    from src.services.thesis_ledger_fund_nav_history_contract_v1 import NavHistoryResult
     canonical = _canonical_fund_symbol(symbol)
     request_id = request_id or _request_id_context.get()
     try:
@@ -667,7 +604,6 @@ def _real_fund_nav_history(
             limit=limit,
             request_id=request_id,
         )
-        frame = gateway_result.data
         provider = gateway_result.provider
         fallback_used = gateway_result.fallback_used
     except Exception as exc:  # noqa: BLE001 - gateway exposes stable error codes.
@@ -677,12 +613,12 @@ def _real_fund_nav_history(
             no_eligible_message="当前策略没有可用的基金净值历史 Provider",
         )
 
-    date_columns = ("净值日期", "日期", "date", "nav_date")
-    nav_columns = ("单位净值", "单位净值(元)", "unit_nav", "nav")
-    date_column = next((column for column in date_columns if column in frame.columns), None)
-    nav_column = next((column for column in nav_columns if column in frame.columns), None)
-    if date_column is None or nav_column is None:
-        _error("upstream_invalid_response", "基金净值历史缺少日期或单位净值字段", 502)
+    try:
+        history = NavHistoryResult.model_validate(gateway_result.data)
+    except ValidationError:
+        _error("upstream_invalid_response", "净值历史未通过标准结果合同", 502)
+    if history.symbol != canonical or history.provider != provider:
+        _error("upstream_invalid_response", "净值历史证券或来源不匹配", 502)
     start_at = (
         datetime.fromisoformat(_iso_timestamp(start).replace("Z", "+00:00"))
         if start
@@ -695,8 +631,8 @@ def _real_fund_nav_history(
     )
     fetched_at = _now_iso()
     result: list[dict[str, Any]] = []
-    for _, row in frame.iterrows():
-        nav_date = _iso_timestamp(row[date_column])
+    for point in history.points:
+        nav_date = point.nav_date
         parsed = datetime.fromisoformat(nav_date.replace("Z", "+00:00"))
         if start_at and parsed < start_at:
             continue
@@ -707,7 +643,7 @@ def _real_fund_nav_history(
             {
                 "version": 3,
                 "symbol": canonical,
-                "unitNav": _number(row[nav_column], "unitNav", allow_zero=False),
+                "unitNav": point.unit_nav,
                 "navDate": nav_date,
                 "provider": provider,
                 "fetchedAt": fetched_at,
@@ -718,14 +654,14 @@ def _real_fund_nav_history(
     return result[-limit:]
 
 
-def _real_quote(symbol: str, request_id: str | None = None) -> dict[str, Any]:
+def _real_quote(symbol: str, request_id: str | None = None, asset_type: str | None = None) -> dict[str, Any]:
     request_id = request_id or _request_id_context.get()
     try:
         from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
 
         gateway_result = get_thesis_ledger_data_gateway().quote(
             symbol,
-            request_id=request_id,
+            request_id=request_id, **({"instrument_type": asset_type} if asset_type is not None else {}),
         )
         quote = gateway_result.data
         provider = gateway_result.provider
@@ -737,46 +673,15 @@ def _real_quote(symbol: str, request_id: str | None = None) -> dict[str, Any]:
             no_eligible_message="当前策略没有可用的实时行情 Provider",
         )
 
-    fetched_at = _iso_timestamp(getattr(quote, "fetched_at", None) or _now_iso())
-    from api.thesis_ledger_quote_time import quote_time_state
+    from src.services.thesis_ledger_quote_result_contract import QuoteResult
+    upstream_source = quote.upstream_source if isinstance(quote, QuoteResult) else _upstream_source(getattr(quote, "source", None), provider)
+    from api.thesis_ledger_quote_fields import quote_response_payload
 
-    provider_timestamp, stale, freshness = quote_time_state(
-        getattr(quote, "provider_timestamp", None), getattr(quote, "is_stale", None),
-        datetime.now(timezone.utc),
-    )
-    market_time = _iso_timestamp(provider_timestamp) if provider_timestamp else None
-    upstream_source = _upstream_source(getattr(quote, "source", None))
-    fields = {
-        "open": getattr(quote, "open_price", None),
-        "high": getattr(quote, "high", None),
-        "low": getattr(quote, "low", None),
-        "price": getattr(quote, "price", None),
-        "previousClose": getattr(quote, "pre_close", None),
-        "volume": getattr(quote, "volume", None),
-        "amount": getattr(quote, "amount", None),
-    }
-    values = {key: _number(value, key) for key, value in fields.items()}
-    result = {
-        "version": 3,
-        "symbol": _canonical_symbol(symbol),
-        **values,
-        "stale": stale,
-        "provider": provider,
-        "marketTime": market_time,
-        "fetchedAt": fetched_at,
-        "freshness": freshness,
-        "fallbackUsed": fallback_used,
-    }
-    if upstream_source:
-        result["upstreamSource"] = upstream_source
-    if provider == "hithink":
-        from api.thesis_ledger_quote_units import hithink_quote_public_units
-
-        units = hithink_quote_public_units(upstream_source, getattr(quote, "units", None))
-        if units is None:
-            _error("upstream_invalid_response", "HiThink 报价单位合同无效", 502)
-        result["units"] = units
-    return result
+    result = quote_response_payload(quote, symbol=_canonical_symbol(symbol), provider=provider,
+        fallback_used=fallback_used, source=upstream_source,
+        fetched_at=_iso_timestamp(getattr(quote, "fetched_at", None) or _now_iso()), number=_number, timestamp=_iso_timestamp)
+    from api.thesis_ledger_quote_units import apply_quote_public_units
+    return apply_quote_public_units(result, provider, upstream_source, quote, _error)
 
 
 def _canonical_number(value: Any) -> str | None:
@@ -849,18 +754,6 @@ def _bar_series_point(
     }
 
 
-def _market_data_v3_error(code: str, status_code: int, request_id: str) -> None:
-    message = _MARKET_DATA_V3_ERROR_MESSAGES[code]
-    raise HTTPException(
-        status_code=status_code,
-        detail={
-            "contractVersion": 3,
-            "requestId": request_id,
-            "error": {"code": code, "message": message},
-        },
-    )
-
-
 def _market_data_v3_request(payload: Any, fallback_request_id: str) -> dict[str, Any]:
     value = payload if isinstance(payload, dict) else {}
     raw_request_id = value.get("requestId")
@@ -913,7 +806,7 @@ def _market_data_v3_request(payload: Any, fallback_request_id: str) -> dict[str,
         _market_data_v3_error("invalid_response", 422, request_id)
     from src.services.thesis_ledger_provider_runtime import instrument_type_for_symbol
 
-    if instrument_type_for_symbol(symbol) != route_key["assetType"]:
+    if route_key["market"] == "CN" and instrument_type_for_symbol(symbol) != route_key["assetType"]:
         _market_data_v3_error("invalid_response", 422, request_id)
     route_target = None
     if "routeTarget" in value:
@@ -954,21 +847,15 @@ def _market_data_v3_request(payload: Any, fallback_request_id: str) -> dict[str,
     if route_target is not None:
         request_data["routeTarget"] = route_target
     if "tradabilityMode" in value:
-        if value["tradabilityMode"] != "assume-untradable-no-bar" or route_key["market"] != "CN" or route_key["timeframe"] != "1d":
+        if value["tradabilityMode"] != "assume-untradable-no-bar" or route_key["market"] not in {"CN", "HK", "US"} or route_key["timeframe"] != "1d":
             _market_data_v3_error("invalid_response", 422, request_id)
         request_data["tradabilityMode"] = value["tradabilityMode"]
     return request_data
 
 
 def _market_data_v3_coverage_context(request_data: Mapping[str, Any]) -> dict[str, Any] | None:
-    """Resolve exact calendar and listing facts before any V3 Provider request."""
-    return market_coverage_context_v3(
-        symbol=str(request_data["symbol"]),
-        market=str(request_data["routeKey"]["market"]),
-        start=str(request_data["start"]),
-        end=str(request_data["end"]),
-        calendar_evidence_provider=market_calendar_evidence_v3,
-    )
+    """Provider 请求前解析上市与日历，研究窗口可复用核验后的现行日历。"""
+    return research_market_coverage_context(request_data, calendar_evidence_provider=market_calendar_evidence_v3)
 
 
 def _market_data_v3_pagination_proof(
@@ -1011,7 +898,7 @@ def _market_data_v3_response(
     route_index = getattr(execution, "route_index", None)
     policy_revision = getattr(execution, "effective_revision", None)
     if (
-        provider not in MARKET_DATA_V3_SUPPORTED_PROVIDER_IDS
+        provider not in market_v3_bar_provider_ids()
         or not upstream_source
         or not MARKET_DATA_V3_METHOD_VERSION
         or not isinstance(route_index, int)
@@ -1029,8 +916,8 @@ def _market_data_v3_response(
         or route_index != route_target.get("routeIndex")
     ):
         _market_data_v3_error("invalid_response", 502, request_id)
-
-    frame = getattr(execution, "value", None)
+    from src.services.thesis_ledger_zero_volume_observations import executable_research_frame
+    frame = executable_research_frame(request_data, getattr(execution, "value", None), _market_data_v3_error)
     pagination_proof = _market_data_v3_pagination_proof(
         frame,
         asset_type=route_key["assetType"],
@@ -1046,26 +933,24 @@ def _market_data_v3_response(
     points: list[dict[str, Any]] = []
     trading_dates: list[str] = []
     try:
+        from api.thesis_ledger_market_daily_points import MarketDailyPointSource
+        point_source = MarketDailyPointSource(request_data, fetched_at, _iso_timestamp, _bar_series_point)
         for _, row in frame.iterrows():
-            timestamp = _iso_timestamp(row.get("date"))
+            timestamp = point_source.timestamp(row.get("date"))
             trading_date = datetime.fromisoformat(timestamp).astimezone(
-                ZoneInfo("Asia/Shanghai")
+                ZoneInfo(point_source.timezone)
             ).date().isoformat()
             if not request_data["start"] <= trading_date <= request_data["end"]:
                 _market_data_v3_error("invalid_response", 502, request_id)
-            fields = {
-                name: _number(row.get(name), name)
-                for name in ("open", "high", "low", "close", "volume", "amount")
-            }
-            if any(number < 0 for number in fields.values()):
+            from api.thesis_ledger_exact_bar_fields import bar_fields
+            fields = bar_fields(row, _number)
+            if any(number < 0 for number in fields.values() if number is not None):
                 _market_data_v3_error("invalid_response", 502, request_id)
             if fields["high"] < max(fields["open"], fields["close"], fields["low"]):
                 _market_data_v3_error("invalid_response", 502, request_id)
             if fields["low"] > min(fields["open"], fields["close"], fields["high"]):
                 _market_data_v3_error("invalid_response", 502, request_id)
-            item = _bar_series_point(
-                {"timestamp": timestamp, **fields}, fetched_at=fetched_at, observed_availability=True,
-            )
+            item = point_source.point({"timestamp": timestamp, **fields})
             points.append(item)
             trading_dates.append(trading_date)
     except HTTPException:
@@ -1165,9 +1050,9 @@ def market_bars_v3(
                 DAILY_BAR_TARGET_TIMEOUT_SECONDS,
                 get_thesis_ledger_runtime,
             )
-            from api.thesis_ledger_multi_window_v3 import execute_market_window_v3, try_hithink_multi_window_v3
+            from api.thesis_ledger_multi_window_v3 import execute_market_window_v3, try_daily_multi_window_v3
             runtime = get_thesis_ledger_runtime()
-            multi_window = try_hithink_multi_window_v3(
+            multi_window = try_daily_multi_window_v3(
                 request_data, coverage_context, runtime,
                 _market_data_v3_response, _market_data_v3_coverage_context,
                 max_requests=8, timeout_seconds=DAILY_BAR_TARGET_TIMEOUT_SECONDS,
@@ -1179,21 +1064,22 @@ def market_bars_v3(
             raise
         except Exception as exc:
             code = str(getattr(exc, "code", ""))
-            if code == "unsupported_adjustment":
-                _market_data_v3_error("unsupported_price_basis", 422, request_data["requestId"])
-            if code in {"not_covered", "insufficient_coverage"}:
-                _market_data_v3_error("insufficient_coverage", 422, request_data["requestId"])
-            if code in {"invalid_response", "upstream_invalid_response"}:
-                _market_data_v3_error("invalid_response", 502, request_data["requestId"])
             logger.warning(
                 "ThesisLedger Data V3 failed requestId=%s code=%s",
                 request_data["requestId"],
                 code or "upstream_failure",
             )
-            _market_data_v3_error("upstream_failure", 503, request_data["requestId"])
+            mapped, status = market_runtime_error(exc)
+            _market_data_v3_error(mapped, status, request_data["requestId"])
         return _market_data_v3_response(request_data, execution, coverage_context)
     except HTTPException as error:
         return JSONResponse(status_code=error.status_code, content=error.detail)
+
+
+@router_v3.get("/market/indicators/capabilities", dependencies=[Depends(require_contract_token)])
+def period_indicator_capabilities_v3() -> dict[str, Any]:
+    from src.services.thesis_ledger_period_indicator_contract import period_indicator_capabilities
+    return period_indicator_capabilities()
 
 
 @router_v3.post("/market/indicators/calculate", dependencies=[Depends(require_contract_token)])
@@ -1212,8 +1098,11 @@ def calculate_indicators(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     identity = payload.get("identity")
     if not isinstance(identity, dict) or not {"symbol", "assetType", "timeframe", "adjustment"}.issubset(identity):
         _error("invalid_request", "指标计算请求缺少 identity", 422)
-    if _bar_series_fingerprint(points, identity) != input_fingerprint:
-        _error("invalid_request", "inputFingerprint 与规范化 points 不一致", 422)
+    from src.services.thesis_ledger_period_indicator_contract import validate_indicator_fingerprint
+    try:
+        validate_indicator_fingerprint(payload, lambda: _bar_series_fingerprint(points, identity))
+    except (ValueError, KeyError, TypeError, OverflowError) as exc:
+        _error("invalid_request", str(exc), 422)
     requests = payload.get("requests")
     if not isinstance(requests, list) or not requests:
         _error("invalid_request", "指标计算请求至少包含一个指标", 422)
@@ -1285,69 +1174,26 @@ def _session_close_available_at(occurred_at: str, fetched_at: str | None) -> str
     return session_close.isoformat()
 
 
-def _ratio(value: Any, field: str) -> float:
-    result = _number(value, field)
-    if result > 1:
-        result /= 100
-    if not 0 <= result <= 1:
-        _error("upstream_invalid_response", f"字段 {field} 不在 0 到 1 之间", 502)
-    return result
-
-
-def _fund_holdings_payload(
-    symbol: str,
-    frame: Any,
-    provider: str,
-    fallback_used: bool,
-) -> dict[str, Any]:
+def _fund_holdings_payload(symbol: str, value: Any, provider: str, fallback_used: bool) -> dict[str, Any]:
+    from pydantic import ValidationError
+    from src.services.thesis_ledger_fund_holdings_contract_v1 import HoldingsResult
     canonical = _canonical_fund_symbol(symbol)
-    if frame is None or getattr(frame, "empty", True):
-        _error("upstream_unavailable", f"没有 {canonical} 的基金持仓披露", 503)
-    required = {"股票代码", "股票名称", "占净值比例", "季度"}
-    if not required.issubset(set(frame.columns)):
-        _error("upstream_invalid_response", "基金持仓披露缺少必要字段", 502)
-
-    quarter_rows: list[tuple[tuple[int, int], Any]] = []
-    from src.services.thesis_ledger_holding_rows import holding_period
-
-    for _, row in frame.iterrows():
-        try:
-            quarter_rows.append((holding_period(row["季度"]), row))
-        except ValueError:
-            _error("upstream_invalid_response", "基金持仓披露报告期无法唯一识别", 502)
-    if not quarter_rows:
-        _error("upstream_invalid_response", "基金持仓披露缺少可识别的报告期", 502)
-    latest = max(key for key, _ in quarter_rows)
-    aggregate: dict[str, dict[str, Any]] = {}
-    for key, row in quarter_rows:
-        if key != latest:
-            continue
-        holding_symbol = _canonical_symbol(str(row["股票代码"]))
-        weight = _number(row["占净值比例"], "weight") / 100
-        if holding_symbol in aggregate:
-            _error("upstream_invalid_response", "基金持仓披露同报告期代码重复", 502)
-        aggregate[holding_symbol] = {
-            "symbol": holding_symbol,
-            "name": str(row["股票名称"]).strip(),
-            "weight": weight,
-        }
-    holdings = sorted(aggregate.values(), key=lambda row: (-float(row["weight"]), row["symbol"]))
-    if not holdings or sum(float(row["weight"]) for row in holdings) > 1.000001:
-        _error("upstream_invalid_response", "基金持仓披露权重非法", 502)
-    fetched_at = _now_iso()
-    evidence = hashlib.sha256(
-        json.dumps(holdings, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    ).hexdigest()
+    try:
+        holdings = HoldingsResult.model_validate(value)
+    except ValidationError:
+        _error("upstream_invalid_response", "基金持仓未通过标准结果合同", 502)
+    if holdings.symbol != canonical or holdings.provider != provider:
+        _error("upstream_invalid_response", "基金持仓证券或来源不匹配", 502)
     return {
         "version": 3,
         "fundSymbol": canonical,
-        "reportPeriod": f"{latest[0]}-Q{latest[1]}",
-        "disclosureDate": None,
+        "reportPeriod": holdings.report_period,
+        "disclosureDate": holdings.disclosure_date,
         "provider": provider,
-        "fetchedAt": fetched_at,
-        "evidenceVersion": evidence,
+        "fetchedAt": _now_iso(),
+        "evidenceVersion": holdings.evidence_version,
         "fallbackUsed": fallback_used,
-        "holdings": holdings,
+        "holdings": [holding.model_dump() for holding in holdings.holdings],
     }
 
 
@@ -1387,32 +1233,26 @@ def _real_chip(symbol: str, request_id: str | None = None) -> dict[str, Any]:
             "筹码摘要暂时不可用",
             no_eligible_message="当前策略没有可用的筹码摘要 Provider",
         )
-    if chip is None:
-        _error("upstream_unavailable", f"没有 {symbol} 的筹码摘要", 503)
-    average_cost = _number(getattr(chip, "avg_cost", None), "averageCost", allow_zero=False)
-    range70 = [
-        _number(getattr(chip, "cost_70_low", None), "range70.low", allow_zero=False),
-        _number(getattr(chip, "cost_70_high", None), "range70.high", allow_zero=False),
-    ]
-    range90 = [
-        _number(getattr(chip, "cost_90_low", None), "range90.low", allow_zero=False),
-        _number(getattr(chip, "cost_90_high", None), "range90.high", allow_zero=False),
-    ]
+    from pydantic import ValidationError
+    from src.services.thesis_ledger_chip_summary_contract_v1 import ChipResult
+    try:
+        chip = ChipResult.model_validate(chip)
+    except ValidationError:
+        _error("upstream_invalid_response", "筹码摘要未通过标准合同", 502)
+    if chip.symbol != _canonical_symbol(symbol) or chip.provider != provider:
+        _error("upstream_invalid_response", "筹码摘要证券或来源不匹配", 502)
     return {
         "version": 3,
-        "symbol": _canonical_symbol(symbol),
-        "averageCost": average_cost,
-        "profitRatio": _ratio(getattr(chip, "profit_ratio", None), "profitRatio"),
-        "range70": range70,
-        "range90": range90,
-        "concentration": _ratio(
-            getattr(chip, "concentration_90", None),
-            "concentration",
-        ),
+        "symbol": chip.symbol,
+        "averageCost": chip.average_cost,
+        "profitRatio": chip.profit_ratio,
+        "range70": list(chip.range70),
+        "range90": list(chip.range90),
+        "concentration": chip.concentration90,
         "provider": provider,
         "fallbackUsed": fallback_used,
         "engineVersion": ENGINE_VERSION,
-        "calculatedAt": _iso_timestamp(getattr(chip, "date", None) or _now_iso()),
+        "calculatedAt": _iso_timestamp(chip.source_reported_date or chip.observed_at),
     }
 
 
@@ -1489,12 +1329,13 @@ def fund_holdings(
 def quote(
     request: Request,
     symbol: str = Query(..., min_length=1),
+    assetType: Literal["STOCK", "ETF", "INDEX"] | None = Query(None),
 ) -> dict[str, Any]:
     request_id = request.headers.get("x-request-id") or _request_id_context.get()
     return (
         _fixture_quote(symbol)
         if _fixture_mode()
-        else _real_quote(symbol, request_id=request_id)
+        else _real_quote(symbol, request_id=request_id, asset_type=assetType)
     )
 
 
@@ -1505,33 +1346,22 @@ def backtest_calendar(
     dataAsOf: str = Query(..., min_length=20),
     market: str = Query(..., min_length=2, max_length=2),
 ) -> dict[str, Any]:
-    if market != "CN":
-        _error("unsupported_capability", "当前合同仅支持 CN 市场交易日历", 422)
+    from src.services.thesis_ledger_calendar_contract import calendar_request_response
     try:
-        data_as_of = parse_data_as_of(dataAsOf)
-        start_date, end_date = validate_calendar_range(start, end, data_as_of)
+        return calendar_request_response(start, end, dataAsOf, market,
+            _fixture_cn_calendar_sources() if _fixture_mode() else None)
     except DependencyFactError as exc:
         _error(exc.code, str(exc), exc.status_code)
-    if _fixture_mode():
-        fact = fixture_calendar(start, end, data_as_of, _fixture_cn_calendar_sources())
-    else:
-        fact = calendar_fact(start_date, end_date, data_as_of)
-    if fact is None:
-        return dependency_response(
-            status="unavailable",
-            provider="exchange-calendars",
-            provider_revision="exchange-calendars-unavailable",
-            coverage={"start": start, "end": end, "complete": False},
-            facts=[],
-            reason="CN 交易日历 Provider 当前不可用或未确认覆盖",
-        )
-    return dependency_response(
-        status="supported",
-        provider=str(fact["provider"]),
-        provider_revision=str(fact["providerRevision"]),
-        coverage={"start": start, "end": end, "complete": True},
-        facts=[fact],
-    )
+
+
+@router_v3.get("/market/calendar", dependencies=[Depends(require_contract_token)])
+def market_calendar(start: str, end: str, dataAsOf: str, market: str) -> dict[str, Any]:
+    from src.services.thesis_ledger_calendar_contract import calendar_request_response
+    try:
+        return calendar_request_response(start, end, dataAsOf, market,
+            _fixture_cn_calendar_sources() if _fixture_mode() else None, display=True)
+    except DependencyFactError as exc:
+        _error(exc.code, str(exc), exc.status_code)
 
 
 @router_v3.get("/backtest/instrument-facts", dependencies=[Depends(require_contract_token)])
@@ -1551,12 +1381,12 @@ def backtest_instrument_facts(
     identityOnly: bool = Query(False),
 ) -> dict[str, Any]:
     try:
-        canonical = validate_cn_stock(symbol, market, instrumentType, _canonical_symbol)
+        canonical = validate_instrument_request(symbol, market, instrumentType, _canonical_symbol, identityOnly, barAdjustment, barProviderId, barUpstreamSource)
         data_as_of = parse_data_as_of(dataAsOf)
     except DependencyFactError as exc:
         _error(exc.code, str(exc), exc.status_code)
     facts = []
-    if _fixture_mode():
+    if _fixture_mode() and market == "CN":
         facts = _fixture_cn_instrument_facts(canonical, instrumentType)
     route_fields = (barAdjustment, barProviderId, barUpstreamSource, barRouteIndex)
     if any(field is not None for field in route_fields) and any(field is None for field in route_fields):
@@ -1584,7 +1414,7 @@ def backtest_instrument_facts(
             instrument_type=instrumentType,
             route_key=route_key,
             route_target=route_target,
-            identity_only=identityOnly,
+            identity_only=identityOnly, market=market,
         )
     except DependencyFactError as exc:
         _error(exc.code, str(exc), exc.status_code)
@@ -1687,7 +1517,7 @@ def control_providers() -> dict[str, Any]:
 
 @router_v3.get("/control/routes/capabilities", dependencies=[Depends(require_control_token)])
 def control_route_capabilities_v3(
-    contract_version: Optional[int] = Query(default=None, alias="contractVersion"),
+    contract_version: Optional[int] = Query(default=None, alias="contractVersion"), event_admissions: Optional[Literal['v1']] = Query(default=None, alias="eventAdmissions"),
 ) -> dict[str, Any]:
     if contract_version != CONTROL_CONTRACT_V3_VERSION:
         _control_http_error(
@@ -1701,7 +1531,7 @@ def control_route_capabilities_v3(
     try:
         from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_runtime
 
-        return get_thesis_ledger_runtime().market_route_catalog_v3()
+        return get_thesis_ledger_runtime().market_route_catalog_v3(**({'event_admissions': True} if event_admissions == 'v1' else {}))
     except Exception as exc:
         logger.warning(
             "ThesisLedger Control V3 route catalog unavailable error_type=%s",
@@ -1734,116 +1564,13 @@ def control_provider_test(
     provider_id: str,
     payload: dict[str, Any] = Body(default_factory=dict),
 ) -> dict[str, Any]:
-    """执行只读、有限的逐 Capability smoke，并保证临时凭证不落库。"""
+    """逐精确能力检查，草稿与诊断结果不写入业务配置。"""
+    from src.services.thesis_ledger_provider_exact_checks import check_provider
+    from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_runtime
+
     try:
         value = _control_v3_envelope(payload)
-        registry = {
-            item["providerId"]: item for item in _control_store().provider_registry()
-        }
-        provider = registry.get(provider_id.strip().lower())
-        if provider is None:
-            raise ControlContractError(
-                "UNKNOWN_PROVIDER",
-                f"Provider {provider_id} 不存在",
-                request_id=str(value.get("requestId") or ""),
-            )
-        store = _control_store()
-        draft_snapshot = store.provider_credential_snapshot(provider["providerId"])
-        if "credentials" in value:
-            try:
-                patch = parse_credential_patch(provider["providerId"], value["credentials"])
-                existing = None
-                if (
-                    draft_snapshot.source == "control"
-                    and draft_snapshot.method == patch.method
-                    and draft_snapshot.values
-                ):
-                    existing = CredentialValue(
-                        method=draft_snapshot.method,
-                        values=dict(draft_snapshot.values),
-                    )
-                merged = merge_credential_patch(provider["providerId"], patch, existing)
-            except ValueError as exc:
-                raise ControlContractError(
-                    "INVALID_PROVIDER_CREDENTIALS",
-                    str(exc),
-                    request_id=str(value.get("requestId") or ""),
-                ) from exc
-            draft_snapshot = ProviderCredentialSnapshot.create(
-                provider["providerId"],
-                "control",
-                merged.method,
-                merged.values,
-                draft_snapshot.config_version,
-                draft_snapshot.credential_version,
-            )
-        elif str(value.get("credential") or "").strip():
-            raise ControlContractError(
-                "INVALID_PROVIDER_CREDENTIALS",
-                "test API 仅接受结构化 credentials 草稿",
-                request_id=str(value.get("requestId") or ""),
-            )
-        credential_configured = bool(
-            draft_snapshot.values or not provider["requiresCredential"]
-        )
-        configured = bool(provider["configured"] or credential_configured)
-        if not configured:
-            capability_results = {
-                capability: {
-                    "status": "unconfigured",
-                    "readOnly": True,
-                    "attempted": False,
-                    "errorCode": "not_configured",
-                }
-                for capability in provider["capabilities"]
-            }
-            status = "unconfigured"
-        else:
-            capability_results: dict[str, dict[str, Any]] = {}
-            for capability in provider["capabilities"]:
-                try:
-                    if _fixture_mode():
-                        capability_results[capability] = {
-                            "status": "unavailable",
-                            "readOnly": True,
-                            "attempted": False,
-                            "errorCode": "fixture_mode",
-                        }
-                    else:
-                        from src.services.thesis_ledger_provider_runtime import (
-                            get_thesis_ledger_runtime,
-                        )
-
-                        capability_results[capability] = get_thesis_ledger_runtime().smoke(
-                            provider["providerId"],
-                            capability,
-                            credential_snapshot=draft_snapshot,
-                            draft_probe="credentials" in value,
-                        )
-                except ControlContractError:
-                    raise
-                except Exception as exc:  # runtime maps raw errors to stable diagnostics.
-                    code = getattr(exc, "code", "upstream_failure")
-                    capability_results[capability] = {
-                        "status": "unavailable",
-                        "readOnly": True,
-                        "attempted": True,
-                        "errorCode": code,
-                    }
-            status = (
-                "healthy"
-                if all(item["status"] == "healthy" for item in capability_results.values())
-                else "degraded"
-            )
-        return {
-            "contractVersion": CONTROL_CONTRACT_V3_VERSION,
-            "consumer": CONSUMER_NAMESPACE,
-            "providerId": provider["providerId"],
-            "status": status,
-            "credentialConfigured": credential_configured,
-            "capabilityResults": capability_results,
-            "requestId": str(value.get("requestId") or _request_id_context.get() or uuid.uuid4()),
-        }
+        return check_provider(get_thesis_ledger_runtime(), provider_id, value, fixture=_fixture_mode())
     except ControlContractError as error:
         _control_http_error(error)
 

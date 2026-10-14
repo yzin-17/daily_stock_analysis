@@ -82,15 +82,15 @@ def test_quote_catalog_uses_exact_stock_and_etf_sources(tmp_path):
     assert states[("STOCK", "akshare", "eastmoney")] == "ready"
     assert states[("STOCK", "efinance", "eastmoney")] == "ready"
     assert states[("ETF", "efinance", "eastmoney")] == "ready"
-    assert ("ETF", "akshare", "eastmoney") not in states
+    assert states[("ETF", "akshare", "eastmoney")] == "ready"
     assert current_data_adapter_revisions(
         {"kind": "data", "market": "CN", "assetType": "ETF",
          "capability": "REALTIME_QUOTE"},
         {"providerId": "akshare", "upstreamSource": "eastmoney"},
-    ) is None
+    ) is not None
 
 
-def test_quote_revocation_during_source_call_rejects_result(tmp_path):
+def test_quote_legacy_record_revocation_does_not_block_configured_read(tmp_path):
     store = ThesisLedgerControlStore(str(tmp_path / "late-quote.sqlite"))
     apply_data_policy(store, {"REALTIME_QUOTE": {"STOCK": ["akshare"]}})
     key = {"kind": "data", "market": "CN", "assetType": "STOCK",
@@ -100,22 +100,21 @@ def test_quote_revocation_during_source_call_rejects_result(tmp_path):
     class Adapter:
         calls = 0
 
-        def get_realtime_quote(self, _symbol, *, source=None):
+        def _get_stock_realtime_quote_em(self, _symbol):
             self.calls += 1
-            assert source == "em"
             store.revoke_route_admission_v3(key=key, target=target, reason="test")
-            return {"price": 10, "open": 10, "high": 10, "low": 10,
-                    "pre_close": 10, "volume": 1, "amount": 10}
+            from types import SimpleNamespace
+            return SimpleNamespace(price=10, open_price=10, high=10, low=10,
+                                   pre_close=10, volume=1, amount=10)
 
     adapter = Adapter()
     runtime = ThesisLedgerProviderRuntime(store, adapters={"akshare": adapter})
-    with pytest.raises(ThesisLedgerGatewayError) as rejected:
-        runtime.execute_request(ThesisLedgerDataRequest("REALTIME_QUOTE", "600519.SH"))
-    assert rejected.value.code == "not_admitted"
+    result = runtime.execute_request(ThesisLedgerDataRequest("REALTIME_QUOTE", "600519.SH"))
+    assert result.provider == "akshare"
     assert adapter.calls == 1
 
 
-def test_nav_history_rejects_rows_outside_admitted_dates(tmp_path):
+def test_nav_history_valid_dates_do_not_depend_on_manual_scope(tmp_path):
     store = ThesisLedgerControlStore(str(tmp_path / "nav-scope.sqlite"))
     apply_data_policy(store, {"FUND_NAV_HISTORY": {"MUTUAL_FUND": ["akshare"]}})
     today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
@@ -132,9 +131,9 @@ def test_nav_history_rejects_rows_outside_admitted_dates(tmp_path):
         "scopeDateFrom": today.isoformat(),
         "scopeDateTo": today.isoformat(),
     }
-    with pytest.raises(ThesisLedgerGatewayError) as rejected:
-        runtime.execute_request(ThesisLedgerDataRequest("FUND_NAV_HISTORY", "000001.OF"))
-    assert rejected.value.code == "not_admitted"
+    result = runtime.execute_request(ThesisLedgerDataRequest("FUND_NAV_HISTORY", "000001.OF"))
+    assert [point.reported_date for point in result.value.points] == [(today - timedelta(days=1)).isoformat()]
+    assert result.value.symbol == '000001.OF' and result.value.provider == 'akshare'
 
 
 @pytest.mark.parametrize("capability", ["FUND_NAV", "FUND_NAV_HISTORY"])
@@ -160,4 +159,7 @@ def test_nav_selects_admitted_rows_from_complete_provider_history(tmp_path, capa
     }
     kwargs = {"start": today.isoformat(), "end": today.isoformat()} if capability == "FUND_NAV_HISTORY" else {}
     execution = runtime.execute_request(ThesisLedgerDataRequest(capability, "000001.OF", **kwargs))
-    assert execution.value["日期"].tolist() == [today.isoformat()]
+    points = execution.value.points if capability == 'FUND_NAV_HISTORY' else (execution.value.point,)
+    assert [point.reported_date for point in points] == [today.isoformat()]
+    assert points[0].unit_nav == 1.1
+    assert execution.value.symbol == '000001.OF' and execution.value.provider == 'akshare'

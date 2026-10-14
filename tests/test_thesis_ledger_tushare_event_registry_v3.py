@@ -56,12 +56,14 @@ def state(tmp_path, monkeypatch):
 
 def test_inventory_preserves_existing_routes_with_exact_tushare_and_hithink_cash():
     entries = list(iter_event_adapters())
-    assert entries == [
+    identity = lambda entry: (entry[0]['capability'], entry[1]['providerId'], entry[1]['upstreamSource'])
+    assert sorted(entries, key=identity) == sorted([
         (EVENT_KEY, EVENT_TARGET, True), (SPLIT_KEY, EVENT_TARGET, True),
         (EVENT_KEY, RQDATA_TARGET, True), (SPLIT_KEY, RQDATA_TARGET, True),
         (EVENT_KEY, TUSHARE_TARGET, True),
         (HITHINK_DIVIDEND_KEY, HITHINK_DIVIDEND_TARGET, True),
-    ]
+        (EVENT_KEY, {"providerId": "official-dividends", "upstreamSource": "cn-etf-cash-notices"}, True),
+    ], key=identity)
     assert event_adapter_matches(EVENT_KEY, {**TUSHARE_TARGET, "routeIndex": 0})
     assert event_adapter_revisions(EVENT_KEY, {**TUSHARE_TARGET, "routeIndex": 0},
                                    "hmac-sha256-v1:" + "a" * 64) == {

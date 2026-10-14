@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "observationProtocol": "yfinance-history-metadata-canonical-json-v1",
+  "historicalAvailability": "notVerified",
+  "description": "实际读取供应商证券身份与计价币种；首条交易日期不作上市证明，市场整手/价位未核实，身份观察仅供归一化固定快照。",
+  "identities": [
+    { "symbol": "00147.HK", "market": "HK", "currency": "HKD", "timezone": "Asia/Hong_Kong", "instrumentType": "STOCK", "sourceSymbol": "0147.HK", "sourceExchange": "HKG", "sourceInstrumentType": "EQUITY", "observedAt": "2026-10-07T07:52:06.448815+00:00", "metadataSha256": "8e7920f9f34f9082c54d70863442c0f29b0fd1245bf2a48ea6b08e9421f2a43f" },
+    { "symbol": "GME.US", "market": "US", "currency": "USD", "timezone": "America/New_York", "instrumentType": "STOCK", "sourceSymbol": "GME", "sourceExchange": "NYQ", "sourceInstrumentType": "EQUITY", "observedAt": "2026-10-07T07:52:08.548528+00:00", "metadataSha256": "6d9f6f1434d1a185e0168eaf785cbe2e722a53183f3c508c97c6abf36a844753" }
+  ]
+}

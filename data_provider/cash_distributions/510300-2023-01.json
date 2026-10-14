@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "datasetId": "cn-510300-cash-distribution-2023-01",
+  "symbol": "510300.SH",
+  "market": "CN",
+  "instrumentType": "ETF",
+  "currency": "CNY",
+  "coverage": {
+    "start": "2023-01-03",
+    "end": "2023-02-01",
+    "basis": "annual-report-cash-distributions",
+    "sourceDocumentId": "510300-2023-annual-report",
+    "reportStart": "2023-01-01",
+    "reportEnd": "2023-12-31",
+    "eventDates": ["2023-01-16"]
+  },
+  "sourceDocuments": [
+    {
+      "id": "510300-2023-01-dividend-notice",
+      "kind": "issuerDisclosure",
+      "title": "华泰柏瑞沪深300交易型开放式指数证券投资基金分红公告",
+      "url": "https://static.cninfo.com.cn/finalpage/2023-01-09/1215552905.PDF",
+      "sha256": "68f2227ae25acec3b831d50d042b87f12696dc0df1514ef9dacb36e018d571d7",
+      "publishedDate": "2023-01-09",
+      "observedAt": "2026-10-06T18:31:16.117954+00:00",
+      "pages": [1, 2, 3]
+    },
+    {
+      "id": "510300-2023-annual-report",
+      "kind": "issuerAnnualReport",
+      "title": "华泰柏瑞沪深300ETF2023年年度报告",
+      "url": "https://www.sse.com.cn/disclosure/fund/announcement/c/new/2024-03-30/510300_20240330_437H.pdf",
+      "sha256": "cbe1900cb617a67a804dc463e6658f662917b04361266bef51b7bd139a6433be",
+      "publishedDate": "2024-03-30",
+      "observedAt": "2026-10-06T18:31:16.730840+00:00",
+      "pages": [52]
+    }
+  ],
+  "events": [
+    {
+      "announcementDate": "2023-01-09",
+      "recordDate": "2023-01-13",
+      "effectiveDate": "2023-01-16",
+      "paymentDate": "2023-01-19",
+      "cashAmount": "0.6400",
+      "unit": "CNY/10-fund-units",
+      "currency": "CNY",
+      "sourceDocumentId": "510300-2023-01-dividend-notice"
+    }
+  ]
+}
