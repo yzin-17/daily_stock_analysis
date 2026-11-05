@@ -9,4 +9,4 @@
 
 ## 最终验收
 
-状态：已完成。独立uvicorn四周期及能力HTTP、篡改指纹422和TS解析通过；正式目标、真实富途聚合指标及Desktop浏览器完成，主仓验收已接续收口。 详见[主仓最终证据](../../../../thesis-ledger/docs/tasks/evidence/2026-11-05-todo-4-15-final-acceptance.md)。
+状态：已完成。独立uvicorn四周期及能力HTTP、篡改指纹422和TS解析通过；正式目标、真实富途聚合指标及Desktop浏览器完成，主仓验收已接续收口。 详见[主仓最终证据](../../../../thesis-ledger/docs/evidence/2026-11-05-todo-4-15-final-acceptance.md)。

@@ -1,6 +1,6 @@
 # 公开来源市场资料适配任务
 
-对应[规格](../../specs/2026-11-04-public-reference-data.md)，父项为[主仓公开来源复用](../../../../thesis-ledger/docs/archive/tasks/2026-11-04-astock-public-source-reuse.md)。状态：已完成并归档。验证明细见[主仓证据](../../../../thesis-ledger/docs/tasks/evidence/2026-11-04-astock-public-source-reuse.md)。
+对应[规格](../../specs/2026-11-04-public-reference-data.md)，父项为[主仓公开来源复用](../../../../thesis-ledger/docs/archive/tasks/2026-11-04-astock-public-source-reuse.md)。状态：已完成并归档。验证明细见[主仓证据](../../../../thesis-ledger/docs/evidence/2026-11-04-astock-public-source-reuse.md)。
 
 | 叶 | 独立执行面和结果 | 验证／状态 |
 | --- | --- | --- |

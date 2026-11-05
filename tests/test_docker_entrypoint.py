@@ -74,11 +74,11 @@ def test_docker_compose_retains_data_runtime_resource_reservations() -> None:
 
 def test_docker_memory_guides_describe_resource_profiles() -> None:
     doc_paths = (
-        "docs/DEPLOY.md",
-        "docs/DEPLOY_EN.md",
-        "docs/full-guide.md",
-        "docs/full-guide_EN.md",
-        "docs/docker/zeabur-deployment.md",
+        "docs/archive/legacy/DEPLOY.md",
+        "docs/archive/legacy/DEPLOY_EN.md",
+        "docs/archive/legacy/full-guide.md",
+        "docs/archive/legacy/full-guide_EN.md",
+        "docs/archive/legacy/docker/zeabur-deployment.md",
     )
 
     for doc_path in doc_paths:
@@ -96,7 +96,7 @@ def test_docker_guides_do_not_recommend_single_file_env_bind_mount() -> None:
         r"\.\./\.env:/app/\.env",
     ]
 
-    for doc_path in ("docs/full-guide.md", "docs/full-guide_EN.md"):
+    for doc_path in ("docs/archive/legacy/full-guide.md", "docs/archive/legacy/full-guide_EN.md"):
         doc = (REPO_ROOT / doc_path).read_text(encoding="utf-8")
 
         assert "--env-file .env" in doc
@@ -109,7 +109,7 @@ def test_documented_compose_exec_commands_run_as_dsa() -> None:
     safe_exec_prefix = "docker-compose -f ./docker/docker-compose.yml exec -u dsa"
     unsafe_exec_prefix = "docker-compose -f ./docker/docker-compose.yml exec"
 
-    for doc_path in ("docs/DEPLOY.md", "docs/DEPLOY_EN.md"):
+    for doc_path in ("docs/archive/legacy/DEPLOY.md", "docs/archive/legacy/DEPLOY_EN.md"):
         doc = (REPO_ROOT / doc_path).read_text(encoding="utf-8")
 
         assert f"{safe_exec_prefix} stock-analyzer bash" in doc

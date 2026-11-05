@@ -34,8 +34,8 @@ bash scripts/ci_gate.sh offline-tests
 
 默认 pytest 与 CI 共同消费 `tests/data-test-scope.json`；新增路径和混合断言必须明确登记。数据维护快速检查使用 `bash scripts/test.sh all`。
 
-本机目标更新遵循[同级工作区规则](../AGENTS.md)和[infra 更新流程](../thesis-ledger-infra/docs/docker-update-workflow.md)，根据兼容预检选择 `sync-code.sh dsa` 或 `update.sh dsa`。镜像独立验收使用仓库维护的 `scripts/verify_data_image.sh`；目标升级、恢复和实源门禁由 Task 分别记录。
+本机目标更新遵循[同级工作区规则](../AGENTS.md)和[infra 更新流程](../thesis-ledger-infra/docs/guides/docker-update-workflow.md)，根据兼容预检选择 `sync-code.sh dsa` 或 `update.sh dsa`。镜像独立验收使用仓库维护的 `scripts/verify_data_image.sh`；目标升级、恢复和实源门禁由 Task 分别记录。
 
 ## 开发与历史
 
-开发规则见 [AGENTS.md](AGENTS.md)，变更见 [CHANGELOG](docs/CHANGELOG.md)，许可证见 [LICENSE](LICENSE)。原生产品与客户端的历史资料保留原链接和 Git 历史，当前运行入口以本页及数据服务 Task 为准。
+完整文档见[文档中心](docs/README.md)，开发规则见 [AGENTS.md](AGENTS.md)，变更见 [CHANGELOG](docs/CHANGELOG.md)，许可证见 [LICENSE](LICENSE)。原生产品与客户端的历史资料保留原链接和 Git 历史，当前运行入口以本页及数据服务 Task 为准。

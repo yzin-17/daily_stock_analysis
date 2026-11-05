@@ -12,13 +12,13 @@ sources/**/*.jpg binary
 sources/**/*.jpeg binary
 sources/**/*.png binary
 sources/**/*.psd binary
-docs/assets/**/*.ai binary
-docs/assets/**/*.gif binary
-docs/assets/**/*.ico binary
-docs/assets/**/*.jpg binary
-docs/assets/**/*.jpeg binary
-docs/assets/**/*.png binary
-docs/assets/**/*.psd binary
+docs/archive/legacy/assets/**/*.ai binary
+docs/archive/legacy/assets/**/*.gif binary
+docs/archive/legacy/assets/**/*.ico binary
+docs/archive/legacy/assets/**/*.jpg binary
+docs/archive/legacy/assets/**/*.jpeg binary
+docs/archive/legacy/assets/**/*.png binary
+docs/archive/legacy/assets/**/*.psd binary
 
 # === 强制 LF 的文件类型（内核/系统解释器直接消费） ===
 # Shell 脚本（entrypoint.sh、任何 .sh）

@@ -35,7 +35,7 @@ jobs:
               - 'setup.cfg'
               - '.env.example'
               - '.github/**'
-              - 'docs/tasks/evidence/2026-10-19-data-service-inventory.jsonl'
+              - 'docs/evidence/2026-10-19-data-service-inventory.jsonl'
             docker:
               - 'server.py'
               - 'api/**'

@@ -9,6 +9,6 @@
 - [x] D5 精确注册、现行 Control 执行和 HTTP，来源／政策变化保护与错误分类通过。
 - [x] D6 目标部署联通、旧数据／配置保护、变更记录和最终复核通过，归档正文。
 
-35 项新增测试及既有路由／研报回归合计 123 项通过；运行时打包、语法／依赖、能力边界及测试登记门禁通过。三仓经 `sync-code.sh all` 更新到最终源码，29 类真实 Server／API client 响应及跨语言列／单位／作用域／修订一致性通过，主仓最终 Desktop／Android／iPhone Air 模拟器实际消费通过。Provider／准入、原 20 条路由、19 张业务表及 WIP 保护通过，见[主仓验收证据](../../../../thesis-ledger/docs/tasks/evidence/2026-11-03-astock-existing-sources-delivery.md)。
+35 项新增测试及既有路由／研报回归合计 123 项通过；运行时打包、语法／依赖、能力边界及测试登记门禁通过。三仓经 `sync-code.sh all` 更新到最终源码，29 类真实 Server／API client 响应及跨语言列／单位／作用域／修订一致性通过，主仓最终 Desktop／Android／iPhone Air 模拟器实际消费通过。Provider／准入、原 20 条路由、19 张业务表及 WIP 保护通过，见[主仓验收证据](../../../../thesis-ledger/docs/evidence/2026-11-03-astock-existing-sources-delivery.md)。
 
 新增 HiThink 回归夹具明确启用合成来源，未改真实配置。`docs/CHANGELOG.md` 已记录本轮变更，来源与取消矩阵由主仓复核持有；无本仓遗留叶。

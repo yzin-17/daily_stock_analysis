@@ -1,4 +1,24 @@
-# 已完成任务归档
+# 历史文档归档
 
-- 2026-11-03 [腾讯周期窗口实施与验收](tasks/2026-10-05-tencent-period-window.md)：W1/W2 与后续正式镜像固化证据核对通过，复用 10-05 实源/消费和 10-20 DG2a 镜像验收归档；[现行契约](../specs/2026-10-05-tencent-period-window.md)保留，未重复验证。
-- 2026-10-22 [DSA 纯数据服务实施任务](tasks/2026-10-18-data-only-service.md)：D0～D10、N1～N3 与 DG1～DG3 全部适用叶完成。新闻 DG3 的免费 NVIDIA 实源、Market/Web 与原数据保全通过，详见[原证据](../tasks/evidence/2026-10-18-data-only-service-news-contract.md#dg3-free-news-20261022)与[最终复核](../../../thesis-ledger/docs/reviews/2026-10-22-free-news-dg3-final-review.md)。[现行规格](../specs/2026-10-18-data-only-service.md)继续维护；研究模型和发布条件仍由主仓任务持有。
+已完成实施记录保留原任务 ID、证据和失败边界；现行合同继续留在 `specs/`。当前执行从[任务索引](../README.md)进入。
+
+## 已完成任务
+
+- [腾讯周期窗口实施与验收](tasks/2026-10-05-tencent-period-window.md)
+- [股票历史状态按需读取实施记录](tasks/2026-10-09-history-data-on-demand.md)
+- [DSA 纯数据服务实施任务](tasks/2026-10-18-data-only-service.md)
+- [基金披露日期证据 DSA 实施任务](tasks/2026-10-21-fund-disclosure-date-evidence.md)
+- [市场资料事实合同与执行任务](tasks/2026-11-03-market-reference-data.md)
+- [衍生品与可转债适配任务](tasks/2026-11-04-derivative-reference-data.md)
+- [分钟派生周期指标任务](tasks/2026-11-04-minute-provided-points.md)
+- [公开来源市场资料适配任务](tasks/2026-11-04-public-reference-data.md)
+- [首批备用来源语义核对任务](tasks/2026-11-04-reference-backup-qualification.md)
+- [ETF公共收费来源任务](tasks/2026-11-05-etf-public-fee-sources.md)
+- [MiniRacer原生运行时串行化任务](tasks/2026-11-05-miniracer-runtime-serialization.md)
+- [官方收费来源监测任务](tasks/2026-11-05-rule-source-monitoring.md)
+
+## 原产品资料
+
+[原产品历史区](legacy/README.md)保存源码退役后的指南、LLM、Bot、客户端、旧 API 规格和素材。共享验证资料继续留在 [evidence/](../evidence/)，不重复复制。
+
+本轮核对见[三仓整理记录](../../../thesis-ledger/docs/archive/reviews/2026-11-05-three-repository-documentation.md)。

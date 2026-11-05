@@ -17,14 +17,14 @@ def _read(relative_path: str) -> str:
 
 
 def test_decision_signal_topic_references_live_api_schema_and_docs() -> None:
-    topic = _read("docs/decision-signals.md")
-    alerts = _read("docs/alerts.md")
-    notifications = _read("docs/notifications.md")
-    full_guide = _read("docs/full-guide.md")
-    full_guide_en = _read("docs/full-guide_EN.md")
-    index = _read("docs/INDEX.md")
-    index_en = _read("docs/INDEX_EN.md")
-    api_spec = json.loads(_read("docs/architecture/api_spec.json"))
+    topic = _read("docs/archive/legacy/decision-signals.md")
+    alerts = _read("docs/archive/legacy/alerts.md")
+    notifications = _read("docs/archive/legacy/notifications.md")
+    full_guide = _read("docs/archive/legacy/full-guide.md")
+    full_guide_en = _read("docs/archive/legacy/full-guide_EN.md")
+    index = _read("docs/archive/legacy/INDEX.md")
+    index_en = _read("docs/archive/legacy/INDEX_EN.md")
+    api_spec = json.loads(_read("docs/archive/legacy/architecture/api_spec.json"))
 
     for path in (
         "/api/v1/decision-signals",
@@ -105,7 +105,7 @@ def test_decision_signal_topic_references_live_api_schema_and_docs() -> None:
 
 
 def test_decision_signal_topic_source_anchors_exist() -> None:
-    topic = _read("docs/decision-signals.md")
+    topic = _read("docs/archive/legacy/decision-signals.md")
 
     for source_path in (
         "api/v1/schemas/decision_signals.py",
@@ -126,4 +126,4 @@ def test_decision_signal_has_no_web_settings_schema_entry() -> None:
     }
 
     assert not any(key.startswith("DECISION_SIGNAL") for key in field_keys)
-    assert "DECISION_SIGNAL_ENABLED" not in _read("docs/decision-signals.md")
+    assert "DECISION_SIGNAL_ENABLED" not in _read("docs/archive/legacy/decision-signals.md")

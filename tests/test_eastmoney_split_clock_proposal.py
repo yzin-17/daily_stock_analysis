@@ -32,7 +32,7 @@ def test_offline_candidate_preserves_observation_and_requires_explicit_new_envel
             return value.astimezone(tz) if tz else value.replace(tzinfo=None)
 
     monkeypatch.setattr(mapped, 'datetime', FixedClock)
-    evidence_path = (Path(__file__).resolve().parents[2] / 'thesis-ledger/docs/tasks/evidence'
+    evidence_path = (Path(__file__).resolve().parents[2] / 'thesis-ledger/docs/evidence'
                      / '2026-10-02-m22-159516-split-mapping.json')
     if not evidence_path.is_file():
         pytest.skip('此离线候选对照需要配对工作区中的原159516映射，不以其他夹具替代')

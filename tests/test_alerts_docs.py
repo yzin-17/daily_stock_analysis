@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DOC_PATH = PROJECT_ROOT / "docs" / "alerts.md"
+DOC_PATH = PROJECT_ROOT / "docs/archive/legacy" / "alerts.md"
 
 
 def _read_doc() -> str:

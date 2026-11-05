@@ -11,4 +11,4 @@ J2：新测试已登记至data-test-scope.json，受控并发／异常及既有�
 
 ## 最终验收
 
-状态：已完成。按容器实际状态选择正式入口：两次update在构建前失败／锁拒绝后，容器恢复running且纯代码条件具备，正式sync-code.sh dsa退出0。目标Linux ARM64 mini-racer 0.14.1的24个真实JS上下文／8线程通过；Control、真实Yahoo／富途读取恢复。守卫摘要3adfe6361c7bf8b654718c596b739dfe794c0b498c10a7454df446bdc8e5c823，后续同步输入未变。 详见[主仓最终证据](../../../../thesis-ledger/docs/tasks/evidence/2026-11-05-todo-4-15-final-acceptance.md)。
+状态：已完成。按容器实际状态选择正式入口：两次update在构建前失败／锁拒绝后，容器恢复running且纯代码条件具备，正式sync-code.sh dsa退出0。目标Linux ARM64 mini-racer 0.14.1的24个真实JS上下文／8线程通过；Control、真实Yahoo／富途读取恢复。守卫摘要3adfe6361c7bf8b654718c596b739dfe794c0b498c10a7454df446bdc8e5c823，后续同步输入未变。 详见[主仓最终证据](../../../../thesis-ledger/docs/evidence/2026-11-05-todo-4-15-final-acceptance.md)。

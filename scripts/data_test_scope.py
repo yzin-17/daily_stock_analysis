@@ -54,7 +54,7 @@ def load_scope(root=ROOT):
             raise ValueError("混合测试退役缺少理由：" + value)
         nodes.extend(value + "::" + name for name in data)
     # D0 的纯数据标记不能在后续范围清单中被静默转为产品退役。
-    if scope["baselineInventory"] != "docs/tasks/evidence/2026-10-19-data-service-inventory.jsonl":
+    if scope["baselineInventory"] != "docs/evidence/2026-10-19-data-service-inventory.jsonl":
         raise ValueError("数据测试基线不是已登记的 D0 库存")
     baseline = root / scope["baselineInventory"]
     if sha256(baseline.read_bytes()).hexdigest() != scope["baselineSha256"]:

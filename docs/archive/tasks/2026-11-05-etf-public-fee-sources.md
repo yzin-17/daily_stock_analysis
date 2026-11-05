@@ -9,4 +9,4 @@
 
 ## 最终验收
 
-状态：已完成。官方材料4次读取、3成功及1失败保留；新增三个精确ETF包。不可变Mapping上下文修复后81项通过，正式sync-code.sh dsa及目标三个精确能力探针healthy。 详见[主仓最终证据](../../../../thesis-ledger/docs/tasks/evidence/2026-11-05-todo-4-15-final-acceptance.md)。
+状态：已完成。官方材料4次读取、3成功及1失败保留；新增三个精确ETF包。不可变Mapping上下文修复后81项通过，正式sync-code.sh dsa及目标三个精确能力探针healthy。 详见[主仓最终证据](../../../../thesis-ledger/docs/evidence/2026-11-05-todo-4-15-final-acceptance.md)。

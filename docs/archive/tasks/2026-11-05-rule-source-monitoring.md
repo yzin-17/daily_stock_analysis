@@ -9,4 +9,4 @@
 
 ## 最终验收
 
-状态：已完成。状态／网络／Control／生命周期26项通过；目标手动检查两份港交所材料成功，版本及任务跨DSA重启保留，定期检查关闭。 详见[主仓最终证据](../../../../thesis-ledger/docs/tasks/evidence/2026-11-05-todo-4-15-final-acceptance.md)。
+状态：已完成。状态／网络／Control／生命周期26项通过；目标手动检查两份港交所材料成功，版本及任务跨DSA重启保留，定期检查关闭。 详见[主仓最终证据](../../../../thesis-ledger/docs/evidence/2026-11-05-todo-4-15-final-acceptance.md)。

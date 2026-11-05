@@ -21,10 +21,10 @@
 - [x] 空事实、错口径拒绝、窗口上限和分页声明一致。
 - [x] 本地证据与官方目标部署、真实来源证据分层记录。
 
-W2 结果：infra `./scripts/sync-code.sh dsa` 退出 0，DSA 健康，镜像不变，宿主/目标源码 SHA-256 一致。主仓宿主 Reader 四周期完整来源读取及目标 21 项 HTTP 窗口/指标检查通过，月线真实 39 个月历史保留，未补造预热。证据由[主仓运行态验收](../../../../thesis-ledger/docs/tasks/evidence/2026-10-05-market-period-runtime-closure.md)拥有。当时的同步仅覆盖可写层，后续正式镜像固化结果见下节。
+W2 结果：infra `./scripts/sync-code.sh dsa` 退出 0，DSA 健康，镜像不变，宿主/目标源码 SHA-256 一致。主仓宿主 Reader 四周期完整来源读取及目标 21 项 HTTP 窗口/指标检查通过，月线真实 39 个月历史保留，未补造预热。证据由[主仓运行态验收](../../../../thesis-ledger/docs/evidence/2026-10-05-market-period-runtime-closure.md)拥有。当时的同步仅覆盖可写层，后续正式镜像固化结果见下节。
 
 ## 2026-11-03 镜像证据复核与归档
 
-- [x] 后续统一部署已覆盖镜像持久化。复用 [DG2a 正式镜像验收](../../tasks/evidence/2026-10-20-dg2a-target-acceptance.md)：`update.sh dsa` 退出 0，镜像 `sha256:06b6054ba433de813e1bfc407872b4068ed9d9650946143c19dd5d3147c6f389`；407 个运行文件与封存源码逐字节一致，载荷摘要为 `c22cff82827114b35c4d4aafa08c7dd58380e06c13bef7bb73cb420f1ae42e6b`。运行载荷合同包含完整 `data_provider/`，不再仅有 10-05 的可写层证据。
+- [x] 后续统一部署已覆盖镜像持久化。复用 [DG2a 正式镜像验收](../../evidence/2026-10-20-dg2a-target-acceptance.md)：`update.sh dsa` 退出 0，镜像 `sha256:06b6054ba433de813e1bfc407872b4068ed9d9650946143c19dd5d3147c6f389`；407 个运行文件与封存源码逐字节一致，载荷摘要为 `c22cff82827114b35c4d4aafa08c7dd58380e06c13bef7bb73cb420f1ae42e6b`。运行载荷合同包含完整 `data_provider/`，不再仅有 10-05 的可写层证据。
 - [x] 原来源验收按实际输入复用。腾讯适配器当前 SHA-256 仍为 `fffdf53efa0a8e08238015a2a428fd3c5671f4e7fe3583dc68a76b2ea9275f28`，与 W2 目标源码一致。DG2a 的完整窗口、分页与主仓消费另有候选镜像受控验证；其 3,565 项通过、零失败/跳过不替代原腾讯实源证据。
-- [x] 最终一致性复核通过。AC1～AC4、W1/W2 和镜像待办均有既有证据，原不足历史、失败与未知边界保持；现行 Spec 保留，任务归档。此次只核对文档、原始报告和文件摘要，没有重复测试、构建、来源调用或 Docker 操作。[跨仓复核记录](../../../../thesis-ledger/docs/tasks/evidence/2026-11-03-cross-repository-closeout.md)保留证据映射。
+- [x] 最终一致性复核通过。AC1～AC4、W1/W2 和镜像待办均有既有证据，原不足历史、失败与未知边界保持；现行 Spec 保留，任务归档。此次只核对文档、原始报告和文件摘要，没有重复测试、构建、来源调用或 Docker 操作。[跨仓复核记录](../../../../thesis-ledger/docs/evidence/2026-11-03-cross-repository-closeout.md)保留证据映射。

@@ -180,7 +180,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - [改进] ThesisLedger Alpha Vantage 美股未复权日线与 Finnhub 美股 qfq 日线分别迁入来源绑定；保留 full 请求、纽约时钟、原 HTTP 分类及独立价格口径，报价与真实账户配置保持原路径。
 
-- [改进] ThesisLedger 选定腾讯/HiThink 日线及腾讯 ETF 报价接入强类型能力绑定，由来源定义派生目录、工厂、凭据与修订；目录补充整窗查询语义，需先更新消费者。接入与隔离盘口验证见 `docs/thesis-ledger-capability-adapters.md`。
+- [改进] ThesisLedger 选定腾讯/HiThink 日线及腾讯 ETF 报价接入强类型能力绑定，由来源定义派生目录、工厂、凭据与修订；目录补充整窗查询语义，需先更新消费者。接入与隔离盘口验证见 `docs/design/thesis-ledger-capability-adapters.md`。
 
 - [新功能] 已知现金方案增加独立鉴权只读控制复核，绑定保存目标顺序与配置/凭证修订，复用前后快照校验；不重取分红或写准入，资料读取和旧完整事件保持。
 
@@ -197,24 +197,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 沪深股票可通过现有历史状态能力路由按需读取 BaoStock 日级停复牌与粗 ST 标记；缺失保留未知，结构化响应/观察时钟独立冻结，原公告与严格研究合同保持。
 
 - [新功能] ThesisLedger 增加富途港美股票/ETF 当前证券静态资料的独立路由和只读 Data Contract，精确绑定证券及类型，保留整数 ID 与未知字段。
-- [新功能] 富途 OpenD 新增港美股票/ETF 精确快照与三种复权历史日线，进入现有主备路由；证券类型、市场时区与完整分页严格核验，短查询有可终止期限，完整行情清单及未接入能力见 `docs/thesis-ledger-futu-openapi.md`。
-- [新功能] ThesisLedger 每手股数新增独立主备路由，接入富途 OpenD 只读静态资料和长桥 `lot_size`；用户自行配置连接与来源，保留缓存观察、手动覆盖及冻结研究预设，不扩大历史整手或行情资格。见 `docs/thesis-ledger-security-lot-size.md`。
+- [新功能] 富途 OpenD 新增港美股票/ETF 精确快照与三种复权历史日线，进入现有主备路由；证券类型、市场时区与完整分页严格核验，短查询有可终止期限，完整行情清单及未接入能力见 `docs/design/thesis-ledger-futu-openapi.md`。
+- [新功能] ThesisLedger 每手股数新增独立主备路由，接入富途 OpenD 只读静态资料和长桥 `lot_size`；用户自行配置连接与来源，保留缓存观察、手动覆盖及冻结研究预设，不扩大历史整手或行情资格。见 `docs/design/thesis-ledger-security-lot-size.md`。
 - [新功能] 中国内地停复牌公告支持有界程序化获取、多公司库存查询及明确日期解析；未下载和未解析公告仍可展示，已知状态直接读取，缺失日期保持未知。
 
 - [测试] 按普通行情配置读取与独立事件准入分别核对失效、撤销和修订边界；隔离股票列表测试的 SDK 替身和导入路径，消除全套运行时的 Tushare 依赖误判。
 
-- [新功能] ThesisLedger增加00147.HK/GME.US的有界公开收费和盘中状态源，保留原件摘要、观察时钟与未知范围；Section31按本窗口T+2结算日推导费率切换，归一化身份保留未知市场单位，真实日历保留午休/早收市。见`docs/thesis-ledger-multimarket-rules.md`。
+- [新功能] ThesisLedger增加00147.HK/GME.US的有界公开收费和盘中状态源，保留原件摘要、观察时钟与未知范围；Section31按本窗口T+2结算日推导费率切换，归一化身份保留未知市场单位，真实日历保留午休/早收市。见`docs/design/thesis-ledger-multimarket-rules.md`。
 
 - [改进] ThesisLedger 公告与规则来源按通用类型命名，提供真实收录范围与原始文档清单；客户端支持公告归集、搜索及原文查看，读取检查为独立操作，缺失元信息明确回显。
 
-- [改进] 全部 16 个 ThesisLedger 来源统一按精确库存显示能力并支持逐路由检查，返回实际标的、配置/准入状态与未检查项；官方包和事件证据分别核验，空结果不成功。补齐 Longbridge 完整 OAuth 快照与只读诊断刷新，Yahoo/Longbridge 报价固定实际来源、身份和缺失字段；检查限时限并发，不写入业务准入。见 `docs/thesis-ledger-exact-market-routes.md`。
+- [改进] 全部 16 个 ThesisLedger 来源统一按精确库存显示能力并支持逐路由检查，返回实际标的、配置/准入状态与未检查项；官方包和事件证据分别核验，空结果不成功。补齐 Longbridge 完整 OAuth 快照与只读诊断刷新，Yahoo/Longbridge 报价固定实际来源、身份和缺失字段；检查限时限并发，不写入业务准入。见 `docs/design/thesis-ledger-exact-market-routes.md`。
 
-- [改进] ThesisLedger 精确目录扩展为 CN/HK/US 的 96 条路由，补齐原生日线、AKShare ETF 单标报价、Tushare `rt_k` 与多市场报价；需要认证的来源先配置凭证再启用，缺凭证下拉项禁用，已有路由保留。配置事务拒绝缺凭证启用，清除最后凭证时停用。普通读取按配置、依赖、返回身份及凭证快照检查执行，功能卡片与选择器共用精确库存；缺失量额保持为空，高级完整覆盖与历史证据独立核验。见 `docs/thesis-ledger-exact-market-routes.md`。
+- [改进] ThesisLedger 精确目录扩展为 CN/HK/US 的 96 条路由，补齐原生日线、AKShare ETF 单标报价、Tushare `rt_k` 与多市场报价；需要认证的来源先配置凭证再启用，缺凭证下拉项禁用，已有路由保留。配置事务拒绝缺凭证启用，清除最后凭证时停用。普通读取按配置、依赖、返回身份及凭证快照检查执行，功能卡片与选择器共用精确库存；缺失量额保持为空，高级完整覆盖与历史证据独立核验。见 `docs/design/thesis-ledger-exact-market-routes.md`。
 
 - [新功能] ThesisLedger 公告现金分红接入精确 V3 事件库存、当前准入与 Data Token 鉴权网关，原包变化或读取期间策略变化时拒绝结果，保留原字节供主仓冻结重验；拆分与目标运行验收独立维护。
-- [修复] HiThink 支持在 ThesisLedger 页面加密配置 API Key，日线、报价和分红使用统一有效凭证快照；草稿连接测试调用对应只读接口，凭证来源变化保持独立准入隔离。见 `docs/thesis-ledger-hithink-credentials.md`。
+- [修复] HiThink 支持在 ThesisLedger 页面加密配置 API Key，日线、报价和分红使用统一有效凭证快照；草稿连接测试调用对应只读接口，凭证来源变化保持独立准入隔离。见 `docs/guides/thesis-ledger-hithink-credentials.md`。
 
-- [新功能] ThesisLedger 增加 510300.SH 有界公告现金分红来源包与只读标准化器，按明确每十份单位保留登记/除息/发放日期、独立年报现金覆盖及实际核验时钟；V3 路由与回测消费分阶段实施，见 `docs/thesis-ledger-notice-dividends.md`。
+- [新功能] ThesisLedger 增加 510300.SH 有界公告现金分红来源包与只读标准化器，按明确每十份单位保留登记/除息/发放日期、独立年报现金覆盖及实际核验时钟；V3 路由与回测消费分阶段实施，见 `docs/design/thesis-ledger-notice-dividends.md`。
 
 - [文档] ThesisLedger首个000995日级停复牌研究闭环完成真实任务、冻结重放及Web验收，来源说明同步实际范围与费用模型兜底；其他状态和市场扩展仍独立维护。
 
@@ -222,23 +222,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - [改进] ThesisLedger首个停复牌研究标的000995.SZ增加基于发行人2020年报的独立上市事实，保留原八月交易所会话和个股停牌维度，目标验收仍由主仓P5.4维护。
 
-- [新功能] ThesisLedger 日级停复牌来源接入内置 Provider 清单、精确控制路由及 Data Token HTTP 网关，原收费网关复用相同读取边界；现有配置入口按“历史停复牌”展示并保留主备及未就绪语义，见 `docs/thesis-ledger-trading-status.md`。
+- [新功能] ThesisLedger 日级停复牌来源接入内置 Provider 清单、精确控制路由及 Data Token HTTP 网关，原收费网关复用相同读取边界；现有配置入口按“历史停复牌”展示并保留主备及未就绪语义，见 `docs/design/thesis-ledger-trading-status.md`。
 
-- [新功能] ThesisLedger 增加真实发行人日级停复牌生产切片与 V3 来源读取合同，明确皇台酒业 2023-08-17 停牌、08-18 复牌，未披露日期保持未知；正式网关和快照消费分阶段实施，见 `docs/thesis-ledger-trading-status.md`。
+- [新功能] ThesisLedger 增加真实发行人日级停复牌生产切片与 V3 来源读取合同，明确皇台酒业 2023-08-17 停牌、08-18 复牌，未披露日期保持未知；正式网关和快照消费分阶段实施，见 `docs/design/thesis-ledger-trading-status.md`。
 
-- [新功能] ThesisLedger 公共收费增加独立公开规则备份包与精确来源选择，按请求整窗读取并保留同政策依据和政府转载性质；主仓准备快照时可切换备用或使用已选模型，见 `docs/thesis-ledger-public-fees.md`。
+- [新功能] ThesisLedger 公共收费增加独立公开规则备份包与精确来源选择，按请求整窗读取并保留同政策依据和政府转载性质；主仓准备快照时可切换备用或使用已选模型，见 `docs/design/thesis-ledger-public-fees.md`。
 
-- [新功能] ThesisLedger 腾讯 ETF 单标基础报价接入精确路由，展示已校验价格与上游时间；未核量额保持 null/unknown，保留晚到策略变更保护，见 `docs/thesis-ledger-basic-quote.md`。
+- [新功能] ThesisLedger 腾讯 ETF 单标基础报价接入精确路由，展示已校验价格与上游时间；未核量额保持 null/unknown，保留晚到策略变更保护，见 `docs/design/thesis-ledger-basic-quote.md`。
 
-- [改进] ThesisLedger 基础 Quote 的成交量／成交额缺失或非法时返回 null，保留有效价格、真实零值、来源单位与双时钟；HiThink 未使用涨跌字段不再阻塞报价。消费者须先于 DSA 更新，见 `docs/thesis-ledger-basic-quote.md`。
+- [改进] ThesisLedger 基础 Quote 的成交量／成交额缺失或非法时返回 null，保留有效价格、真实零值、来源单位与双时钟；HiThink 未使用涨跌字段不再阻塞报价。消费者须先于 DSA 更新，见 `docs/design/thesis-ledger-basic-quote.md`。
 
 - [新功能] 新增 ThesisLedger 公共收费本地适配器及有界生产费率包，保留 2023-08-28 历史变化、来源性质和稳定内容摘要；已接入既有控制目录、精确主备配置和 Data V3 HTTP 读取，主仓已完成收费冻结及离线回测消费的本地验证，真实来源/目标运行验收继续实施。
 
 - [修复] ThesisLedger 腾讯精确日线保留早年度空原生数组的零事实，逐年整窗支持最多 3650 根和 16 个年段，分页证据升级为 v3；不截短周期预热或补造历史，仍保留总期限与错复权拒绝。合同见 `docs/specs/2026-10-05-tencent-period-window.md`。
 
-- [新功能] ThesisLedger 新增独立展示日历入口，允许在实际包覆盖内读取最多未来 366 日的计划 Session，支持完整年度桶；回测结算日历仍保留 104 日预算。合同见 `docs/thesis-ledger-market-calendar-contract.md`。
+- [新功能] ThesisLedger 新增独立展示日历入口，允许在实际包覆盖内读取最多未来 366 日的计划 Session，支持完整年度桶；回测结算日历仍保留 104 日预算。合同见 `docs/design/thesis-ledger-market-calendar-contract.md`。
 
-- [新功能] ThesisLedger 派生周期指标新增独立上下文绑定与计算能力端点，保留原生日线和 Data V3 握手；四周期按给定点计算，预热不足保留空值。合同见 `docs/thesis-ledger-period-indicator-contract.md`。
+- [新功能] ThesisLedger 派生周期指标新增独立上下文绑定与计算能力端点，保留原生日线和 Data V3 握手；四周期按给定点计算，预热不足保留空值。合同见 `docs/design/thesis-ledger-period-indicator-contract.md`。
 
 - [改进] ThesisLedger 基础 ETF 日线按 HiThink/腾讯共同能力启用：HiThink qfq 与腾讯 none/qfq/hfq 取消人工窗口准入前置；公共层从实际 Bar 和日历整理日级状态，保留缺日和无效响应校验。
 - [改进] ThesisLedger 腾讯 ETF HFQ 精确日线支持 `newfqkline/get` 的原生 `hfqday` 和成交额字段；真实普通回测与冻结重放已验证。股票 HFQ 未开放，量额及严格历史语义按具体计算依赖检查。
@@ -804,7 +804,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 补齐概念板块排行字段契约、通知报告行业/概念类型列展示和数据源稳定性与故障处理图示。
 - 补充 JP/KR/TW suffix-only MVP、`MARKET_REVIEW_REGION` 保存/校验/回退矩阵、Market Light 边界和 PR 提交流程约束。
 - 补充本地 CLI backend 隐私边界、非离线模型说明、Docker/CI 登录态限制和 `codex_cli` experimental/limited 状态。
-- 补充回测请求链路说明，并同步更新 `docs/full-guide.md` 与 `docs/full-guide_EN.md` 示例。
+- 补充回测请求链路说明，并同步更新 `docs/archive/legacy/full-guide.md` 与 `docs/archive/legacy/full-guide_EN.md` 示例。
 
 ### 测试
 
@@ -1551,7 +1551,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### 新功能
 
 - 💾 **桌面端 `.env` 备份/恢复入口**（#754）— 桌面模式下的系统设置页新增 `导出 .env` / `导入 .env` 按钮，可直接备份当前已保存配置，或把备份文件中的键值合并恢复到当前桌面端 `.env`；导入沿用现有 `config_version` 冲突保护与运行时重载链路，不改变现有桌面端便携模式路径。
-- 📊 **Tushare 股票列表获取工具** — 新增 `scripts/fetch_tushare_stock_list.py`，支持从 Tushare Pro 获取 A股、港股、美股列表信息并保存为 CSV，配有分页读取、智能限流、错误处理和进度提示；新增对应使用文档 `docs/TUSHARE_STOCK_LIST_GUIDE.md`。
+- 📊 **Tushare 股票列表获取工具** — 新增 `scripts/fetch_tushare_stock_list.py`，支持从 Tushare Pro 获取 A股、港股、美股列表信息并保存为 CSV，配有分页读取、智能限流、错误处理和进度提示；新增对应使用文档 `docs/guides/TUSHARE_STOCK_LIST_GUIDE.md`。
 - 🔎 **索引生成脚本多市场支持** — `generate_index_from_csv.py` 重构为支持 Tushare 和 AkShare 双数据源，同时覆盖 A股、港股、美股三个市场；新增按市场分类的别名映射（A股、港股常见别名，美股常用股票英文缩写）；添加 `--source` 参数切换数据源、`--test` 参数验证模式；严格过滤美股 DUMMY 记录。
 - 🔎 **索引生成脚本增强** — `generate_stock_index.py` 新增 `--test`/`-t` 测试模式和 `--verbose`/`-v` 详细输出模式，添加市场分布统计，优化 JSON 输出格式。
 - 📋 **首页完整报告支持双模式复制** — 历史报告详情头部新增“复制 Markdown 源码”和“复制纯文本”工具按钮；前者保留原始 Markdown 结构，后者去除常见 Markdown 格式符号，方便分享、归档和跨报告比对。复制按钮文案会跟随 `REPORT_LANGUAGE` 保持中英文一致，避免英文报告页出现中文固定文案。
@@ -1583,8 +1583,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 文档
 
-- 📘 **新增 Tushare 股票列表工具文档** — 新增 `docs/TUSHARE_STOCK_LIST_GUIDE.md`，说明股票列表抓取工具的使用方法、数据格式和常见问题。
-- 🌍 **补齐定时模式与关联板块的双语说明** — `docs/full-guide.md` / `docs/full-guide_EN.md` 现在明确说明 scheduled mode 会在每次执行前重新读取 `STOCK_LIST`，并同步补充个股关联板块展示能力说明，减少配置预期偏差。
+- 📘 **新增 Tushare 股票列表工具文档** — 新增 `docs/guides/TUSHARE_STOCK_LIST_GUIDE.md`，说明股票列表抓取工具的使用方法、数据格式和常见问题。
+- 🌍 **补齐定时模式与关联板块的双语说明** — `docs/archive/legacy/full-guide.md` / `docs/archive/legacy/full-guide_EN.md` 现在明确说明 scheduled mode 会在每次执行前重新读取 `STOCK_LIST`，并同步补充个股关联板块展示能力说明，减少配置预期偏差。
 - 🧭 **调整 Agent 术语兼容文案** — README、双语文档、设置页与问股界面继续以“策略”作为用户入口主称呼，同时补充 `skill` 作为内部统一命名，降低迁移期理解成本。
 
 ## [3.9.0] - 2026-03-20
@@ -1625,8 +1625,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 文档
 
-- 新增 Ollama 本地模型配置说明，同步更新 `README.md` 与 `docs/README_EN.md`（Fixes #690）
-- 完善 Ollama 配置说明：`docs/full-guide.md` / `docs/full-guide_EN.md` 环境变量表与 Note 补充 `OLLAMA_API_BASE`，避免英文用户误以为 Ollama 不能作为独立配置入口；合并重复的 `OLLAMA_API_BASE` 条目为单一条目
+- 新增 Ollama 本地模型配置说明，同步更新 `README.md` 与 `docs/archive/legacy/README_EN.md`（Fixes #690）
+- 完善 Ollama 配置说明：`docs/archive/legacy/full-guide.md` / `docs/archive/legacy/full-guide_EN.md` 环境变量表与 Note 补充 `OLLAMA_API_BASE`，避免英文用户误以为 Ollama 不能作为独立配置入口；合并重复的 `OLLAMA_API_BASE` 条目为单一条目
 - 明确文档同步治理边界：补充 `README.md`、专题文档、双语文档与交付说明之间的默认同步规则，减少后续文档漂移
 
 ## [3.8.0] - 2026-03-17
@@ -1730,7 +1730,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - 🗑️ **History batch deletion** — Web UI now supports multi-selection and batch deletion of analysis history; added `POST /api/v1/history/batch-delete` endpoint and `ConfirmDialog` component.
 - 🔐 **Auth settings API** — new `POST /api/v1/auth/settings` endpoint to enable or disable Web authentication at runtime and set the initial admin password when needed
-- openclaw Skill 集成指南 — 新增 [docs/openclaw-skill-integration.md](openclaw-skill-integration.md)，说明如何通过 openclaw Skill 调用 DSA API
+- openclaw Skill 集成指南 — 新增 [docs/openclaw-skill-integration.md](archive/legacy/openclaw-skill-integration.md)，说明如何通过 openclaw Skill 调用 DSA API
 - ⚙️ **LLM channel protocol/test UX** — `.env` and Web settings now share the same channel shape (`LLM_CHANNELS` + `LLM_<NAME>_PROTOCOL/BASE_URL/API_KEY/MODELS/ENABLED`); settings page adds per-channel connection testing, primary/fallback/vision model selection, and protocol-aware model prefixing
 - 🤖 **Agent architecture Phase 0+1** — shared protocols (`AgentContext`, `AgentOpinion`, `StageResult`), extracted `run_agent_loop()` runner, `AGENT_ARCH` switch (`single`/`multi`), config registry entries
 - 🔍 **Bot NL routing** — two-layer natural-language routing: cheap regex pre-filter (stock codes + finance keywords) → lightweight LLM intent parsing; controlled by `AGENT_NL_ROUTING=true`; supports multi-stock and strategy extraction
@@ -1814,7 +1814,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 📦 **Smart import** — multi-source import from CSV/Excel/clipboard; name→code resolver (local map + pinyin + AkShare); confidence-tiered confirmation
 - ⚙️ **GitHub Actions LiteLLM config** — workflow supports `LITELLM_CONFIG`/`LITELLM_CONFIG_YAML` for flexible AI provider configuration
 - ⚙️ **Config engine refactor & system API** (#602) — unified config registry, validation and API exposure
-- 📖 **LLM configuration guide** — new `docs/LLM_CONFIG_GUIDE.md` covering 3-tier config, quick start, Agent/troubleshooting
+- 📖 **LLM configuration guide** — new `docs/archive/legacy/LLM_CONFIG_GUIDE.md` covering 3-tier config, quick start, Agent/troubleshooting
 
 ### Fixed
 - 🐛 **analyze_trend always reports No historical data** (#600) — now fetches from DB/DataFetcher instead of broken `get_analysis_context`
@@ -2543,7 +2543,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 改进
 - 📝 README 精简优化
-  - 高级配置移至 `docs/full-guide.md`
+  - 高级配置移至 `docs/archive/legacy/full-guide.md`
 
 
 ## [1.3.0] - 2026-01-12

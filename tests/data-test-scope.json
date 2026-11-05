@@ -1,6 +1,6 @@
 {
   "schemaVersion": "dsa-data-tests-v1",
-  "baselineInventory": "docs/tasks/evidence/2026-10-19-data-service-inventory.jsonl",
+  "baselineInventory": "docs/evidence/2026-10-19-data-service-inventory.jsonl",
   "baselineSha256": "aeaf1aa8fc283fff32bc210516edf0b0089186091d34869a48cfba00491c246c",
   "partialFiles": {
     "tests/test_searxng_env_docs.py": {
