@@ -1,11 +1,12 @@
 ---
-applyTo: "main.py,server.py,src/**/*.py,data_provider/**/*.py,api/**/*.py,bot/**/*.py,tests/**/*.py"
+applyTo: "server.py,src/**/*.py,data_provider/**/*.py,api/**/*.py,tests/**/*.py"
 ---
 
-# Backend Instructions
+# 数据服务实现规则
 
-- Preserve current pipeline boundaries and reuse existing services, repositories, schemas, and fallback logic instead of creating parallel paths.
-- Changes touching config, CLI flags, schedule semantics, API behavior, auth, or report payloads must sync `.env.example` and assess Web/Desktop compatibility.
-- Changes in `data_provider/` must preserve provider priority, normalization behavior, timeout/retry expectations, and graceful degradation.
-- Prefer `./scripts/ci_gate.sh` when feasible; otherwise run `python -m py_compile` on changed files plus the closest deterministic tests.
-- Do not let a single provider, notification channel, or optional integration failure break the main analysis flow unless the requirement explicitly demands fail-fast behavior.
+- 遵循 [AGENTS.md](../../AGENTS.md) 的模块、验证和部署约束，复用现有数据服务、仓储、Schema 与适配器。
+- 数据入口为 `server:app`。配置、认证、任务或 API 变化需同步相关说明，并核对 ThesisLedger 消费合同。
+- 来源身份、时间、单位、币种、权限和覆盖范围必须保真；回退按显式策略执行，保留失败和未知状态。
+- 控制/OAuth、凭据引用、公告原件、目录任务及现存数据库/文件需要独立的保全与恢复证据。
+- 优先定向测试，再执行数据边界和完整离线矩阵。默认收集与 CI 以逐路径审查的数据测试清单为准。
+- 不以测试通过代替原生 SDK、真实来源、镜像或目标部署验收。

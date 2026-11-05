@@ -8,7 +8,6 @@ from data_provider.base import BaseFetcher, DataFetchError, DataFetcherManager, 
 from data_provider.yfinance_fetcher import YfinanceFetcher
 from data_provider.realtime_types import UnifiedRealtimeQuote
 from src.core.trading_calendar import MARKET_EXCHANGE, MARKET_TIMEZONE, get_market_for_stock
-from src.market_context import detect_market, get_market_guidelines
 from src.services.stock_code_utils import is_code_like, normalize_code
 
 
@@ -48,14 +47,10 @@ def test_normalize_and_detect_jp_kr_suffix_codes() -> None:
     assert normalize_stock_code("005930.ks") == "005930.KS"
     assert normalize_stock_code("035720.kq") == "035720.KQ"
 
-    assert detect_market("7203.T") == "jp"
-    assert detect_market("6758.T") == "jp"
-    assert detect_market("005930.KS") == "kr"
-    assert detect_market("035720.KQ") == "kr"
-    assert detect_market("005930") == "cn"
-
     assert get_market_for_stock("7203.T") == "jp"
+    assert get_market_for_stock("6758.T") == "jp"
     assert get_market_for_stock("005930.KS") == "kr"
+    assert get_market_for_stock("035720.KQ") == "kr"
     assert get_market_for_stock("005930") == "cn"
 
     assert is_code_like("7203.T") is True
@@ -63,16 +58,6 @@ def test_normalize_and_detect_jp_kr_suffix_codes() -> None:
     assert normalize_code("035720.KQ") == "035720.KQ"
 
 
-def test_market_guidelines_for_jp_kr_exclude_a_share_specific_context() -> None:
-    jp_guidelines = get_market_guidelines("7203.T")
-    kr_guidelines = get_market_guidelines("005930.KS")
-
-    assert "日股" in jp_guidelines
-    assert "韩股" in kr_guidelines
-    for text in (jp_guidelines, kr_guidelines):
-        assert "不要套用 A 股" in text
-        assert "北向资金" in text
-        assert "龙虎榜" in text
 
 
 def test_yfinance_keeps_jp_kr_suffix_codes_and_indices() -> None:

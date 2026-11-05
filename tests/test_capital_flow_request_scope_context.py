@@ -21,7 +21,7 @@ class TestCapitalFlowScopeContext(unittest.TestCase):
             fundamental_fetch_timeout_seconds=5.0,
             fundamental_retry_max=1,
         )
-        stack.enter_context(patch("src.config.get_config", return_value=config))
+        stack.enter_context(patch("src.data_config.get_data_config", return_value=config))
         stack.enter_context(patch("data_provider.fundamental_valuation.read_current_stock_valuation",
                                   side_effect=ValueError("offline valuation fixture")))
         with patch.object(DataFetcherManager, "_init_default_fetchers"):

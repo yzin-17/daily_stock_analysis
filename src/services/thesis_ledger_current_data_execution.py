@@ -38,6 +38,10 @@ def execute_current_data_request(
             symbol=request.symbol,
         )
         route_key = current_data_route_key(capability, instrument_type, request.symbol)
+        if capability == "NEWS_FEED" and (request.parameters or {}).get("providerId") is not None:
+            targets = [item for item in targets if item[0] == request.parameters["providerId"]]
+            if not targets:
+                raise CurrentDataRouteError("not_admitted", "所选快讯来源不在当前有效路由中")
         if capability in LOCAL_RULE_CAPABILITIES or capability in STATUS_QUERY_CAPABILITIES:
             parameters = request.parameters or {}
             pin = parameters.get("routeTarget")
@@ -75,7 +79,7 @@ def execute_current_data_request(
         if not scoped_targets:
             raise CurrentDataRouteError("not_admitted", "当前来源准入未覆盖请求标的或日期")
         provider_epoch = None
-        if capability in STATUS_QUERY_CAPABILITIES:
+        if capability in STATUS_QUERY_CAPABILITIES or capability in {"NEWS_SEARCH", "NEWS_FEED"}:
             provider_epoch = feature_provider_epoch(runtime.store, [item.provider_id for item in scoped_targets])
         def checked_operation(provider_id, adapter, source):
             value = operation(provider_id, adapter, source)

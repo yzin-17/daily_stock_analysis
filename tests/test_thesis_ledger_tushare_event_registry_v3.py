@@ -30,7 +30,7 @@ def state(tmp_path, monkeypatch):
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "synthetic-registry-master")
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY_VERSION", "synthetic-v1")
     monkeypatch.setenv("TUSHARE_HTTP_URL", "https://synthetic.example/api")
-    monkeypatch.setattr("src.config.get_config", lambda: SimpleNamespace(tushare_token="synthetic-token"))
+    monkeypatch.setattr("src.data_config.get_data_config", lambda: SimpleNamespace(tushare_token="synthetic-token"))
     store = ThesisLedgerControlStore(str(tmp_path / "registry.sqlite"))
     runtime = ThesisLedgerProviderRuntime(store)
     store.apply_policy_v3({
@@ -168,7 +168,7 @@ def test_runtime_current_admission_refuses_actual_rotation_or_revocation(state, 
     admit()
     assert runtime._current_market_v3_admission(EVENT_KEY, TUSHARE_TARGET) is not None
     if change == "token":
-        monkeypatch.setattr("src.config.get_config", lambda: SimpleNamespace(tushare_token="synthetic-rotated"))
+        monkeypatch.setattr("src.data_config.get_data_config", lambda: SimpleNamespace(tushare_token="synthetic-rotated"))
     elif change == "endpoint":
         monkeypatch.setenv("TUSHARE_HTTP_URL", "https://synthetic-rotated.example/api")
     elif change == "master":

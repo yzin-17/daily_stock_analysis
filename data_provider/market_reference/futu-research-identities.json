@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "description": "仅当前身份交叉观察，不提供历史单位或历史可交易证明",
+  "identities": [
+    {
+      "symbol": "00700.HK",
+      "market": "HK",
+      "futu": {
+        "symbol": "00700.HK",
+        "market": "HK",
+        "assetType": "STOCK",
+        "exchange": "HK_MAINBOARD",
+        "observedAt": "2026-10-16T09:50:57.578614+00:00",
+        "provider": "futu"
+      },
+      "futuReceiptSha256": "0ba01609563e4c063239d40525c139df0d49f6cda1671a042f478cb3b2023879",
+      "identity": {
+        "metadata": {
+          "currency": "HKD",
+          "exchangeName": "HKG",
+          "exchangeTimezoneName": "Asia/Hong_Kong",
+          "fullExchangeName": "HKSE",
+          "instrumentType": "EQUITY",
+          "symbol": "0700.HK"
+        },
+        "observedAt": "2026-10-16T09:51:00.766669+00:00",
+        "publisher": "Yahoo Finance",
+        "sdk": "yfinance",
+        "sdkVersion": "1.7.0"
+      },
+      "identityReceiptSha256": "f5947ee881c0278eac39f67c22dc26c6dd59ba4b01d86b4721134b109e48e7bc"
+    },
+    {
+      "symbol": "AAPL.US",
+      "market": "US",
+      "futu": {
+        "symbol": "AAPL.US",
+        "market": "US",
+        "assetType": "STOCK",
+        "exchange": "US_NASDAQ",
+        "observedAt": "2026-10-16T09:50:59.099512+00:00",
+        "provider": "futu"
+      },
+      "futuReceiptSha256": "406375718b7b6e11c3d0a51b24c088f25c8c1b2a05fe932d830e0e17956a52af",
+      "identity": {
+        "metadata": {
+          "currency": "USD",
+          "exchangeName": "NMS",
+          "exchangeTimezoneName": "America/New_York",
+          "fullExchangeName": "NasdaqGS",
+          "instrumentType": "EQUITY",
+          "symbol": "AAPL"
+        },
+        "observedAt": "2026-10-16T09:51:02.067865+00:00",
+        "publisher": "Yahoo Finance",
+        "sdk": "yfinance",
+        "sdkVersion": "1.7.0"
+      },
+      "identityReceiptSha256": "5852f70d34a1f63bd140a125c073c8c388a8ff18b7770b52dff4919810bd0ff4"
+    }
+  ]
+}

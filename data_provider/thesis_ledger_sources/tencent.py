@@ -9,14 +9,18 @@ from types import SimpleNamespace
 
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError, DailyRead, provider_symbol_for_contract
 from src.services.thesis_ledger_capability_registry import DailyBinding, ExactKey, QuoteBinding, SourceDefinition
+from src.services.thesis_ledger_quote_units_contract import QuotePublicUnits, QuotePublicUnitsError
 from data_provider.tencent_native_daily import MAX_ROWS, MAX_PARTITIONS, TENCENT_NATIVE_DAILY_PROTOCOL
+from data_provider.market_reference_bindings import reference_bindings, reference_manifest
+
+REFERENCE_BINDINGS = reference_bindings('tencent')
 
 
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
-    return build_provider_manifest("tencent", "腾讯财经", {
+    return reference_manifest(build_provider_manifest("tencent", "腾讯财经", {
         "DAILY_BAR": ("STOCK", "ETF"), "REALTIME_QUOTE": ("ETF",),
-    }, upstream_sources=(("tencent", "腾讯财经"),))
+    }, upstream_sources=(("tencent", "腾讯财经"),)), REFERENCE_BINDINGS)
 
 
 def factory(context):
@@ -51,6 +55,16 @@ def daily(query, context):
 def quote(query, context):
     value = context.adapter.get_realtime_quote_single_symbol(query.symbol)
     return SimpleNamespace(**value) if isinstance(value, dict) else value
+
+
+def public_quote_units(context):
+    """保留该单标 ETF 端点已声明的币种；量额单位仍未知。"""
+    units = getattr(context.value, "units", None)
+    expected = {"price_currency": "CNY", "volume": "unknown", "turnover_currency": "unknown"}
+    if context.upstream_source != "tencent" or units != expected:
+        raise QuotePublicUnitsError()
+    return QuotePublicUnits(priceCurrency=units["price_currency"], volume=units["volume"],
+                            turnoverCurrency=units["turnover_currency"])
 
 
 def verify_transport(frame, start, end, adjustment):
@@ -108,6 +122,7 @@ def verify_transport(frame, start, end, adjustment):
 
 
 SOURCE = SourceDefinition("tencent", manifest, factory, (
+    *REFERENCE_BINDINGS,
     *(DailyBinding(ExactKey("CN", asset, "DAILY_BAR", adjustment), "tencent",
         f"dsa-v3-{asset.lower()}-tencent-{adjustment}-adapter-v2" if adjustment != "hfq"
         else "dsa-v3-etf-tencent-hfq-newfqkline-adapter-v1",
@@ -115,6 +130,7 @@ SOURCE = SourceDefinition("tencent", manifest, factory, (
         research_calendar_eligible=research_calendar_eligible if adjustment in {'none', 'qfq'} else None)
       for asset, adjustment in (("STOCK", "none"), ("STOCK", "qfq"), ("ETF", "none"), ("ETF", "qfq"), ("ETF", "hfq"))),
     QuoteBinding(ExactKey("CN", "ETF", "REALTIME_QUOTE"), "tencent",
-                 "tencent-etf-basic-quote-v1", "tencent-etf-single-symbol-v1", quote),
+                 "tencent-etf-basic-quote-v2", "tencent-etf-single-symbol-v1", quote),
 ), ("data_provider.tencent_fetcher", "TencentFetcher"), dependency_modules=("requests",),
-    quote_source_aliases=(('tencent', 'tencent'), ('akshare_qq', 'tencent')))
+    quote_public_units=public_quote_units,
+    quote_source_aliases=(('tencent', 'tencent'), ('tencent/tencent', 'tencent'), ('akshare_qq', 'tencent')))

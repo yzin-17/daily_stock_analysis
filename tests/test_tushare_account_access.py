@@ -169,3 +169,123 @@ def test_control_http_keeps_account_report_separate_with_offline_upstream(runtim
 ])
 def test_only_explicit_permission_denials_become_missing(error, state, code):
     assert failure_result(error) == {"state": state, "attempted": True, "errorCode": code}
+
+
+def test_basic_account_skips_unincluded_interfaces(runtime, monkeypatch):
+    calls = []
+    monkeypatch.setattr("data_provider.tushare_fetcher.requests.post",
+                        lambda *a, **kw: calls.append(kw["json"]["api_name"]) or response())
+    result = check_provider(runtime, "tushare", envelope(purpose="account_access",
+        accountLevel={"points": 120, "independentApis": []}))
+    assert calls == ["daily"] and result["status"] == "healthy"
+    assert list(states(result).values()).count("not_included") == 5
+    assert all(not r["access"]["attempted"] for r in result["accountAccess"]["routes"]
+               if r["access"]["state"] == "not_included")
+
+
+def test_save_reuses_draft_and_persists_across_runtime_restart(runtime, monkeypatch):
+    from src.services.thesis_ledger_account_access_configuration import configure_provider
+    monkeypatch.setattr("src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime", lambda: runtime)
+    calls = []
+    monkeypatch.setattr("data_provider.tushare_fetcher.requests.post",
+                        lambda *a, **kw: calls.append(kw["json"]["api_name"]) or response())
+    level = {"points": 120, "independentApis": []}
+    check_provider(runtime, "tushare", envelope(purpose="account_access", accountLevel=level))
+    saved = configure_provider(runtime.store, "tushare", envelope(settings={"accountLevel": level}))
+    assert calls == ["daily"] and saved["settings"]["accountLevel"] == level
+    restarted = ThesisLedgerProviderRuntime(ThesisLedgerControlStore(runtime.store.database_path))
+    entries = [e for e in restarted.market_route_catalog_v3()["entries"] if e["target"]["providerId"] == "tushare"]
+    assert len(entries) == 6 and sum(e["accountAccess"]["state"] == "allowed" for e in entries) == 1
+    assert all(e["accountAccess"]["persisted"] for e in entries) and calls == ["daily"]
+    with runtime.store._connect() as connection:
+        rows = connection.execute("SELECT report_json FROM thesis_ledger_account_access").fetchall()
+    assert "synthetic-current-token" not in str([tuple(row) for row in rows])
+    calls.clear()
+    checked = check_provider(runtime, "tushare", envelope(route={"key": entries[-1]["key"], "target": entries[-1]["target"]}))
+    assert checked["routeResults"][-1]["result"]["attempted"] is False and calls == []
+    runtime.store.save_provider_config("tushare", envelope(enabled=True))
+    enabled_entries = [e for e in restarted.market_route_catalog_v3()["entries"] if e["target"]["providerId"] == "tushare"]
+    assert sum(e["accountAccess"]["state"] == "allowed" for e in enabled_entries) == 1 and calls == []
+    monkeypatch.setenv("TUSHARE_HTTP_URL", "https://changed.example/api")
+    entries = [e for e in restarted.market_route_catalog_v3()["entries"] if e["target"]["providerId"] == "tushare"]
+    assert all(e["accountAccess"]["state"] == "unknown" for e in entries)
+
+
+def test_level_changes_keep_other_settings_and_clear_resets_level(runtime, monkeypatch):
+    from src.services.thesis_ledger_account_access_configuration import configure_provider
+    monkeypatch.setattr("src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime", lambda: runtime)
+    monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", lambda *a, **kw: response())
+    runtime.store.save_provider_config("tushare", envelope(settings={"existingSetting": "keep"}))
+    saved = configure_provider(runtime.store, "tushare", envelope(settings={"accountLevel": {"points": 120, "independentApis": []}}))
+    assert saved["settings"]["existingSetting"] == "keep"
+    registry = next(p for p in runtime.store.provider_registry() if p["providerId"] == "tushare")
+    assert set(registry["settings"]) == {"accountLevel"}
+    removed = configure_provider(runtime.store, "tushare", envelope(clearCredentials=True))
+    assert removed["settings"] == {"existingSetting": "keep"}
+
+
+def test_permissions_write_failure_rolls_back_configuration(runtime, monkeypatch):
+    from src.services.thesis_ledger_account_access_configuration import configure_provider
+    monkeypatch.setattr("src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime", lambda: runtime)
+    monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", lambda *a, **kw: response())
+    before = db_state(runtime)
+    def reject(*args):
+        raise RuntimeError("synthetic-storage-failure")
+    monkeypatch.setattr("src.services.thesis_ledger_account_access_configuration.write_record", reject)
+    with pytest.raises(RuntimeError, match="synthetic-storage-failure"):
+        configure_provider(runtime.store, "tushare", envelope(settings={
+            "accountLevel": {"points": 120, "independentApis": []}}))
+    assert db_state(runtime) == before
+
+
+@pytest.mark.parametrize("level", [{"points": True}, {"points": -1},
+    {"points": 120, "independentApis": ["fund_div"]}])
+def test_bad_levels_never_request_or_save(runtime, monkeypatch, level):
+    from src.services.thesis_ledger_account_access_configuration import configure_provider
+    monkeypatch.setattr("src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime", lambda: runtime)
+    monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", lambda *a, **kw: pytest.fail("unexpected upstream"))
+    before = db_state(runtime)
+    with pytest.raises(ControlContractError):
+        configure_provider(runtime.store, "tushare", envelope(settings={"accountLevel": level}))
+    assert db_state(runtime) == before
+
+
+def test_budget_failure_does_not_replace_level_exclusions(runtime, monkeypatch):
+    clock, calls = [0.0], []
+    runtime.clock = lambda: clock[0]
+    def post(*args, **kwargs):
+        calls.append(kwargs["json"]["api_name"])
+        clock[0] = 19
+        return response()
+    monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", post)
+    result = check_provider(runtime, "tushare", envelope(purpose="account_access",
+        accountLevel={"points": 120, "independentApis": []}))
+    assert calls == ["daily"] and list(states(result).values()).count("not_included") == 5
+    assert all(not r["access"]["attempted"] for r in result["accountAccess"]["routes"]
+               if r["access"]["state"] == "not_included")
+
+
+@pytest.mark.parametrize("broken", ["not_object", "missing_routes", "missing_key", "not_persisted"])
+def test_malformed_local_record_is_not_published(runtime, monkeypatch, broken):
+    from src.services.thesis_ledger_account_access_configuration import configure_provider
+    monkeypatch.setattr("src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime", lambda: runtime)
+    monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", lambda *a, **kw: response())
+    configure_provider(runtime.store, "tushare", envelope(settings={
+        "accountLevel": {"points": 120, "independentApis": []}}))
+    with runtime.store._connect() as connection:
+        raw = json.loads(connection.execute(
+            "SELECT report_json FROM thesis_ledger_account_access WHERE provider_id='tushare'").fetchone()[0])
+        if broken == "not_object":
+            raw = []
+        elif broken == "missing_routes":
+            raw.pop("routes")
+        elif broken == "missing_key":
+            raw["routes"][0].pop("key")
+        else:
+            raw["routes"][0]["access"]["persisted"] = False
+        connection.execute("UPDATE thesis_ledger_account_access SET report_json=? WHERE provider_id='tushare'",
+                           (json.dumps(raw),))
+        connection.commit()
+    restarted = ThesisLedgerProviderRuntime(ThesisLedgerControlStore(runtime.store.database_path))
+    entries = [e for e in restarted.market_route_catalog_v3()["entries"] if e["target"]["providerId"] == "tushare"]
+    assert all(e["accountAccess"]["state"] == "unknown" for e in entries)

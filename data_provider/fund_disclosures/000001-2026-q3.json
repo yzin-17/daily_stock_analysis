@@ -1,0 +1,86 @@
+{
+  "format": "fund-publication-reference-v1",
+  "fundSymbol": "000001.OF",
+  "reportPeriod": "2026-Q3",
+  "reportDate": "2026-09-30",
+  "issuer": "华夏基金管理有限公司",
+  "publishedOn": "2026-10-27",
+  "precision": "DATE_ONLY",
+  "timezone": "Asia/Shanghai",
+  "referenceObservedAt": "2026-11-05T08:26:27.806Z",
+  "sources": [
+    {
+      "role": "report",
+      "url": "https://fund.chinaamc.com/front/front/file/preview/85bec64eb1febf7837736ee5bb0a6cea/%E5%8D%8E%E5%A4%8F%E6%88%90%E9%95%BF%E8%AF%81%E5%88%B8%E6%8A%95%E8%B5%84%E5%9F%BA%E9%87%912026%E5%B9%B4%E7%AC%AC3%E5%AD%A3%E5%BA%A6%E6%8A%A5%E5%91%8A.pdf",
+      "sha256": "ba469b86ff55e63e2193a59631ddcc420d0a954d4799fb10cc8cdc428a24fb9f"
+    },
+    {
+      "role": "publication_notice",
+      "url": "https://fund.chinaamc.com/c/2026-10-27/1013337.shtml",
+      "sha256": "5c1d0f0fbcb64a2968adfdbc7503c024f983e3c0d1bf9569d1c0952dded204b1"
+    }
+  ],
+  "holdings": [
+    {
+      "symbol": "300308.SZ",
+      "name": "中际旭创",
+      "weight": "0.0526",
+      "printedPage": 10
+    },
+    {
+      "symbol": "688361.SH",
+      "name": "中科飞测",
+      "weight": "0.0510",
+      "printedPage": 10
+    },
+    {
+      "symbol": "688347.SH",
+      "name": "华虹宏力",
+      "weight": "0.0418",
+      "printedPage": 10
+    },
+    {
+      "symbol": "688012.SH",
+      "name": "中微公司",
+      "weight": "0.0415",
+      "printedPage": 10
+    },
+    {
+      "symbol": "002371.SZ",
+      "name": "北方华创",
+      "weight": "0.0364",
+      "printedPage": 10
+    },
+    {
+      "symbol": "688037.SH",
+      "name": "芯源微",
+      "weight": "0.0361",
+      "printedPage": 10
+    },
+    {
+      "symbol": "300502.SZ",
+      "name": "新易盛",
+      "weight": "0.0360",
+      "printedPage": 10
+    },
+    {
+      "symbol": "688072.SH",
+      "name": "拓荆科技",
+      "weight": "0.0355",
+      "printedPage": 10
+    },
+    {
+      "symbol": "688120.SH",
+      "name": "华海清科",
+      "weight": "0.0343",
+      "printedPage": 10
+    },
+    {
+      "symbol": "688256.SH",
+      "name": "寒武纪",
+      "weight": "0.0341",
+      "printedPage": 10
+    }
+  ],
+  "qualification": "官方报告第10页前十名股票的完整代码和净值权重经逐行视觉核对；发布日期取官方公告。仅确认已核对时点之后的日期型披露资格，不回填过去分钟，不将持仓权重归一放大。"
+}

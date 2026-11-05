@@ -29,6 +29,10 @@ SOURCE_LABELS = {
 
 
 def multimarket_rule_path(key, target):
+    from src.services.thesis_ledger_etf_fee_sources import etf_fee_path
+    etf_path = etf_fee_path(key, target)
+    if etf_path is not None:
+        return etf_path
     if not isinstance(key, dict) or key.get("kind") != "data" or key.get("assetType") != "STOCK":
         return None
     identity = (key.get("market"), key.get("capability"), target.get("providerId"), target.get("upstreamSource"))
@@ -53,9 +57,10 @@ def multimarket_rule_manifests():
         from src.services.thesis_ledger_local_history_manifest import attach_local_history
         attach_local_history(manifest, {identity[3]: BASE / name for identity, name in entries})
         from src.services.thesis_ledger_local_history_manifest import attach_local_history
-        manifests[provider] = attach_local_history(manifest, {
+        from src.services.thesis_ledger_etf_fee_sources import extend_manifest
+        manifests[provider] = extend_manifest(attach_local_history(manifest, {
             identity[3]: BASE / name for identity, name in entries
-        })
+        }))
     return manifests
 
 
@@ -79,6 +84,8 @@ class MultimarketRuleProvider:
             pack = json.loads(raw)
             if (pack["market"] != key["market"] or pack["upstreamSource"] != target["upstreamSource"]):
                 raise error("invalid_response", "规则包与精确来源身份不一致")
+            if pack.get("assetType", "STOCK") != key["assetType"]:
+                raise error("invalid_response", "规则包资产类型与精确请求不一致")
             if request["symbol"] != pack["symbol"]:
                 raise error("not_covered", "首批规则包未覆盖该证券")
             start, end = (date.fromisoformat(request["range"][field]) for field in ("start", "end"))

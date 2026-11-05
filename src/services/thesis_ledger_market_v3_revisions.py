@@ -6,7 +6,7 @@ import hmac
 from typing import Any, Mapping
 
 from src.services.thesis_ledger_market_v3_adapters import market_v3_bar_adapter_reason
-from src.services.thesis_ledger_capability_registry import DailyBinding
+from src.services.thesis_ledger_capability_registry import DailyBinding, QueryBinding
 from src.services.thesis_ledger_route_admission_v3 import route_admission_scope_applies
 from src.services.thesis_ledger_current_data_route import current_data_adapter_revisions
 from src.services.thesis_ledger_event_v3_adapters import event_adapter_revisions, event_adapter_matches
@@ -33,7 +33,9 @@ def market_v3_current_route_revisions(
         return None
     if not isinstance(provider_manifest, Mapping):
         return None
-    if current_data_adapter_revisions(key, target) is not None:
+    binding = CAPABILITY_SOURCES.resolve(key, target)
+    admitted_query = isinstance(binding, QueryBinding) and binding.admission_required is True
+    if current_data_adapter_revisions(key, target) is not None and not admitted_query:
         if provider_manifest.get("providerId") != target.get("providerId"):
             return None
         if provider_manifest.get("requiresCredential") is not False:
@@ -49,20 +51,22 @@ def market_v3_current_route_revisions(
                 or provider_manifest.get("requiresCredential") is not requires_credential):
             return None
         return event_adapter_revisions(key, target, credential_revision)
-    if market_v3_bar_adapter_reason(dict(key), dict(target)) is not None:
+    if not admitted_query and market_v3_bar_adapter_reason(dict(key), dict(target)) is not None:
         return None
 
     provider_id = str(target.get("providerId") or "").strip().lower()
     if provider_manifest.get("providerId") != provider_id:
         return None
     binding = CAPABILITY_SOURCES.resolve(key, target)
-    if not isinstance(binding, DailyBinding):
+    price_binding = isinstance(binding, DailyBinding) or (isinstance(binding, QueryBinding) and key.get("capability") == "MINUTE_BAR")
+    if not (price_binding or admitted_query):
         return None
     adapter_revision, source_revision = binding.adapter_revision, binding.source_revision
+    protocol = binding.protocol if isinstance(binding, DailyBinding) else source_revision
     if (
         not adapter_revision
-        or not isinstance(binding.protocol, str)
-        or not binding.protocol.strip()
+        or not isinstance(protocol, str)
+        or not protocol.strip()
         or not isinstance(source_revision, str)
         or not source_revision.strip()
     ):

@@ -97,7 +97,7 @@ class FundamentalValuationTest(unittest.TestCase):
                   "earnings": {"dividend": {"ttm_cash_dividend_per_share": 1.5}},
                   "source_chain": [], "errors": []}
         empty = self.manager._build_fundamental_block("not_supported", {}, [], [])
-        with patch("src.config.get_config", return_value=config), \
+        with patch("src.data_config.get_data_config", return_value=config), \
                 patch.object(self.manager, "get_realtime_quote", return_value=self.quote) as quote, \
                 patch("data_provider.fundamental_valuation.read_current_stock_valuation",
                       return_value=_observation()), \

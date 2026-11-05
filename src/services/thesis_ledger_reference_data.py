@@ -5,9 +5,17 @@ from .thesis_ledger_security_lot_query import lot_query_operation
 from .thesis_ledger_status_query_operation import status_query_operation
 from .thesis_ledger_public_fees_query import fees_query_operation
 from .thesis_ledger_legacy_status_query import legacy_status_operation
+from .thesis_ledger_report_metadata_query import report_metadata_operation
+from .thesis_ledger_reference_query_v1 import reference_operation
 
 
 def reference_data_operation(request, error_type, runtime=None):
+    reference = reference_operation(request, error_type, runtime)
+    if reference is not None:
+        return reference
+    report_operation = report_metadata_operation(request, error_type, runtime)
+    if report_operation is not None:
+        return report_operation
     legacy_operation = legacy_status_operation(request, error_type)
     if legacy_operation is not None:
         return legacy_operation

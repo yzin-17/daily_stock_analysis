@@ -1,7 +1,7 @@
 """账户接口访问状态；与业务数据读取及历史覆盖分开。"""
 
 from dataclasses import dataclass
-from typing import Literal, Mapping
+from typing import Callable, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, model_validator
 from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
@@ -9,7 +9,7 @@ from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
 
 class AccountAccessResult(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
-    state: Literal["allowed", "permission_missing", "credential_missing", "credential_invalid", "unknown"]
+    state: Literal["allowed", "permission_missing", "credential_missing", "credential_invalid", "unknown", "not_included"]
     attempted: bool
     errorCode: str | None = None
 
@@ -19,6 +19,9 @@ class AccountAccessResult(BaseModel):
             raise ValueError("账户访问结论必须来自实际接口请求")
         if self.state == "allowed" and self.errorCode is not None:
             raise ValueError("可访问状态不能包含错误")
+        if self.state == "not_included" and (self.attempted or self.errorCode not in {
+                "account_level_insufficient", "independent_permission_not_enabled"}):
+            raise ValueError("等级未包含的功能必须跳过请求并记录原因")
         return self
 
 
@@ -29,3 +32,21 @@ class AccountAccessProbeContext:
     snapshot: ProviderCredentialSnapshot
     adapter: object
     timeout_seconds: float
+
+
+@dataclass(frozen=True)
+class AccountAccessLevelPolicy:
+    parse: Callable[[object], dict | None]
+    excluded: Callable[[Mapping, dict | None], Mapping | None]
+    revision: str
+
+
+def validate_account_access_policy(source):
+    for callback in (source.account_access_probe, source.account_access_snapshot):
+        if callback is not None and not callable(callback):
+            raise ValueError("来源账户访问检查声明无效")
+    policy = source.account_access_level
+    if policy is not None and (not isinstance(policy, AccountAccessLevelPolicy)
+                               or not callable(policy.parse) or not callable(policy.excluded)
+                               or not isinstance(policy.revision, str) or not policy.revision.strip()):
+        raise ValueError("来源账号等级声明无效")

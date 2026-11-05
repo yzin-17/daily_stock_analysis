@@ -37,7 +37,8 @@ def test_nine_exact_targets_keep_revisions_and_bounded_windows():
     assert remaining == {}
     assert {source['sourceId']: source['capabilities'] for source in SOURCE.manifest()['upstreamSources']
         if source['sourceId'] != 'yfinance'} == {
-        'yahoo-gme-share-window': {'DAILY_BAR': ['STOCK']}, 'yahoo-hk-share-window': {'DAILY_BAR': ['STOCK']}}
+        'yahoo-gme-share-window': {'DAILY_BAR': ['STOCK']}, 'yahoo-hk-share-window': {'DAILY_BAR': ['STOCK']},
+        'yahoo-search-news': {'NEWS_SEARCH': ['STOCK']}}
 
 
 @pytest.mark.parametrize('ticker,empty,code', [('AAPL', False, None), ('OTHER', False, 'invalid_response'),

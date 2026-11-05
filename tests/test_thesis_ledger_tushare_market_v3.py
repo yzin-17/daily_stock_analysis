@@ -1,7 +1,7 @@
 """Tushare ETF raw 从 SQLite 准入到 HTTP V3 的离线纵向验收。"""
 
 import json as json_module
-from types import SimpleNamespace
+from src.data_config import DataServiceConfig
 from unittest.mock import Mock
 
 import pytest
@@ -23,8 +23,8 @@ REQUEST = {"contractVersion": 3, "requestId": "tushare-v3-fixture", "symbol": "1
 
 @pytest.fixture
 def setup(monkeypatch, tmp_path):
-    config = SimpleNamespace(tushare_token="fixture-token")
-    monkeypatch.setattr("src.config.get_config", lambda: config)
+    config = DataServiceConfig(tushare_token="fixture-token")
+    monkeypatch.setattr("src.data_config.get_data_config", lambda: config)
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "fixture-master")
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "fixture-data-token")
     monkeypatch.setenv("TUSHARE_HTTP_URL", "https://fixture.example/api")

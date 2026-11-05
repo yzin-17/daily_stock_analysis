@@ -1,4 +1,4 @@
-"""六目标实际工厂、标准合同、原口径/摘要及无SDK参数透传回归。"""
+"""九目标实际工厂、标准合同、原口径/摘要及无SDK参数透传回归。"""
 
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -14,15 +14,19 @@ from src.services.thesis_ledger_capability_registry import CapabilityRegistry, E
 from src.services.thesis_ledger_public_fees_contract_v1 import CONTRACT, FeeRequest, FeeResult
 from src.services.thesis_ledger_public_fees import OfficialPublicFeeProvider, DATA_PATH, ARCHIVE_DATA_PATH
 from src.services.thesis_ledger_multimarket_rules import SOURCES, BASE, MultimarketRuleProvider
+from src.services.thesis_ledger_etf_fee_sources import etf_fee_path
 from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest, ThesisLedgerProviderRuntime, ProviderCallError
 from tests.test_configured_market_routes import store, apply, no_admissions
 
-NOW=datetime(2026,10,8,tzinfo=timezone.utc)
+NOW=datetime(2026,11,6,tzinfo=timezone.utc)
 ROWS=list(CAPABILITY_SOURCES.routes('HISTORICAL_PUBLIC_FEES'))
 
 
 def wire(key,target):
-    if key['market']=='CN':
+    etf_path = etf_fee_path(key, target)
+    if etf_path is not None:
+        pack=json.loads(etf_path.read_text());symbol=pack['symbol']
+    elif key['market']=='CN':
         path=ARCHIVE_DATA_PATH if target['upstreamSource'].endswith('archive') else DATA_PATH
         pack=json.loads(path.read_text());symbol='600000.SH'
     else:
@@ -33,7 +37,7 @@ def wire(key,target):
 
 
 def outer(payload,**changes):
-    args=dict(instrument_type='STOCK',start=payload['range']['start'],end=payload['range']['end'],
+    args=dict(instrument_type=payload['routeKey']['assetType'],start=payload['range']['start'],end=payload['range']['end'],
               request_id=payload['requestId'],parameters=payload)
     args.update(changes)
     return ThesisLedgerDataRequest('HISTORICAL_PUBLIC_FEES',payload['symbol'],**args)
@@ -55,7 +59,7 @@ def test_actual_factory_original_payload_and_revision_are_preserved(store,key,ta
     result=runtime.execute_request(outer(payload))
     assert result.value==expected and result.route_index==0 and not result.fallback_used
     assert runtime._adapter(target['providerId']) is adapter
-    assert (key['market'],'STOCK',key['capability'],target['providerId'],target['upstreamSource']) not in _DATA_ADAPTERS
+    assert (key['market'],key['assetType'],key['capability'],target['providerId'],target['upstreamSource']) not in _DATA_ADAPTERS
     revisions=current_data_adapter_revisions(key,target)
     assert revisions['adapterRevision']==binding.adapter_revision and revisions['sourceRevision']==binding.source_revision
     assert result.value['provenance']['historicalAvailability']=='notVerified'

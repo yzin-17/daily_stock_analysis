@@ -364,7 +364,7 @@ def test_corrupt_page_credential_fails_closed_without_environment_fallback(monke
 def test_clear_page_credential_restores_environment_runtime_snapshot(monkeypatch, tmp_path):
     store = _store(monkeypatch, tmp_path)
     monkeypatch.setattr(
-        "src.config.get_config",
+        "src.data_config.get_data_config",
         lambda: type("EnvironmentConfig", (), {"tushare_token": "environment-token"})(),
     )
     store.save_provider_config(

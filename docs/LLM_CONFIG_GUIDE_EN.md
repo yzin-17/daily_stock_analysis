@@ -14,7 +14,6 @@ If you are choosing a concrete provider, setting up GitHub Actions Secrets / Var
 2. **[Advanced Users]** "I have several Keys, want to configure fallback models, and define custom Base URLs." -> [Go to Method 2: Channels Mode Config](#method-2-channels-mode-config-advancedmulti-model)
 3. **[Veterans]** "I want complex load balancing, request routing, and enterprise-level high availability!" -> [Go to Method 3: Advanced YAML Config](#method-3-advanced-yaml-config-expert-setup)
 4. **[Local Models]** "I want to use Ollama local models!" -> [Go to Example 4: Using Ollama Local Models](#example-4-using-ollama-local-models)
-5. **[Vision Models]** "I want to extract stock codes from images!" -> [Go to Vision Model Config](#advanced-feature-vision-model-config)
 
 ---
 
@@ -438,25 +437,6 @@ The bundled `00-daily-analysis.yml` explicitly passes the common LLM runtime fie
 - Common channel names: `primary`, `secondary`, `aihubmix`, `deepseek`, `dashscope`, `zhipu`, `moonshot`, `minimax`, `volcengine`, `siliconflow`, `openrouter`, `gemini`, `anthropic`, `openai`, `ollama`
 
 For example, if you set `LLM_CHANNELS=primary,deepseek` in GitHub Actions, also configure the corresponding `LLM_PRIMARY_*` and `LLM_DEEPSEEK_*` entries. The `LLM_<NAME>_API_KEY` / `LLM_<NAME>_API_KEYS` fields are also imported from repository Secrets only right now, so storing them in Variables will not work at runtime. If you use a custom channel name such as `my_proxy`, GitHub Actions must explicitly add matching `LLM_MY_PROXY_*` mappings in the workflow `env:` block. Local `.env` and Docker runs do not have this limitation.
-
----
-
-## Advanced Feature: Vision Model Config
-
-Certain specific features in our system (like uploading a stock chart screenshot to extract the stock code) require models capable of computer vision. You need to assign a dedicated vision model in your `.env`.
-
-```env
-# Specify your dedicated vision model name
-VISION_MODEL=openai/gpt-5.5
-# Make sure to provide its corresponding provider API KEY (e.g., OPENAI_API_KEY):
-# OPENAI_API_KEY=xxx
-```
-
-**Vision Fallback Mechanism:** To prevent unexpected failures, the system has a built-in fallback strategy. If the primary vision model fails, it will attempt to use alternative vision-capable provider keys in the following order:
-```env
-# Default fallback sequence:
-VISION_PROVIDER_PRIORITY=gemini,anthropic,openai
-```
 
 ---
 

@@ -106,6 +106,35 @@ def test_environment_credential_rotation_is_private_and_changes_namespace(store,
     assert 'synthetic-' not in json.dumps([first, second])
 
 
+@pytest.mark.parametrize('market,asset,symbol', [
+    ('HK', 'STOCK', '00700.HK'), ('HK', 'ETF', '02800.HK'),
+    ('US', 'STOCK', 'AAPL.US'), ('US', 'ETF', 'SPY.US'),
+])
+def test_version_credentials_are_ready_and_rotate_cache_namespace_without_sdk(store, monkeypatch, market, asset, symbol):
+    def configure(request_id, port):
+        store.save_provider_config('futu', {'requestId': request_id, 'enabled': True,
+            'credentials': {'method': 'opend', 'values': {'host': 'localhost', 'port': port}}})
+
+    configure('first-connection', '11111')
+    key = {**KEY, 'market': market, 'assetType': asset}
+    target = {'providerId': 'futu', 'upstreamSource': 'futu'}
+    assert apply(store, key, target)['effective']['routes'][0]['targets'][0]['eligible']
+    runtime = ThesisLedgerProviderRuntime(store)
+    data = Mock(side_effect=AssertionError('缓存上下文不应调用 SDK'))
+    monkeypatch.setattr(runtime, 'execute_request', data)
+    first = read_cache_context(runtime, request(symbol=symbol, assetType=asset))
+    assert first['ready'] is True
+    configure('changed-connection', '11112')
+    second = read_cache_context(runtime, request(symbol=symbol, assetType=asset))
+    assert second['ready'] is True
+    assert second['policyRevision'] == first['policyRevision']
+    assert second['generation'] != first['generation']
+    store.save_provider_config('futu', {'requestId': 'disabled', 'enabled': False})
+    assert read_cache_context(runtime, request(symbol=symbol, assetType=asset))['ready'] is False
+    assert 'credential' not in json.dumps([first, second]).lower()
+    data.assert_not_called()
+
+
 @pytest.mark.parametrize('change', ['registry_duplicate', 'route_index', 'config_version'])
 def test_malformed_control_facts_fail_closed(store, monkeypatch, change):
     apply(store, KEY, TARGET)

@@ -16,7 +16,6 @@ CLAUDE_SKILLS_DIR = ROOT / ".claude" / "skills"
 
 REQUIRED_INSTRUCTION_FILES = {
     "backend.instructions.md",
-    "client.instructions.md",
     "governance.instructions.md",
 }
 
@@ -60,7 +59,7 @@ def ensure_copilot_entry() -> None:
     ensure_file_exists(COPILOT, "repository Copilot instructions")
     content = COPILOT.read_text(encoding="utf-8")
     required_fragments = (
-        "Canonical source:",
+        "唯一真源",
         "AGENTS.md",
         "CLAUDE.md",
         ".claude/skills/",

@@ -4,10 +4,7 @@ set -euo pipefail
 
 syntax_check() {
   echo "==> backend-gate: Python syntax check"
-  python -m py_compile main.py src/config.py src/auth.py src/analyzer.py src/notification.py
-  python -m py_compile src/storage.py src/scheduler.py src/search_service.py
-  python -m py_compile src/market_analyzer.py src/stock_analyzer.py
-  python -m py_compile data_provider/*.py
+  python scripts/check_data_service_boundary.py --syntax
 }
 
 flake8_checks() {
@@ -18,6 +15,8 @@ flake8_checks() {
 deterministic_checks() {
   echo "==> backend-gate: local deterministic checks"
   python scripts/check_thesis_ledger_capability_boundaries.py
+  python scripts/check_data_runtime_contract.py
+  python scripts/data_test_scope.py
   ./scripts/test.sh code
   ./scripts/test.sh yfinance
 }
@@ -40,6 +39,12 @@ offline_test_suite() {
     -o faulthandler_timeout=300
     --durations=30 --durations-min=0.5
   )
+  # 先验证完整登记，再将明确的数据文件/断言交给收集器；失败不能回退为全仓收集。
+  data_test_targets="$(python scripts/data_test_scope.py --list)"
+  data_target_args=()
+  while IFS= read -r data_test_target; do
+    data_target_args+=("$data_test_target")
+  done <<< "$data_test_targets"
 
   if [[ -n "${PYTEST_SPLITS:-}" || -n "${PYTEST_GROUP:-}" ]]; then
     if [[ ! "${PYTEST_SPLITS:-}" =~ ^[1-9][0-9]*$ ]] \
@@ -61,7 +66,7 @@ offline_test_suite() {
     return
   fi
 
-  python -m pytest "${pytest_args[@]}"
+  python -m pytest "${pytest_args[@]}" "${data_target_args[@]}"
 }
 
 run_all() {

@@ -12,6 +12,8 @@ from src.services.thesis_ledger_capability_registry import DailyBinding, QuoteBi
 from data_provider.tushare_cash_capability import CONTRACT as CASH_CONTRACT, read_cash, revisions as cash_revisions, wire_project as cash_wire, REVISION_FACTS as CASH_REVISIONS, current_admission as cash_admission
 from src.services.thesis_ledger_chip_summary_contract_v1 import CONTRACT as CHIP_CONTRACT
 from data_provider.tushare_account_access import probe_account_access
+from data_provider.tushare_account_level import parse_account_level, excluded_access
+from src.services.thesis_ledger_account_access_contract import AccountAccessLevelPolicy
 
 PROTOCOL = "dsa-tushare-exact-daily-single-response-v1"
 
@@ -162,4 +164,5 @@ SOURCE = SourceDefinition("tushare", manifest, factory, tuple(
         probe_quote, capabilities=('REALTIME_QUOTE',), adapter_required=True),
     account_access_probe=probe_account_access,
     account_access_snapshot=account_snapshot,
+    account_access_level=AccountAccessLevelPolicy(parse_account_level, excluded_access, "tushare-account-level-v1"),
     environment_credential_policy=EnvironmentCredentialPolicy(environment_credentials, snapshot_values=environment_snapshot))

@@ -1,6 +1,7 @@
 """巨潮公开公告的有界获取；单件失败保留元信息和其他成功项。"""
 
 from datetime import date, datetime
+from contextlib import ExitStack
 from zoneinfo import ZoneInfo
 import html
 import re
@@ -10,7 +11,7 @@ import requests
 
 from src.services.thesis_ledger_announcements import AnnouncementRepository, observation_clock
 from data_provider.cninfo_announcement_query import HEADERS, query_announcements
-
+from src.services.thesis_ledger_announcement_execution import announcement_checkpoint
 
 
 def announcement_uses(title):
@@ -23,19 +24,29 @@ def announcement_uses(title):
 
 
 def acquire_announcements(symbols, start, end, *, max_pages=20, repository=None, session=None, parse=False, force=False, budget_seconds=180):
+    with ExitStack() as resources:
+        client = session if session is not None else resources.enter_context(requests.Session())
+        return _acquire_announcements(symbols, start, end, max_pages=max_pages, repository=repository,
+                                      session=client, parse=parse, force=force, budget_seconds=budget_seconds)
+
+
+def _acquire_announcements(symbols, start, end, *, max_pages, repository, session, parse, force, budget_seconds):
+    announcement_checkpoint()
     symbols = list(dict.fromkeys(symbols))
     if not symbols or any(not re.fullmatch(r"\d{6}\.(SH|SZ|BJ)", value) for value in symbols):
         raise ValueError("请提供规范中国内地证券代码")
     if date.fromisoformat(start) > date.fromisoformat(end) or not 1 <= max_pages <= 100:
         raise ValueError("获取日期或页数无效")
     repo = repository or AnnouncementRepository()
-    client = session or requests.Session()
+    client = session
     old = {record["id"]: record for record in repo.records()}
     deadline = time.monotonic() + budget_seconds
-    items, errors, truncated = query_announcements(client, symbols, start, end, max_pages, deadline,
-                                                  root=repo.root, force=force, validate=_metadata)
+    items, errors, truncated = query_announcements(
+        client, symbols, start, end, max_pages, deadline, root=repo.root, force=force, validate=_metadata,
+    )
     found = {}
     for symbol, item in items:
+        announcement_checkpoint()
         try:
             record = _metadata(item, symbol)
             previous = found.get(record["id"]) or old.get(record["id"], {})
@@ -47,6 +58,7 @@ def acquire_announcements(symbols, start, end, *, max_pages=20, repository=None,
         except (ValueError, KeyError, TypeError) as exc:
             errors.append({"stage": "query", "symbol": symbol, "reason": str(exc)})
     for record in found.values():
+        announcement_checkpoint()
         previous = old.get(record["id"], {})
         try:
             if time.monotonic() >= deadline:
@@ -96,6 +108,7 @@ def acquire_announcements(symbols, start, end, *, max_pages=20, repository=None,
                 record["downloadState"] = "failed"
             record["detail"] = f"原文下载失败：{exc}"
             errors.append({"stage": "download", "id": record["id"], "reason": str(exc)})
+        announcement_checkpoint()
         repo.save(record)
     return {"matched": len(found), "downloaded": sum(r["downloadState"] == "downloaded" for r in found.values()),
             "parsed": sum(r["parseState"] == "parsed" for r in found.values()), "truncated": truncated, "errors": errors}
@@ -121,10 +134,12 @@ def _metadata(item, symbol):
 
 
 def _download(client, url):
+    announcement_checkpoint()
     with client.get(url, headers=HEADERS, timeout=25, stream=True) as response:
         response.raise_for_status()
         chunks, size = [], 0
         for chunk in response.iter_content(65536):
+            announcement_checkpoint()
             size += len(chunk)
             if size > 10 * 1024 * 1024:
                 raise ValueError("公告原件超过10MiB")

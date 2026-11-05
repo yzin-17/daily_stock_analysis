@@ -86,3 +86,6 @@ def test_history_preserves_validated_time_order(monkeypatch):
     monkeypatch.setattr('src.services.thesis_ledger_provider_runtime.get_thesis_ledger_data_gateway', lambda: gateway)
     rows = _real_fund_nav_history('000001.OF', None, None, 10)
     assert [r['unitNav'] for r in rows] == [1.1, 1.2]
+    # 历史日期不是缓存年龄：成功回源的旧日期不能制造陈旧告警。
+    assert all(row['freshness'] == 'delayed' for row in rows)
+    assert all(row['fallbackUsed'] is False for row in rows)

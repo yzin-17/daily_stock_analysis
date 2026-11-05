@@ -1,5 +1,7 @@
 # openclaw Skill 集成指南
 
+> 历史说明：本文记录已退役的原生股票分析产品集成，示例依赖的分析 API 和根目录产品 Skill 已移除。当前数据服务入口、认证和验证方式见[项目说明](../README.md)。本文示例不用于当前部署或注册。
+
 本文档说明如何通过 [openclaw](https://github.com/openclaw/openclaw) Skill 调用 daily_stock_analysis 的 REST API，实现在 openclaw 对话中触发股票分析的能力。
 
 ## 概述

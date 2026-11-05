@@ -1,6 +1,11 @@
 """基金类型只取来源字段，原文和传输预算均保留。"""
 
 import pytest
+import importlib.util
+import json
+import sys
+from types import ModuleType
+from unittest.mock import Mock
 
 from data_provider import eastmoney_fund_identity as reader
 from data_provider.eastmoney_nav_evidence import canonical_json, hash_raw
@@ -55,3 +60,31 @@ def test_reader_tls_status_and_raw(monkeypatch):
     response.status_code = 302
     with pytest.raises(ValueError):
         reader.read_fund_identity('161725')
+
+
+def isolated_reader(monkeypatch):
+    spec = importlib.util.spec_from_file_location('_identity_reader_compat_test', reader.__file__)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_import_does_not_require_fund_module_transitive_exports(monkeypatch):
+    import akshare.fund.fund_em as legacy
+    monkeypatch.delattr(legacy, 'demjson', raising=False)
+    monkeypatch.delattr(legacy, 'headers', raising=False)
+    loaded = isolated_reader(monkeypatch)
+    source = 'var reData={datas:[["161725","样本","QDII"]],allRecords:1};'
+    assert loaded.identity_from_raw(source, '161725', '2026-11-04T00:00:00Z').fund_type == 'qdii'
+
+
+def test_new_sdk_jsonish_entry_is_used_without_global_reload(monkeypatch):
+    module = ModuleType('akshare.utils.jsonish')
+    module.loads = Mock(side_effect=json.loads)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    loaded = isolated_reader(monkeypatch)
+    source = raw([['161725', '样本', '指数型-股票']])
+    result = loaded.identity_from_raw(source, '161725', '2026-11-04T00:00:00Z')
+    assert result.fund_type == 'domestic' and result.response_raw == source
+    module.loads.assert_called_once()

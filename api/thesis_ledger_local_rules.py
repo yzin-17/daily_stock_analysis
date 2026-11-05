@@ -29,7 +29,8 @@ def build_rule_data_router(capability: str, path: str, label: str,
         key, target, window = (payload.get(field) for field in ("routeKey", "routeTarget", "range"))
         if not all(isinstance(value, Mapping) for value in (key, target, window)):
             _error("bad_request", f"{label}请求缺少路由或日期区间", 422, request_id)
-        if key.get("kind") != "data" or key.get("capability") != capability or key.get("assetType") != "STOCK":
+        assets = ("STOCK", "ETF") if capability == FEES_CAPABILITY else ("STOCK",)
+        if key.get("kind") != "data" or key.get("capability") != capability or key.get("assetType") not in assets:
             _error("unsupported_capability", f"{label}请求能力不匹配", 422, request_id)
         try:
             request = ThesisLedgerDataRequest(

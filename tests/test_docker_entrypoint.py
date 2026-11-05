@@ -24,14 +24,14 @@ def test_dockerfile_uses_entrypoint_to_drop_privileges() -> None:
     assert "USER dsa" not in dockerfile
 
 
-def test_dockerfile_bundles_builtin_screening_engine() -> None:
+def test_dockerfile_keeps_cached_data_sdk_install_and_entrypoint_smoke() -> None:
     dockerfile = (REPO_ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
     requirements = (REPO_ROOT / "requirements.txt").read_text(encoding="utf-8")
 
     assert "screening.git" not in requirements.lower()
     assert "pip install -r requirements.txt" in dockerfile
     assert "--mount=type=cache,target=/root/.cache/pip" in dockerfile
-    assert "import src.services.screening.pipeline" in dockerfile
+    assert "from server import app; import futu" in dockerfile
 
 
 def test_docker_entrypoint_repairs_ownership_and_user_permissions() -> None:
@@ -60,7 +60,7 @@ def test_docker_compose_injects_env_without_single_file_env_mount() -> None:
     assert "../longbridge_tokens:/home/dsa/.longbridge" in common["volumes"]
 
 
-def test_docker_compose_default_memory_recommendation_is_not_512m() -> None:
+def test_docker_compose_retains_data_runtime_resource_reservations() -> None:
     compose_text = (REPO_ROOT / "docker" / "docker-compose.yml").read_text(encoding="utf-8")
     compose = yaml.safe_load(compose_text)
     resources = compose["x-common"]["deploy"]["resources"]
@@ -68,7 +68,8 @@ def test_docker_compose_default_memory_recommendation_is_not_512m() -> None:
     assert resources["limits"]["memory"] == "1G"
     assert resources["reservations"]["memory"] == "512M"
     assert "512M" in compose_text
-    assert "MAX_WORKERS=1" in compose_text
+    assert set(compose["services"]) == {"server"}
+    assert compose["services"]["server"]["command"][3] == "server:app"
 
 
 def test_docker_memory_guides_describe_resource_profiles() -> None:

@@ -36,3 +36,15 @@ def test_main_fetches_tushare_with_a_rk_by_default():
         "--source",
         "tushare",
     ]
+
+
+def test_static_sync_reads_data_seed_without_web_directory(tmp_path, monkeypatch):
+    source = tmp_path / "src/data/assets/stocks.index.json"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b'[["fixture","fixture","fixture"]]')
+    target = tmp_path / "static/stocks.index.json"
+    monkeypatch.setattr(refresh_stock_index, "DATA_INDEX_PATH", source)
+    monkeypatch.setattr(refresh_stock_index, "STATIC_INDEX_PATH", target)
+    refresh_stock_index._sync_static_index()
+    assert target.read_bytes() == source.read_bytes()
+    assert not (tmp_path / "apps").exists()

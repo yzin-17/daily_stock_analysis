@@ -109,7 +109,12 @@ def _sample(runtime, key, symbol):
         requires_credential = source.manifest().get('requiresCredential')
         credential = 'not-required'
         if requires_credential:
-            credential = _provider_credential_revision_from_snapshot(runtime.store.provider_credential_snapshot(source.provider_id))
+            snapshot = runtime.store.provider_credential_snapshot(source.provider_id)
+            if source.credential_revision_kind == 'hmac':
+                credential = _provider_credential_revision_from_snapshot(snapshot)
+            else:
+                version = snapshot.credential_version
+                credential = str(version) if type(version) is int and version >= 0 else None
         binding = CAPABILITY_SOURCES.resolve(key, target)
         if binding is None:
             raise CacheContextError('invalid_response')

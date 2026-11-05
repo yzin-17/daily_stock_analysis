@@ -392,9 +392,10 @@ def test_provider_test_uses_in_memory_structured_draft_without_persisting(monkey
 
 
 def test_provider_test_draft_does_not_merge_environment_credentials(monkeypatch, tmp_path):
+    from src.data_config import DataServiceConfig
     monkeypatch.setattr(
-        "src.config.get_config",
-        lambda: type("EnvironmentConfig", (), {"tushare_token": "environment-token"})(),
+        "src.data_config.get_data_config",
+        lambda: DataServiceConfig(tushare_token="environment-token"),
     )
     client = _client(monkeypatch, tmp_path)
     response = client.post(

@@ -150,6 +150,8 @@ HiThink现金已复用同一CASH合同，保留原api_key/X-api-key、原文先�
 
 原有界研究身份/单位通过对应DailyBinding的`research_instrument_policy`声明，有限`supports_symbol/read`接收标准证券身份与`ResearchInstrumentRequest`，返回`ResearchInstrumentFact`。公共原身份/依赖入口只选择精确绑定，来源保留原包、窗口、单位/价格网格、观察截点与错误。结果沿主仓InstrumentFact的研究观察子集：HK/US股票及对应币种，整手/价位成对已知正十进制字符串或成对未知，tradable=false、执行规则unavailable、原来源/摘要及字符串时间。公共关联校验拒绝错证券/市场/来源及晚于截点的时钟，比较复用精确时刻原语不截断纳秒。未声明不授予原价资格；qfq通用身份仍保留原未知单位/状态，不扩大协议、路由或准入。
 
+同一研究身份接口也接受来源在 qfq 精确绑定上声明的归一化身份观察。通用读取由 `thesis_ledger_research_instrument_reader` 负责，qfq 有来源声明时优先读取该绑定，按证券、市场和截点核对；原 none 来源的窗口、单位及错误语义保持。原始 `tradable=false` 身份响应与基于绑定行情生成的研究可交易投影分别冻结，具体资格及观察事实由来源模块维护。
+
 通用`build_provider_manifest`只构造调用方声明，不按供应商删除资产。AK来源的Sina日线资产视图从自身Sina DailyBinding集合派生，交给原AK专属模板；原19份manifest逐字段及目标相等，其余旧宽声明/别名保持，不成为新增精确能力。来源例外不能写回公共构造器或新中央表；查询资格仍消费同一精确绑定/控制事实。
 
 公开报价量额单位确需来源专有投影时，声明有限`quote_public_units`，接收冻结`QuotePublicUnitsContext`（已执行值/实际公开来源），返回强Schema `QuotePublicUnits`。来源解析原SDK单位并保留固定安全错误；API只校验标准模型，不按供应商识别字段。HiThink股票share/CNY与ETF量额unknown保持，坏单位仍原502；投影在Gateway和普通字段投影之后执行，不新增SDK、切源或重试。未声明仍省略units，现有公开枚举不因本片扩大。报价完整结果Schema/SDK别名按独立接缝核对，不把有限单位投影当成全部报价模型迁移完成。
@@ -186,12 +188,12 @@ HTTP测试须挂载`api.middlewares.error_handler.add_error_handlers`：生产�
 
 诊断仅保留固定阶段/错误类别、合法HTTP状态、UUID关联、校验错误数量/有限字段名及`availableAfterCutoffCount`；不输出异常消息/堆栈、URL、头、页原文、输入值或凭据。403/503只说明相应层的失败，不能独立证明收费权限。来源在返回前调用同一既有Split validator记录响应错误，Registry仍保留原校验和相关性检查；额外校验没有I/O，也不改变成功返回字段。HTTP/wire保持原安全错误码，内部诊断不透传为新的API字段。
 
-固定截止的`dataAsOf`继续拒绝更晚的`availableAt`；来源仍在实际读取后记录`observedAt`，映射不回填经济事件日期或请求开始时刻。用户已确认显式采集信封的本地实施，Server保存原意图/有限deadline交换与实际完成截止；原固定事件接口/观察时刻和共享Split合同保持。[本地实现与证据](../../thesis-ledger/docs/reviews/2026-10-11-unified-data-capability-runtime-evidence.md#record-k37d-split-clock-implemented-local)只证明合同与局部消费，不代表目标同步或实源成功。`coverage.complete=false`及原完整冻结受阻、原验收标准保持。
+固定截止的`dataAsOf`继续拒绝更晚的`availableAt`；来源仍在实际读取后记录`observedAt`，映射不回填经济事件日期或请求开始时刻。用户已确认显式采集信封的本地实施，Server保存原意图/有限deadline交换与实际完成截止；原固定事件接口/观察时刻和共享Split合同保持。[本地实现与证据](../../thesis-ledger/docs/archive/reviews/2026-10-11-unified-data-capability-runtime-evidence.md#record-k37d-split-clock-implemented-local)只证明合同与局部消费，不代表目标同步或实源成功。`coverage.complete=false`及原完整冻结受阻、原验收标准保持。
 
 原Control GET `/control/routes/capabilities?contractVersion=3&eventAdmissions=v1`返回显式`event-admission-catalog-v1`，包含原catalog与已有事件准入公开快照；默认查询的V3响应形状保持。目录不透明修订加入精确记录身份，因此同ready但版本/范围/证据/期限变化也改变修订。快照只在当前就绪事件中生成，复用既有当前准入读取及公开snapshot，不含审核人、凭据值或原文、不读SDK、不签发。无法核实记录时不填快照，采集端拒绝缺失；不能用ready猜同一scope或记录。前后快照与真实数据响应须一致，真实权限、覆盖及普通冻结仍另行验收。
 
-2026-10-13原目标已正式同步该视图及采集契约，159516.SZ/2026-03-30～07-10现有准入版本1/原936字节映射保持。原appliedAt误比较最小修正/28项验证及正式同步复用；新增明确一次预算后，原Server事件HTTP200/observed返回两条ratio=2事实，真实版本化信封/实际完成截止及离线消费/0网络通过，CAS恢复117，原主备/配置保持。K37d-live只收口此正向层，coverage=false/普通完整冻结/Runner及父项仍独立受阻；该精确成功不推导完整窗口、其他权益或旧503内因，也不续签/保存凭据、重跑H09或继续相同实读。当前状态与原验收边界以[原Task](../../thesis-ledger/docs/tasks/2026-10-09-unified-data-capability-adapter.md)及[运行证据](../../thesis-ledger/docs/reviews/2026-10-11-unified-data-capability-runtime-evidence.md#record-k37d-split-clock-live-consumed)为准，不维护独立进度。
+2026-10-13原目标已正式同步该视图及采集契约，159516.SZ/2026-03-30～07-10现有准入版本1/原936字节映射保持。原appliedAt误比较最小修正/28项验证及正式同步复用；新增明确一次预算后，原Server事件HTTP200/observed返回两条ratio=2事实，真实版本化信封/实际完成截止及离线消费/0网络通过，CAS恢复117，原主备/配置保持。K37d-live只收口此正向层，coverage=false/普通完整冻结/Runner及父项仍独立受阻；该精确成功不推导完整窗口、其他权益或旧503内因，也不续签/保存凭据、重跑H09或继续相同实读。当前状态与原验收边界以[原Task](../../thesis-ledger/docs/tasks/2026-10-09-unified-data-capability-adapter.md)及[运行证据](../../thesis-ledger/docs/archive/reviews/2026-10-11-unified-data-capability-runtime-evidence.md#record-k37d-split-clock-live-consumed)为准，不维护独立进度。
 
 当前 H07–H12 分层状态在2026-10-13已核对：事件精确诊断由来源 EventBinding/probe_read 拥有，RQ/HiThink/Tushare/AK的代码、合同、正式目标及拒绝层均完成，缺账号不阻塞这些实现项。目标179个相关DSA模块及Server/Worker编译DSA与市场Schema输入匹配，无需重复同步或重跑未变验证。原路由UI五项真实保存/消费、状态关闭零数据/其他风险仍可消费和原16路线CAS恢复至实时120已通过；H08缓存及H09新冻结/断网重放沿原已过证据。
 
-当前普通HiThink/东财现金及登记资格v2已完成，原状态/覆盖未知和有限具体事件核对继续披露，旧严格入口仅兼容。RQ无账号、Tusharefund_div此前40203拒绝，实现与真实成功分层记录且不重验未变化条件。TickFlow免费日K读取/有限口径核对/真实研究及断网重放已过，最终正式update.sh dsa镜像固化及源哈希/绑定/新旧重放复验完成。当前授权/责任只由[原Task§9.5](../../thesis-ledger/docs/tasks/2026-10-09-unified-data-capability-adapter.md#95-当前未完成执行包与阻塞)和[TF-F证据](../../thesis-ledger/docs/reviews/2026-10-11-unified-data-capability-runtime-evidence.md#record-tickflow-free-history)维护，不建设逐窗口审批或另一套完成状态。
+当前普通HiThink/东财现金及登记资格v2已完成，原状态/覆盖未知和有限具体事件核对继续披露，旧严格入口仅兼容。RQ无账号、Tusharefund_div此前40203拒绝，实现与真实成功分层记录且不重验未变化条件。TickFlow免费日K读取/有限口径核对/真实研究及断网重放已过，最终正式update.sh dsa镜像固化及源哈希/绑定/新旧重放复验完成。当前授权/责任只由[原Task§9.5](../../thesis-ledger/docs/tasks/2026-10-09-unified-data-capability-adapter.md#95-当前未完成执行包与阻塞)和[TF-F证据](../../thesis-ledger/docs/archive/reviews/2026-10-11-unified-data-capability-runtime-evidence.md#record-tickflow-free-history)维护，不建设逐窗口审批或另一套完成状态。

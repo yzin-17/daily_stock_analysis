@@ -1,4 +1,4 @@
-"""Technical indicator date series built from the existing trend analyzer."""
+"""从纯指标内核构建正式日期序列，保留预热与输入指纹。"""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import json
 from typing import Any, Callable, Mapping
 
 import pandas as pd
+
+from src.data.technical_indicators import calculate_macd, calculate_moving_averages, calculate_rsi
 
 
 def normalize_indicator_parameters(name: str, requested: Mapping[str, Any] | None) -> dict[str, int]:
@@ -72,19 +74,14 @@ def build_indicator_points(
     start: str | None = None,
     end: str | None = None,
 ) -> tuple[pd.DataFrame, list[dict[str, Any]], str, list[str]]:
-    from src.stock_analyzer import StockTrendAnalyzer
-
-    analyzer = StockTrendAnalyzer()
-    analyzer.MACD_FAST = parameters.get("fast", analyzer.MACD_FAST)
-    analyzer.MACD_SLOW = parameters.get("slow", analyzer.MACD_SLOW)
-    analyzer.MACD_SIGNAL = parameters.get("signal", analyzer.MACD_SIGNAL)
-    analyzer.RSI_SHORT = parameters.get("short", analyzer.RSI_SHORT)
-    analyzer.RSI_MID = parameters.get("mid", analyzer.RSI_MID)
-    analyzer.RSI_LONG = parameters.get("long", analyzer.RSI_LONG)
+    fast = parameters.get("fast", 12)
+    slow = parameters.get("slow", 26)
+    signal = parameters.get("signal", 9)
+    rsi_periods = (parameters.get("short", 6), parameters.get("mid", 12), parameters.get("long", 24))
     calculated = frame.sort_values("date").reset_index(drop=True)
-    calculated = analyzer._calculate_mas(calculated)
-    calculated = analyzer._calculate_macd(calculated)
-    calculated = analyzer._calculate_rsi(calculated)
+    calculated = calculate_moving_averages(calculated)
+    calculated = calculate_macd(calculated, fast=fast, slow=slow, signal=signal)
+    calculated = calculate_rsi(calculated, periods=rsi_periods)
     all_fingerprints = [
         row_input_fingerprint(row, timestamp_builder(row.get("date")))
         for _, row in calculated.iterrows()
@@ -106,9 +103,9 @@ def build_indicator_points(
                 "ma60": float(row["MA60"]) if index >= 59 and pd.notna(row["MA60"]) else None,
             }
         elif name == "MACD":
-            warmup = analyzer.MACD_SLOW + analyzer.MACD_SIGNAL - 2
+            warmup = slow + signal - 2
             point_values = {
-                "dif": float(row["MACD_DIF"]) if index >= analyzer.MACD_SLOW - 1 else None,
+                "dif": float(row["MACD_DIF"]) if index >= slow - 1 else None,
                 "dea": float(row["MACD_DEA"]) if index >= warmup else None,
                 "histogram": float(row["MACD_BAR"]) if index >= warmup else None,
             }
@@ -117,7 +114,7 @@ def build_indicator_points(
                 f"rsi{period}": float(row[f"RSI_{period}"])
                 if index >= period and pd.notna(row[f"RSI_{period}"])
                 else None
-                for period in (analyzer.RSI_SHORT, analyzer.RSI_MID, analyzer.RSI_LONG)
+                for period in rsi_periods
             }
         points.append({"timestamp": timestamp, "values": point_values, "inputFingerprint": row_fingerprint})
     return calculated, points, series_input_fingerprint(all_fingerprints), all_fingerprints

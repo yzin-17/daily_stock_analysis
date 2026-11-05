@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
+from src.data_config import DataServiceConfig
 from unittest.mock import Mock
 
 from fastapi import FastAPI
@@ -21,10 +22,9 @@ from src.services.thesis_ledger_provider_runtime import ThesisLedgerProviderRunt
 from tests.test_tushare_fund_identity_evidence import bundle
 
 
-@pytest.fixture
-def state(tmp_path, monkeypatch):
-    config = SimpleNamespace(tushare_token="synthetic-event-token")
-    monkeypatch.setattr("src.config.get_config", lambda: config)
+def build_state(tmp_path, monkeypatch):
+    config = DataServiceConfig(tushare_token="synthetic-event-token")
+    monkeypatch.setattr("src.data_config.get_data_config", lambda: config)
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "synthetic-event-master")
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY_VERSION", "synthetic-v1")
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "synthetic-data-token")
@@ -71,6 +71,11 @@ def state(tmp_path, monkeypatch):
     return SimpleNamespace(store=store, runtime=runtime, request=request, config=config, content=content,
                            proof=proof, evidence=evidence, options=options, policy=policy, source=source,
                            client=TestClient(app), root=tmp_path)
+
+
+@pytest.fixture
+def state(tmp_path, monkeypatch):
+    return build_state(tmp_path, monkeypatch)
 
 
 def call(state):
@@ -369,11 +374,16 @@ def test_http_bearer_rotation_during_actual_source_read_refuses_late_response(st
     state.source.assert_called_once()
 
 
-def test_http_success_consumes_actual_built_schema_exchange_without_rebuild(state, tmp_path):
+def schema_exchange(state):
     response = http(state)
     assert response.status_code == 200, response.json()
+    state.source.assert_called_once()
+    return {"request": state.request, "response": response.json()}
+
+
+def test_http_success_consumes_actual_built_schema_exchange_without_rebuild(state, tmp_path):
     exchange = tmp_path / "synthetic-exchange.json"
-    exchange.write_text(json.dumps({"request": state.request, "response": response.json()}, ensure_ascii=False))
+    exchange.write_text(json.dumps(schema_exchange(state), ensure_ascii=False))
     schemas = Path(__file__).resolve().parents[2] / "thesis-ledger" / "packages" / "schemas" / "dist" / "index.js"
     script = ('const fs=require("fs");const s=require(process.argv[1]);'
               'const value=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));'

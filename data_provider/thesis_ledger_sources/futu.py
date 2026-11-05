@@ -1,11 +1,17 @@
 """Futu 十二个既有日线目标，保留原隔离查询与完整 SDK 分页。"""
 
+from functools import partial
+
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError, DailyRead
 from types import SimpleNamespace
 
 from src.services.thesis_ledger_capability_registry import DailyBinding, QuoteBinding, QueryBinding, ExactKey, SourceDefinition
 from src.services.thesis_ledger_security_static_contract_v1 import CONTRACT as STATIC_CONTRACT
 from src.services.thesis_ledger_security_lot_contract_v1 import CONTRACT as LOT_CONTRACT
+from src.services.thesis_ledger_minute_contract_v1 import CONTRACT as MINUTE_CONTRACT
+from src.services.thesis_ledger_security_static_contract_v1 import security_market
+from src.services.thesis_ledger_research_instrument_contract import ResearchInstrumentPolicy
+from data_provider.futu_research_identity import calendar_eligible, read_instrument, supports_symbol
 
 PROTOCOL = "dsa-futu-exact-daily-sdk-pagination-v1"
 LOT_SOURCE_URL = "https://openapi.futunn.com/futu-api-doc/quote/get-static-info.html"
@@ -15,7 +21,7 @@ def manifest():
     from src.services.provider_manifest import build_provider_manifest
     return build_provider_manifest("futu", "富途 OpenAPI", {
         "SECURITY_LOT_SIZE": ("STOCK",), "REALTIME_QUOTE": ("STOCK", "ETF"),
-        "DAILY_BAR": ("STOCK", "ETF"), "SECURITY_STATIC_INFO": ("STOCK", "ETF"),
+        "DAILY_BAR": ("STOCK", "ETF"), "MINUTE_BAR": ("STOCK", "ETF"), "SECURITY_STATIC_INFO": ("STOCK", "ETF"),
     }, requires_credential=True, markets=("HK", "US"))
 
 
@@ -46,6 +52,21 @@ def quote(query, context):
         is_stale=value.get("is_stale", False), source=value.get("source"), units=value.get("units"))
 
 
+def minute(query, context):
+    from data_provider.futu_market import FutuMarketError
+    try:
+        value = context.adapter.get_exact_minute(query)
+    except FutuMarketError as error:
+        raise CapabilityContractError(error.code, str(error), retryable=error.code in {"timeout", "upstream_failure"}) from None
+    try:
+        attrs = value["attrs"]
+        return {"symbol": query.symbol, "market": security_market(query.symbol), "assetType": query.instrument_type,
+                "source": attrs["upstream_source"], "rows": value["rows"], "observedAt": attrs["observedAt"],
+                "timezone": attrs["timezone"], "session": attrs["session"], "responseSha256": attrs["responseSha256"]}
+    except (KeyError, TypeError):
+        raise CapabilityContractError("invalid_response", "富途分钟响应缺少标准字段") from None
+
+
 def static_info(query, context):
     from data_provider.futu_market import FutuMarketError
     try:
@@ -65,7 +86,10 @@ def lot_size(query, context):
 SOURCE = SourceDefinition("futu", manifest, factory, tuple(
     DailyBinding(ExactKey(market, asset, "DAILY_BAR", adjustment), "futu",
         f"dsa-v3-{market.lower()}-{asset.lower()}-futu-{adjustment}-exact-daily-v1", PROTOCOL, PROTOCOL,
-        None, daily, gated=True)
+        None, daily, gated=True,
+        research_calendar_eligible=calendar_eligible if asset == 'STOCK' and adjustment == 'qfq' else None,
+        research_instrument_policy=ResearchInstrumentPolicy(partial(supports_symbol, market=market), read_instrument)
+        if asset == 'STOCK' and adjustment == 'qfq' else None)
     for market, asset, adjustment in (
         ("HK", "STOCK", "none"), ("HK", "STOCK", "qfq"), ("HK", "STOCK", "hfq"),
         ("HK", "ETF", "none"), ("HK", "ETF", "qfq"), ("HK", "ETF", "hfq"),
@@ -79,6 +103,10 @@ SOURCE = SourceDefinition("futu", manifest, factory, tuple(
 ) + tuple(
     QueryBinding(STATIC_CONTRACT, ExactKey(market, asset, "SECURITY_STATIC_INFO"), "futu",
         "futu-security-static-info-v1", "futu-single-static-info-v1", static_info, admission_required=False)
+    for market, asset in (("HK", "STOCK"), ("HK", "ETF"), ("US", "STOCK"), ("US", "ETF"))
+) + tuple(
+    QueryBinding(MINUTE_CONTRACT, ExactKey(market, asset, "MINUTE_BAR", "none"), "futu",
+        "futu-exact-minute-v1", "futu-complete-minute-sdk-pagination-v1", minute, admission_required=False)
     for market, asset in (("HK", "STOCK"), ("HK", "ETF"), ("US", "STOCK"), ("US", "ETF"))
 ) + (QueryBinding(LOT_CONTRACT, ExactKey("HK", "STOCK", "SECURITY_LOT_SIZE"), "futu",
     "futu-security-lot-size-v1", "futu-static-info-v1", lot_size, admission_required=False),),

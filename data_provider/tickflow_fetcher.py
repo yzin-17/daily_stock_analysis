@@ -804,12 +804,9 @@ class TickFlowFetcher(BaseFetcher):
 
     @staticmethod
     def _get_realtime_cache_ttl() -> int:
-        try:
-            from src.config import get_config
+        from src.data_config import get_data_config
 
-            return int(get_config().realtime_cache_ttl)
-        except Exception:
-            return 600
+        return int(get_data_config().realtime_cache_ttl)
 
     def _quote_to_unified_quote(
         self,

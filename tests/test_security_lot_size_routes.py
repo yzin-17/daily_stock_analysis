@@ -101,4 +101,4 @@ def test_futu_adapter_uses_page_endpoint(setup):
     provider = next(p for p in setup.provider_registry() if p["providerId"] == "futu")
     assert provider["credentialMethod"] == "opend"
     assert provider["capabilities"] == {"SECURITY_LOT_SIZE": ["STOCK"], "REALTIME_QUOTE": ["ETF", "STOCK"],
-                                        "DAILY_BAR": ["ETF", "STOCK"], "SECURITY_STATIC_INFO": ["ETF", "STOCK"]}
+                                        "DAILY_BAR": ["ETF", "STOCK"], "MINUTE_BAR": ["ETF", "STOCK"], "SECURITY_STATIC_INFO": ["ETF", "STOCK"]}

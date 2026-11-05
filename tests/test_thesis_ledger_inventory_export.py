@@ -11,6 +11,18 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_bound_callable_identity_neither_runs_nor_serializes_private_arguments():
+    from functools import partial
+    from scripts.export_thesis_ledger_capability_inventory import callable_identity
+
+    def forbidden(value):
+        raise AssertionError("静态库存不得执行工厂")
+
+    identity = callable_identity(partial(forbidden, "controlled-private-canary"))
+    assert identity.endswith(".forbidden)")
+    assert "controlled-private-canary" not in identity
+
+
 def run(code):
     return subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True,
                           env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}, timeout=30)
@@ -20,10 +32,10 @@ def test_inventory_is_derived_and_excludes_test_sources():
     result = run("from scripts.export_thesis_ledger_capability_inventory import inventory; import json; print(json.dumps(inventory()))")
     assert result.returncode == 0, result.stderr
     value = json.loads(result.stdout)
-    assert len(value["providers"]) == 20
+    assert len(value["providers"]) == 27
     identities = [(json.dumps(row["key"], sort_keys=True), json.dumps(row["target"], sort_keys=True)) for row in value["exactRoutes"]]
     assert len(identities) == len(set(identities))
-    assert {source["providerId"] for source in value["unifiedDefinitions"]} == {"tencent", "hithink", "baostock", "official-states", "efinance", "akshare", "pytdx", "tickflow", "tickflow-free", "alphavantage", "finnhub", "tushare", "yfinance", "longbridge", "futu", "official-rules", "official-hk-rules", "official-us-rules", "official-dividends", "rqdata"}
+    assert {source["providerId"] for source in value["unifiedDefinitions"]} == {"tencent", "hithink", "baostock", "official-states", "efinance", "akshare", "pytdx", "tickflow", "tickflow-free", "alphavantage", "finnhub", "tushare", "yfinance", "longbridge", "futu", "official-rules", "official-hk-rules", "official-us-rules", "official-dividends", "rqdata", "tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng"}
     assert not any(row["key"]["capability"] == "ORDER_BOOK" for row in value["exactRoutes"])
     assert not any(source["providerId"].startswith("fixture-") for source in value["providers"])
     assert value["legacyBranches"] and value["inputs"]
@@ -31,7 +43,8 @@ def test_inventory_is_derived_and_excludes_test_sources():
     assert "data_provider/cninfo_announcements.py" in modules
     assert "data_provider/cninfo_announcement_query.py" in modules
     assert "exchange_calendars" in modules["src/services/thesis_ledger_multimarket_calendar.py"]["imports"]
-    assert "src/services/portfolio_service.py" in modules
+    assert "src/data/fx_rate_repository.py" in modules
+    assert "src/services/portfolio_service.py" not in modules
     assert "data_provider/futu_query_worker.py" in modules
     assert "data_provider/futu_daily.py" in modules
     assert any(endpoint["path"] == "/market/fx-rates" for endpoint in modules["api/thesis_ledger.py"]["endpoints"])

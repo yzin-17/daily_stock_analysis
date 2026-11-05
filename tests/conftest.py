@@ -18,6 +18,9 @@ import fastapi.testclient
 import httpx
 import starlette.testclient
 from anyio._backends import _asyncio
+from tests.data_collection_policy import (  # noqa: F401
+    pytest_collection_modifyitems, pytest_configure, pytest_ignore_collect,
+)
 
 T = TypeVar("T")
 

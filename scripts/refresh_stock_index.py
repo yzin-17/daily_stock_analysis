@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Refresh local stock autocomplete index assets.
+"""刷新数据服务的股票索引资产。
 
-Default flow:
-1. Fetch Tushare stock lists into ``data/`` with ``--a-rk`` for A-share name correction.
-2. Generate ``apps/dsa-web/public/stocks.index.json`` from CSV plus JP/KR seed rows.
-3. Copy the generated index to ``static/stocks.index.json`` for backend use.
+缺省步骤：
+1. 通过 Tushare 写入 ``data/``，以 ``--a-rk`` 修正 A 股名称。
+2. 从 CSV 和 JP/KR 种子生成 ``src/data/assets/stocks.index.json``。
+3. 同步到既有 ``static/stocks.index.json`` 兼容位置。
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Sequence
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEB_INDEX_PATH = REPO_ROOT / "apps" / "dsa-web" / "public" / "stocks.index.json"
+DATA_INDEX_PATH = REPO_ROOT / "src" / "data" / "assets" / "stocks.index.json"
 STATIC_INDEX_PATH = REPO_ROOT / "static" / "stocks.index.json"
 
 
@@ -47,11 +47,11 @@ def _has_tushare_token() -> bool:
 
 
 def _sync_static_index() -> None:
-    if not WEB_INDEX_PATH.is_file():
-        raise FileNotFoundError(f"generated Web index not found: {WEB_INDEX_PATH}")
+    if not DATA_INDEX_PATH.is_file():
+        raise FileNotFoundError(f"生成的数据索引不存在: {DATA_INDEX_PATH}")
     STATIC_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(WEB_INDEX_PATH, STATIC_INDEX_PATH)
-    print(f"[refresh_stock_index] synced {WEB_INDEX_PATH} -> {STATIC_INDEX_PATH}", flush=True)
+    shutil.copyfile(DATA_INDEX_PATH, STATIC_INDEX_PATH)
+    print(f"[refresh_stock_index] synced {DATA_INDEX_PATH} -> {STATIC_INDEX_PATH}", flush=True)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

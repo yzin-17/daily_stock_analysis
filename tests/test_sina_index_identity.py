@@ -10,7 +10,6 @@ import pandas as pd
 from data_provider.akshare_fetcher import AkshareFetcher
 from data_provider.base import DataFetcherManager
 from data_provider.sina_index_identity import select_unique_sina_index_row
-from src.market_analyzer import MarketAnalyzer
 
 
 CODES = ["sh000001", "sz399001", "sz399006", "sh000688", "sh000016", "sh000300"]
@@ -80,12 +79,9 @@ class TestSinaIndexIdentity(unittest.TestCase):
     def test_source_failure_retains_failure_result(self):
         self.assertIsNone(self.fetch(error=RuntimeError("mock source failure")))
 
-    def test_actual_manager_and_market_analyzer_consume_success_and_rejection(self):
+    def test_actual_manager_keeps_success_fields_and_identity_rejection(self):
         manager = DataFetcherManager.__new__(DataFetcherManager)
         manager._fetchers = [self.fetcher]
-        analyzer = MarketAnalyzer.__new__(MarketAnalyzer)
-        analyzer.data_manager = manager
-        analyzer.region = "cn"
         for frame, expected in [
             (pd.DataFrame([quote(CODES[0])]), [CODES[0]]),
             (pd.DataFrame([quote("wrongsh000001")]), []),
@@ -95,14 +91,13 @@ class TestSinaIndexIdentity(unittest.TestCase):
                 "akshare": SimpleNamespace(stock_zh_index_spot_sina=Mock(return_value=frame))
             }), patch.object(self.fetcher, "_set_random_user_agent"), patch.object(
                 self.fetcher, "_enforce_rate_limit"
-            ), patch.object(manager, "_get_tickflow_fetcher", return_value=None), patch.object(
-                analyzer, "_log_context", return_value="offline test"
-            ):
-                indices = analyzer._get_main_indices()
-            self.assertEqual([index.code for index in indices], expected)
+            ), patch.object(manager, "_get_tickflow_fetcher", return_value=None):
+                indices = manager.get_main_indices()
+            self.assertEqual([index["code"] for index in indices], expected)
             if indices:
-                self.assertEqual(indices[0].volume, 123.0)
-                self.assertEqual(indices[0].amount, 456.0)
+                self.assertEqual(indices[0]["volume"], 123.0)
+                self.assertEqual(indices[0]["amount"], 456.0)
+
 
 
 if __name__ == "__main__":

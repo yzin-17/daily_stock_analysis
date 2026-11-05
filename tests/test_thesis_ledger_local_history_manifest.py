@@ -14,6 +14,9 @@ def test_metadata_matches_all_registered_reader_files():
     paths = {
         'cn-stock-auction-fees': root / 'public_fees/cn-stock-auction-2023-08.json',
         'cn-stock-auction-fees-archive': root / 'public_fees/cn-stock-auction-archive-2023-08.json',
+        'cn-etf-handling-fee': root / 'market_reference/cn-510300-fees.json',
+        'hk-etf-public-fees': root / 'market_reference/hk-02800-public-fees.json',
+        'us-etf-public-fees': root / 'market_reference/us-spy-public-fees.json',
         'cn-stock-daily-suspension': root / 'trading_status/000995-2023-08-suspension.json',
         'cn-stock-risk-price-limits': root / 'trading_status/000995-2023-08-risk-limits.json',
         'cn-stock-initial-listing': root / 'trading_status/603350-2024-07-listing.json',

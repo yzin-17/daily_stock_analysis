@@ -10,7 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.app import create_app
+from api.data_app import create_app
 from api.middlewares.error_handler import add_error_handlers
 from api.thesis_ledger import router_v3
 from src.services.thesis_ledger_provider_runtime import (
@@ -125,7 +125,7 @@ def test_v3_capabilities_use_independent_data_versions():
 
 
 def test_v3_routes_are_mounted_on_the_dsa_app(tmp_path):
-    app = create_app(static_dir=tmp_path / "empty-static")
+    app = create_app()
 
     response = TestClient(app).get("/api/v3/thesis-ledger/capabilities")
 

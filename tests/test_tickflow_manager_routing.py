@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from data_provider.base import DataFetcherManager
 from data_provider.realtime_types import RealtimeSource, UnifiedRealtimeQuote
-from src.config import Config
+from src.data_config import DataServiceConfig
 
 
 class _FakeTickFlowFetcher:
@@ -94,7 +94,7 @@ class TestTickFlowManagerRouting(unittest.TestCase):
             realtime_cache_ttl=600,
         )
 
-        with patch("src.config.get_config", return_value=config):
+        with patch("src.data_config.get_data_config", return_value=config):
             quote = manager.get_realtime_quote("600519")
 
         self.assertEqual(quote.source, RealtimeSource.TICKFLOW)
@@ -110,7 +110,7 @@ class TestTickFlowManagerRouting(unittest.TestCase):
             tickflow_batch_size=50,
         )
 
-        with patch("src.config.get_config", return_value=config):
+        with patch("src.data_config.get_data_config", return_value=config):
             count = manager.prefetch_realtime_quotes(["600519", "000001", "300750", "000858", "601318"])
 
         self.assertEqual(count, 5)
@@ -149,14 +149,14 @@ class TestTickFlowManagerRouting(unittest.TestCase):
 
     def test_config_loads_tickflow_priority(self):
         with patch.dict(os.environ, {"TICKFLOW_PRIORITY": "0"}, clear=True):
-            config = Config._load_from_env()
+            config = DataServiceConfig.from_env(os.environ)
 
         self.assertEqual(config.tickflow_priority, 0)
 
     def test_tickflow_api_key_does_not_auto_inject_realtime_priority(self):
         with patch.dict(os.environ, {"TICKFLOW_API_KEY": "tk-test"}, clear=True):
             self.assertEqual(
-                Config._resolve_realtime_source_priority(),
+                DataServiceConfig.from_env(os.environ).realtime_source_priority,
                 "tencent,akshare_sina,efinance,akshare_em",
             )
 

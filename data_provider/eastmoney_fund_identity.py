@@ -6,7 +6,14 @@ import re
 import time
 
 import requests
-from akshare.fund.fund_em import demjson, headers
+from akshare.utils.cons import headers
+
+try:
+    from akshare.utils.jsonish import loads as decode_source_json
+except ModuleNotFoundError as error:
+    if error.name != 'akshare.utils.jsonish':
+        raise
+    from akshare.utils.demjson import decode as decode_source_json
 
 from data_provider.eastmoney_nav_evidence import hash_raw
 
@@ -37,7 +44,7 @@ def identity_from_raw(raw: str, fund_code: str, captured_at: str) -> FundIdentit
     match = re.fullmatch(r'\s*var\s+reData\s*=\s*(.*?)\s*;?\s*', raw, re.S)
     if not match:
         raise ValueError('基金身份来源信封无效')
-    payload = demjson.decode(match[1])
+    payload = decode_source_json(match[1])
     rows = payload.get('datas') if isinstance(payload, dict) else None
     if not isinstance(rows, list) or not 0 < len(rows) <= 100000:
         raise ValueError('基金身份来源列表无效')

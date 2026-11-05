@@ -1,21 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
 # ===================================
-# A股自选股智能分析系统 - Docker 镜像
+# DSA 数据服务镜像
 # ===================================
-# 多阶段构建：前端打包 + 后端运行
-
-FROM node:20-slim AS web-builder
-
-WORKDIR /app/apps/dsa-web
-ARG DSA_WEB_VERSION=0.0.0
-ARG DSA_WEB_REVISION=unknown
-
-COPY apps/dsa-web/package.json apps/dsa-web/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
-
-COPY apps/dsa-web/ ./
-RUN DSA_WEB_VERSION="${DSA_WEB_VERSION}" DSA_WEB_REVISION="${DSA_WEB_REVISION}" npm run build
+# 多阶段构建保留目标平台的原生 SDK 编译。
 
 # 在目标 glibc/Python 上构建 SDK，避免发行 wheel 的 glibc 版本要求高于运行镜像。
 FROM rust:1.94.1-slim-bookworm AS sdk-rust
@@ -32,6 +20,17 @@ COPY scripts/build_thesis_ledger_longbridge_sdk.py scripts/verify_longbridge_nat
 RUN --mount=type=cache,target=/sdk-cache \
     CARGO_HOME=/sdk-cache/cargo CARGO_TARGET_DIR=/sdk-cache/target PIP_CACHE_DIR=/sdk-cache/pip \
     python scripts/build_thesis_ledger_longbridge_sdk.py --output /wheels
+
+# 记录宿主源码输入；数据库结构或 SDK/系统条件变化时快更必须拒绝。
+COPY scripts/data-runtime-contract.json scripts/data_runtime_compatibility.py /compat/scripts/
+COPY .dockerignore /compat/.dockerignore
+COPY requirements.txt /compat/
+COPY docker/Dockerfile docker/entrypoint.sh /compat/docker/
+COPY patches/longbridge-sdk/ /compat/patches/longbridge-sdk/
+COPY scripts/build_thesis_ledger_longbridge_sdk.py scripts/verify_longbridge_native_storage.py /compat/scripts/
+COPY src/data/fx_rate_repository.py /compat/src/data/
+COPY src/services/provider_oauth_store.py src/services/thesis_ledger_control.py /compat/src/services/
+RUN python /compat/scripts/data_runtime_compatibility.py --root /compat --output /wheels/data-runtime-inputs.json
 
 # Pin to bookworm: wkhtmltopdf was removed from Debian testing (2025)
 FROM python:3.11-slim-bookworm
@@ -73,25 +72,27 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 RUN python -c "import importlib.metadata as m; import rqdatac, rqdatac_fund; assert m.version('rqdatac') == '3.7.1'; assert m.version('rqdatac-fund') == '1.0.44'; assert callable(rqdatac.fund.get_split) and callable(rqdatac.fund.get_dividend)"
 
 COPY --from=sdk-builder /wheels/*.whl /tmp/longbridge-wheels/
+COPY --from=sdk-builder /wheels/data-runtime-inputs.json /app/scripts/data-runtime-inputs.json
 RUN pip install --no-deps --force-reinstall /tmp/longbridge-wheels/*.whl && \
     python -c "from longbridge.openapi import OAuthBuilder; assert OAuthBuilder.THESIS_LEDGER_STORAGE_VERSION == 1" && \
     rm -rf /tmp/longbridge-wheels
 
 # 复制应用代码
-COPY *.py ./
+COPY server.py ./
 COPY api/ ./api/
 COPY data_provider/ ./data_provider/
-COPY bot/ ./bot/
 COPY src/ ./src/
-COPY strategies/ ./strategies/
 COPY scripts/admit_nav_research.py ./scripts/admit_nav_research.py
-COPY --from=web-builder /app/static ./static/
+COPY scripts/data-runtime-contract.json ./scripts/data-runtime-contract.json
 COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-# Verify globally bundled runtime dependencies without leaving SDK logs in the image.
-RUN mkdir -p /tmp/futu-sdk-smoke-home && \
-    HOME=/tmp/futu-sdk-smoke-home python -c "import src.services.screening.pipeline; import futu" && \
-    rm -rf /tmp/futu-sdk-smoke-home
+# 核对正式数据入口与数据 SDK，临时日志不留在镜像中。
+RUN mkdir -p /tmp/dsa-data-smoke && \
+    touch /tmp/dsa-data-smoke/empty.env && \
+    HOME=/tmp/dsa-data-smoke LOG_DIR=/tmp/dsa-data-smoke/logs ENV_FILE=/tmp/dsa-data-smoke/empty.env \
+    DATABASE_PATH=/tmp/dsa-data-smoke/data.db \
+    python -c "from server import app; import futu, sys, pathlib; assert app.title == 'DSA 数据服务 API'; assert not any(name in sys.modules for name in ('src.config', 'src.notification', 'src.analyzer', 'src.core.pipeline')); assert all(sys.implementation.cache_tag in path.name for path in pathlib.Path('/app').rglob('*.pyc'))" && \
+    rm -rf /tmp/dsa-data-smoke
 
 # 确保数据目录存在并授权给 non-root 用户
 RUN mkdir -p /app/data /app/logs /app/reports && \
@@ -110,8 +111,7 @@ RUN EF_DATA_DIR="$(python -c 'import efinance, pathlib; print(pathlib.Path(efina
 ENV PYTHONUNBUFFERED=1
 ENV LOG_DIR=/app/logs
 ENV DATABASE_PATH=/app/data/stock_analysis.db
-# Web/API service
-ENV WEBUI_HOST=0.0.0.0
+# 数据 API 服务
 ENV API_PORT=8000
 
 # 暴露 API 端口
@@ -122,8 +122,7 @@ VOLUME ["/app/data", "/app/logs", "/app/reports"]
 
 # 健康检查（FastAPI 模式）
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/api/health || curl -f http://localhost:8000/health \
-    || python -c "import sys; sys.exit(0)"
+    CMD curl --fail --silent --show-error http://localhost:8000/health
 
 # 启动入口先修复 bind mount 目录权限，再降权为 dsa 执行应用；
 # 文档化 docker-compose exec 命令需显式使用 -u dsa，避免手动进程写入 root-owned 文件。
@@ -139,7 +138,8 @@ LABEL org.opencontainers.image.title="daily-stock-analysis" \
     org.opencontainers.image.version="${DSA_VERSION}" \
     org.opencontainers.image.revision="${DSA_FORK_COMMIT}" \
     org.opencontainers.image.base.name="${DSA_UPSTREAM_COMMIT}" \
-    org.openai.thesis-ledger.contract="1"
+    org.openai.thesis-ledger.contract="1" \
+    org.openai.thesis-ledger.data-runtime="dsa-data-runtime-v1"
 
 # 默认命令（可被覆盖）
-CMD ["python", "main.py", "--schedule"]
+CMD ["python", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]

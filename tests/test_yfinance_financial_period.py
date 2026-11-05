@@ -86,7 +86,7 @@ class YahooFinancialPeriodTest(unittest.TestCase):
                                  fundamental_retry_max=1)
         income = pd.DataFrame({pd.Timestamp("2026-03-31"):
                                {"Total Revenue": 100.0}})
-        with patch("src.config.get_config", return_value=config), \
+        with patch("src.data_config.get_data_config", return_value=config), \
                 patch.object(manager, "get_realtime_quote", return_value=None), \
                 patch("yfinance.Ticker", return_value=_ticker(income=income)):
             context = manager.get_fundamental_context("AAPL")

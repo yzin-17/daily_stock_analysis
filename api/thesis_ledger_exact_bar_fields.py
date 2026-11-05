@@ -1,6 +1,6 @@
 """普通价格图的真实字段与市场日期；不生成交易日历证明。"""
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 import pandas as pd
 
@@ -30,4 +30,16 @@ def chart_bar_point(row, market, fetched_at, number):
     observed = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
     complete = observed >= closing
     return {"timestamp": timestamp, **bar_fields(row, number),
+            "completionStatus": "complete" if complete else "incomplete", "availableAt": fetched_at}
+
+
+def minute_chart_point(row, market, fetched_at, number):
+    zone = ZoneInfo({"HK": "Asia/Hong_Kong", "US": "America/New_York"}[market])
+    stamp = datetime.fromisoformat(str(row["timestamp"]))
+    observed = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+    complete = row.get("complete")
+    if (stamp.utcoffset() is None or stamp.second or stamp.microsecond or type(complete) is not bool
+            or complete and stamp + timedelta(minutes=1) > observed):
+        raise ValueError("invalid minute time or completion")
+    return {"timestamp": stamp.astimezone(zone).isoformat(), **bar_fields(row, number),
             "completionStatus": "complete" if complete else "incomplete", "availableAt": fetched_at}

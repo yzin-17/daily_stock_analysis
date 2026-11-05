@@ -41,7 +41,7 @@ def test_runtime_factory_keeps_snapshot_config_and_probe_budget(monkeypatch, sto
     snapshot = store.provider_credential_snapshot('tickflow')
     calls = []
     monkeypatch.setattr('data_provider.tickflow_fetcher.TickFlowFetcher', lambda **kwargs: calls.append(kwargs) or object())
-    monkeypatch.setattr('src.config.get_config', lambda: SimpleNamespace(tickflow_kline_adjust='hfq',
+    monkeypatch.setattr('src.data_config.get_data_config', lambda: SimpleNamespace(tickflow_kline_adjust='hfq',
         tickflow_batch_daily_enabled=False, tickflow_batch_size=17, tickflow_priority=9))
     key = SOURCE.bindings[0].key.route_key() if key_kind == 'daily' else {
         'kind': 'data', 'market': 'CN', 'assetType': 'STOCK', 'capability': 'REALTIME_QUOTE'}

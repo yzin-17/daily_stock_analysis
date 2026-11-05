@@ -64,7 +64,7 @@ def test_bad_stock_units_preserve_original_http_error_without_another_read(monke
 
 
 def test_undeclared_source_keeps_original_omission(monkeypatch):
-    api, calls = client(monkeypatch, quote(units={'sdkData': 'opaque'}), provider='tencent')
+    api, calls = client(monkeypatch, quote(units={'sdkData': 'opaque'}), provider='efinance')
     with api:
         result = api.get('/api/v3/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
                          headers={'Authorization': 'Bearer quote-unit-test-token'})

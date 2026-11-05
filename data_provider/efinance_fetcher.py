@@ -52,7 +52,7 @@ except (ValueError, TypeError):
     _EF_CALL_TIMEOUT = 30
 
 from src.patches.eastmoney_patch import configure_eastmoney_cookie, eastmoney_patch
-from src.config import get_config
+from src.data_config import get_data_config as get_config
 from .base import (
     BaseFetcher,
     DataFetchError,

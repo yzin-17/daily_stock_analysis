@@ -248,8 +248,8 @@ def test_catalog_worker_restarts_from_pending_job_without_duplicate_generation(
 
     import src.services.thesis_ledger_control as control_module
 
-    with control_module._catalog_job_managers_lock:
-        control_module._catalog_job_managers.pop(database_path, None)
+    from src.services.thesis_ledger_catalog_worker import stop_catalog_worker
+    stop_catalog_worker(database_path)
     control_module._catalog_job_manager_for(database_path)
 
     completed = _wait_terminal(store, pending["id"])

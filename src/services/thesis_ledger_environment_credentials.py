@@ -1,7 +1,9 @@
 """ThesisLedger 已声明来源的环境凭证解析。"""
 
 from collections.abc import Mapping
+from src.data_config import DataConfigurationError
 from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+
 
 def environment_credential_values(provider_id: str) -> dict[str, str]:
     source = CAPABILITY_SOURCES.source(provider_id)
@@ -11,17 +13,21 @@ def environment_credential_values(provider_id: str) -> dict[str, str]:
 
 
 def read_config_fields(fields: tuple[tuple[str, str], ...]) -> dict[str, str]:
-    """按来源声明读取既有Config字段；保持原空值和异常边界。"""
+    """读取数据配置；正常空值与内部加载失败分别处理。"""
+    if not fields:
+        return {}
     try:
-        from src.config import get_config
-        runtime_config = get_config()
+        from src.data_config import get_data_config
+        runtime_config = get_data_config()
         return {
             field: str(getattr(runtime_config, env_name, "") or "").strip()
             for field, env_name in fields
             if str(getattr(runtime_config, env_name, "") or "").strip()
         }
+    except DataConfigurationError:
+        raise
     except Exception:
-        return {}
+        raise DataConfigurationError("数据凭据配置读取失败") from None
 
 
 def environment_credential_method(provider_id: str, values: Mapping[str, str]) -> str | None:
@@ -40,4 +46,3 @@ def environment_snapshot_values(provider_id: str, values: dict[str, str]) -> dic
     if policy is not None and policy.snapshot_values is not None:
         return policy.snapshot_values(values)
     return values
-

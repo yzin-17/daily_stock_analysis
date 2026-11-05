@@ -101,7 +101,7 @@ def test_missing_credential_selection_is_saved_with_an_execution_reason(store):
     ("ETF", "fund-market-snapshot", "510300.SH"),
 ])
 def test_hithink_quote_uses_page_credentials_and_exact_source_without_admission(store, asset_type, source, symbol):
-    store.save_provider_config("hithink", {"requestId": "page-key", "credentials": {
+    store.save_provider_config("hithink", {"requestId": "page-key", "enabled": True, "credentials": {
         "method": "api_key", "values": {"apiKey": "synthetic-page-api-key"},
     }})
     key = {"kind": "data", "market": "CN", "assetType": asset_type, "capability": "REALTIME_QUOTE"}

@@ -872,7 +872,7 @@ class DataFetcherManager:
 
     def _get_tickflow_fetcher(self):
         """Lazily create a TickFlow fetcher for market-review-only calls."""
-        from src.config import get_config
+        from src.data_config import get_data_config as get_config
 
         config = get_config()
         api_key = (getattr(config, "tickflow_api_key", None) or "").strip()
@@ -1178,7 +1178,7 @@ class DataFetcherManager:
           4. YfinanceFetcher (Priority 4)
           5. TencentFetcher (Priority 5) - A 股最终兜底
         """
-        from src.config import get_config
+        from src.data_config import get_data_config as get_config
         from .efinance_fetcher import EfinanceFetcher
         from .tencent_fetcher import TencentFetcher
         from .akshare_fetcher import AkshareFetcher
@@ -1544,7 +1544,7 @@ class DataFetcherManager:
         # Normalize all codes
         stock_codes = [normalize_stock_code(c) for c in stock_codes]
 
-        from src.config import get_config
+        from src.data_config import get_data_config as get_config
 
         config = get_config()
 
@@ -1771,7 +1771,7 @@ class DataFetcherManager:
 
         from .akshare_fetcher import _is_us_code
         from .us_index_mapping import is_us_index_code
-        from src.config import get_config
+        from src.data_config import get_data_config as get_config
 
         config = get_config()
 
@@ -2161,7 +2161,7 @@ class DataFetcherManager:
         stock_code = normalize_stock_code(stock_code)
 
         from .realtime_types import get_chip_circuit_breaker
-        from src.config import get_config
+        from src.data_config import get_data_config as get_config
 
         config = get_config()
 
@@ -2661,7 +2661,7 @@ class DataFetcherManager:
         return None, last_error, total_cost_ms
 
     def _get_fundamental_config(self):
-        from src.config import get_config
+        from src.data_config import get_data_config as get_config
         return get_config()
 
     @staticmethod
@@ -2860,7 +2860,7 @@ class DataFetcherManager:
         Cache, retry and fail-open semantics intentionally match the CN path so
         upstream callers see the same shape regardless of market.
         """
-        from src.config import get_config
+        from src.data_config import get_data_config as get_config
 
         config = get_config()
         stage_timeout = float(
@@ -3173,7 +3173,7 @@ class DataFetcherManager:
         """
         Aggregate fundamental blocks with fail-open semantics.
         """
-        from src.config import get_config
+        from src.data_config import get_data_config as get_config
 
         config = get_config()
         if not config.enable_fundamental_pipeline:
@@ -3443,7 +3443,7 @@ class DataFetcherManager:
 
     def get_capital_flow_context(self, stock_code: str, budget_seconds: Optional[float] = None) -> Dict[str, Any]:
         """资金流向块（fail-open）。"""
-        from src.config import get_config
+        from src.data_config import get_data_config as get_config
 
         config = get_config()
         original_stock_code, stock_code = stock_code, normalize_stock_code(stock_code)
@@ -3507,7 +3507,7 @@ class DataFetcherManager:
 
     def get_dragon_tiger_context(self, stock_code: str, budget_seconds: Optional[float] = None) -> Dict[str, Any]:
         """龙虎榜块（fail-open）。"""
-        from src.config import get_config
+        from src.data_config import get_data_config as get_config
 
         config = get_config()
         stock_code = normalize_stock_code(stock_code)
@@ -3557,7 +3557,7 @@ class DataFetcherManager:
 
     def get_board_context(self, stock_code: str, budget_seconds: Optional[float] = None) -> Dict[str, Any]:
         """板块榜单块（fail-open）。"""
-        from src.config import get_config
+        from src.data_config import get_data_config as get_config
 
         config = get_config()
         stock_code = normalize_stock_code(stock_code)

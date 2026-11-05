@@ -1,0 +1,1014 @@
+{
+  "schemaVersion": "dsa-data-tests-v1",
+  "baselineInventory": "docs/tasks/evidence/2026-10-19-data-service-inventory.jsonl",
+  "baselineSha256": "aeaf1aa8fc283fff32bc210516edf0b0089186091d34869a48cfba00491c246c",
+  "partialFiles": {
+    "tests/test_searxng_env_docs.py": {
+      "dataSelectors": [
+        "test_env_example_documents_dedicated_searxng_configuration",
+        "test_changelog_mentions_searxng_actions_variable_mapping"
+      ],
+      "retiredSelectors": {
+        "test_daily_analysis_workflow_matches_documented_searxng_variable_mapping": "D6 退役原生定时分析流程；环境变量及历史说明保留"
+      }
+    }
+  },
+  "dataRetentionReviews": {
+    "tests/test_agent_pipeline.py": "复核原生消费者职责：src/agent/executor.py,src/agent/factory.py,src/agent/llm_adapter.py,src/agent/risk_override.py,src/agent/runtime_facts.py,src/agent/skills/base.py,src/agent/skills/defaults.py,src/agent/tools/registry.py,src/analyzer.py,src/config.py,src/core/pipeline.py,src/enums.py,src/llm/generation_params.py,src/services/daily_market_context.py,src/services/decision_signal_extractor.py,src/stock_analyzer.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_analysis_context_builder.py": "复核原生消费者职责：data_provider/realtime_types.py,src/schemas/analysis_context_pack.py,src/services/analysis_context_builder.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_analysis_context_pack_schema.py": "复核原生消费者职责：src/core/trading_calendar.py,src/schemas/analysis_context_pack.py,src/utils/sanitize.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_backtest_service.py": "复核原生消费者职责：src/config.py,src/core/backtest_engine.py,src/repositories/backtest_repo.py,src/services/backtest_service.py,src/services/stock_daily_start_resolver.py,src/storage.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_bot_market_command.py": "复核原生消费者职责：bot/commands/market.py,bot/models.py,src/core/trading_calendar.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_chip_structure_fallback.py": "复核原生消费者职责：data_provider/realtime_types.py,src/analyzer.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_decision_signal_service.py": "复核原生消费者职责：src/analyzer.py,src/config.py,src/repositories/decision_signal_repo.py,src/services/decision_signal_service.py,src/storage.py,src/utils/sanitize.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_news_intel.py": "复核原生消费者职责：src/config.py,src/search_service.py,src/storage.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_pipeline_realtime_indicators.py": "复核原生消费者职责：data_provider/realtime_types.py,src/config.py,src/core/pipeline.py,src/stock_analyzer.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_pipeline_related_boards.py": "复核原生消费者职责：api/v1/schemas/history.py,data_provider/base.py,src/core/pipeline.py,src/services/market_hotspot_service.py,src/services/market_structure_service.py,src/utils/data_processing.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_search_tools_persistence.py": "复核原生消费者职责：src/agent/tools/search_tools.py,src/search_service.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_signal_attribution_e2e.py": "复核原生消费者职责：src/agent/runner.py,src/analyzer.py,src/notification.py,src/services/history_service.py,src/services/report_renderer.py,src/utils/data_processing.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_signal_attribution_real_paths.py": "复核原生消费者职责：src/analyzer.py,src/schemas/report_schema.py,src/services/history_service.py,src/utils/data_processing.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_signal_attribution_supplement.py": "复核原生消费者职责：src/analyzer.py,src/notification.py,src/utils/data_processing.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_social_sentiment_service.py": "复核原生消费者职责：data_provider/us_index_mapping.py,src/services/social_sentiment_service.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_static_assets_consistency.py": "旧 SPA 及前端资源属于 D4a；索引的数据断言迁入 test_data_stock_index_http.py，并由 test_stock_index_loader.py 和 test_data_lifespan.py 保留候选校验、热路径、刷新启动/关闭责任。",
+    "tests/test_stock_analyzer_bias.py": "复核原生消费者职责：src/schemas/decision_scale.py,src/stock_analyzer.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_stock_analyzer_rsi.py": "复核原生消费者职责：src/services/alert_indicators.py,src/stock_analyzer.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_stock_daily_window_resolver.py": "当前仅 backtest_service 与 skill_opinion_outcome_service 消费本地分析后效窗口，正式数据应用无消费者；该原生回测/信号评价单元随 D8c2/D8b2 退役，行情数据协议与窗口断言保留在 Data V3 测试。",
+    "tests/test_system_config_api.py": "复核原生消费者职责：api/middlewares/auth.py,api/middlewares/error_handler.py,api/v1/endpoints/system_config.py,api/v1/schemas/system_config.py,src/auth.py,src/config.py,src/core/config_manager.py,src/services/system_config_service.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_system_config_service.py": "复核原生消费者职责：src/agent/agent_backend.py,src/config.py,src/core/config_manager.py,src/llm/backend_registry.py,src/llm/generation_params.py,src/services/agent_backend_status_service.py,src/services/system_config_service.py。原生分析、报告、账户、Bot 或 Agent 的消费断言随其功能退役；独立 Provider、数据协议和安全测试继续保留。",
+    "tests/test_config_manager.py": "原生登录、分析 CLI、Config 和系统配置 UI 的 .env 写入器；所有产品消费者已退役。数据加载器直接使用 dotenv，不消费写入器；控制凭据写入使用独立控制存储。 9 项断言均为旧 .env 产品写入/通知模板行为；数据配置读取的冻结解析、隔离与示例加载测试保持收集。"
+  },
+  "dataFiles": [
+    "tests/test_mini_racer_runtime.py",
+    "tests/test_a_share_fetcher_code_conversion.py",
+    "tests/test_ai_review_github_api.py",
+    "tests/test_akshare_exact_eastmoney_contract.py",
+    "tests/test_akshare_history_timeout.py",
+    "tests/test_akshare_news.py",
+    "tests/test_akshare_realtime_logging.py",
+    "tests/test_akshare_sector_rankings_contract.py",
+    "tests/test_all_provider_exact_checks.py",
+    "tests/test_alphavantage_fetcher.py",
+    "tests/test_anspire_search.py",
+    "tests/test_api_error_helpers.py",
+    "tests/test_baostock_name_identity.py",
+    "tests/test_belong_boards_run_flow.py",
+    "tests/test_build_release_notes.py",
+    "tests/test_capital_flow_request_scope_context.py",
+    "tests/test_chip_distribution_manager.py",
+    "tests/test_ci_test_shard.py",
+    "tests/test_ci_workflow_contract.py",
+    "tests/test_cninfo_announcements.py",
+    "tests/test_configured_market_routes.py",
+    "tests/test_configured_native_quotes.py",
+    "tests/test_data_announcement_lifecycle.py",
+    "tests/test_data_app.py",
+    "tests/test_data_catalog_lifecycle.py",
+    "tests/test_data_collection_policy.py",
+    "tests/test_data_config.py",
+    "tests/test_data_configuration_consumers.py",
+    "tests/test_data_fetcher_manager_hk_bare_code.py",
+    "tests/test_data_fetcher_prefetch_stock_names.py",
+    "tests/test_data_fx_rates.py",
+    "tests/test_data_image_script.py",
+    "tests/test_data_indicator_kernels.py",
+    "tests/test_data_lifespan.py",
+    "tests/test_data_process_recovery.py",
+    "tests/test_data_retired_entrypoints.py",
+    "tests/test_data_runtime_acceptance.py",
+    "tests/test_data_runtime_boundary.py",
+    "tests/test_data_runtime_compatibility.py",
+    "tests/test_data_runtime_contract.py",
+    "tests/test_data_search_isolation.py",
+    "tests/test_data_stock_index_asset.py",
+    "tests/test_data_stock_index_http.py",
+    "tests/test_data_stock_index_runtime.py",
+    "tests/test_data_storage_isolation.py",
+    "tests/test_data_test_scope.py",
+    "tests/test_docker_entrypoint.py",
+    "tests/test_eastmoney_dividend_research_records.py",
+    "tests/test_eastmoney_fund_catalog_page.py",
+    "tests/test_eastmoney_fund_catalog_reader.py",
+    "tests/test_eastmoney_fund_dividend_reader.py",
+    "tests/test_eastmoney_fund_dividends.py",
+    "tests/test_eastmoney_fund_identity.py",
+    "tests/test_eastmoney_fund_nav.py",
+    "tests/test_eastmoney_fund_split_reader.py",
+    "tests/test_eastmoney_fund_splits.py",
+    "tests/test_eastmoney_individual_fund_flow_request.py",
+    "tests/test_eastmoney_individual_fund_flow_rows.py",
+    "tests/test_eastmoney_nav_evidence.py",
+    "tests/test_eastmoney_patch.py",
+    "tests/test_eastmoney_quote_identity.py",
+    "tests/test_eastmoney_sector_fund_flow_rank.py",
+    "tests/test_eastmoney_split_clock_proposal.py",
+    "tests/test_eastmoney_split_diagnostics.py",
+    "tests/test_eastmoney_stock_valuation_reader.py",
+    "tests/test_efinance_main_indices.py",
+    "tests/test_efinance_market_breadth_contract.py",
+    "tests/test_efinance_realtime_quote.py",
+    "tests/test_efinance_sector_rankings_contract.py",
+    "tests/test_etf_daily_routing.py",
+    "tests/test_exact_foreign_quotes.py",
+    "tests/test_exact_provider_configuration.py",
+    "tests/test_fetch_tushare_stock_list.py",
+    "tests/test_fetcher_logging.py",
+    "tests/test_fetcher_source_optimization.py",
+    "tests/test_finnhub_fetcher.py",
+    "tests/test_fund_disclosure_reference.py",
+    "tests/test_fund_holdings_disclosure_time.py",
+    "tests/test_fund_holdings_source.py",
+    "tests/test_fundamental_adapter.py",
+    "tests/test_fundamental_context.py",
+    "tests/test_fundamental_valuation.py",
+    "tests/test_futu_daily.py",
+    "tests/test_futu_distribution_contract.py",
+    "tests/test_futu_market.py",
+    "tests/test_futu_minute.py",
+    "tests/test_futu_quote_consumer.py",
+    "tests/test_futu_research_identity.py",
+    "tests/test_futu_static_info.py",
+    "tests/test_generate_index_from_csv.py",
+    "tests/test_hithink_control_credentials.py",
+    "tests/test_hithink_dividend_research_records.py",
+    "tests/test_hithink_fund_dividend_placeholder_read.py",
+    "tests/test_hithink_fund_dividend_reader.py",
+    "tests/test_hithink_fund_dividend_research_semantics.py",
+    "tests/test_hithink_fund_dividends.py",
+    "tests/test_hithink_fund_identity_evidence.py",
+    "tests/test_hithink_interactive_daily.py",
+    "tests/test_hithink_news.py",
+    "tests/test_hk_realtime_routing.py",
+    "tests/test_hk_stock_name_fallback.py",
+    "tests/test_jp_kr_market_support.py",
+    "tests/test_logging_config.py",
+    "tests/test_longbridge_fetcher.py",
+    "tests/test_longbridge_sdk_build_source.py",
+    "tests/test_market_flash_news.py",
+    "tests/test_market_reference_derivative_contract.py",
+    "tests/test_market_reference_derivative_convertible.py",
+    "tests/test_market_reference_derivative_execution.py",
+    "tests/test_market_reference_derivative_futures.py",
+    "tests/test_market_reference_derivative_options.py",
+    "tests/test_market_reference_derivative_sina.py",
+    "tests/test_market_reference_execution.py",
+    "tests/test_market_reference_projection.py",
+    "tests/test_market_reference_public_content.py",
+    "tests/test_market_reference_public_control.py",
+    "tests/test_market_reference_public_package.py",
+    "tests/test_market_reference_public_tables.py",
+    "tests/test_market_symbol_utils.py",
+    "tests/test_multimarket_exact_daily.py",
+    "tests/test_name_to_code_resolver.py",
+    "tests/test_native_exact_daily.py",
+    "tests/test_nav_research_admission.py",
+    "tests/test_nvidia_news_rss.py",
+    "tests/test_provider_credentials.py",
+    "tests/test_provider_enable_credentials.py",
+    "tests/test_provider_oauth_api.py",
+    "tests/test_provider_oauth_manager.py",
+    "tests/test_provider_oauth_native_storage.py",
+    "tests/test_provider_oauth_runtime.py",
+    "tests/test_provider_oauth_store.py",
+    "tests/test_provider_probe_execution.py",
+    "tests/test_realtime_quote_fallback_logging.py",
+    "tests/test_realtime_types.py",
+    "tests/test_rebase_legacy_thesis_ledger_policy.py",
+    "tests/test_refresh_stock_index.py",
+    "tests/test_report_metadata_http.py",
+    "tests/test_report_metadata_page.py",
+    "tests/test_rqdata_client_factory.py",
+    "tests/test_rqdata_control_credentials.py",
+    "tests/test_rqdata_credential_revision.py",
+    "tests/test_rqdata_etf_daily_contract.py",
+    "tests/test_rqdata_etf_daily_process.py",
+    "tests/test_rqdata_fund_dividend_reader.py",
+    "tests/test_rqdata_fund_dividends.py",
+    "tests/test_rqdata_fund_event_process.py",
+    "tests/test_rqdata_fund_identity_evidence.py",
+    "tests/test_rqdata_fund_split_reader.py",
+    "tests/test_rqdata_fund_splits.py",
+    "tests/test_run_diagnostics_p1.py",
+    "tests/test_search_news_freshness.py",
+    "tests/test_search_performance.py",
+    "tests/test_search_searxng.py",
+    "tests/test_search_serpapi_provider.py",
+    "tests/test_search_service_concurrency.py",
+    "tests/test_search_tavily_provider.py",
+    "tests/test_security_lot_size.py",
+    "tests/test_security_lot_size_routes.py",
+    "tests/test_sina_etf_catalog_reader.py",
+    "tests/test_sina_index_identity.py",
+    "tests/test_stock_code_bse.py",
+    "tests/test_stock_code_utils.py",
+    "tests/test_stock_index_loader.py",
+    "tests/test_stock_index_remote_service.py",
+    "tests/test_stock_list_parser.py",
+    "tests/test_stooq_fallback.py",
+    "tests/test_tencent_etf_basic_quote.py",
+    "tests/test_tencent_fetcher.py",
+    "tests/test_tencent_native_daily.py",
+    "tests/test_tencent_quote_identity.py",
+    "tests/test_thesis_ledger_admission_v3.py",
+    "tests/test_thesis_ledger_akshare_stock_quote_paths.py",
+    "tests/test_thesis_ledger_alphavantage_capability_path.py",
+    "tests/test_thesis_ledger_announcement_jobs.py",
+    "tests/test_thesis_ledger_announcement_parser.py",
+    "tests/test_thesis_ledger_announcement_risk_parser.py",
+    "tests/test_thesis_ledger_announcement_routes.py",
+    "tests/test_thesis_ledger_announcements.py",
+    "tests/test_thesis_ledger_baostock_capability_path.py",
+    "tests/test_thesis_ledger_baostock_daily_status.py",
+    "tests/test_thesis_ledger_baostock_lifecycle.py",
+    "tests/test_thesis_ledger_baostock_query_process.py",
+    "tests/test_thesis_ledger_baostock_status_routes.py",
+    "tests/test_thesis_ledger_basic_price_routes.py",
+    "tests/test_thesis_ledger_binding_revision_views.py",
+    "tests/test_thesis_ledger_cache_context_v3.py",
+    "tests/test_thesis_ledger_calendar_release.py",
+    "tests/test_thesis_ledger_capability_registry.py",
+    "tests/test_thesis_ledger_catalog.py",
+    "tests/test_thesis_ledger_catalog_contract.py",
+    "tests/test_thesis_ledger_catalog_job.py",
+    "tests/test_thesis_ledger_catalog_manifest_compatibility.py",
+    "tests/test_thesis_ledger_catalog_readiness_policy.py",
+    "tests/test_thesis_ledger_catalog_sources.py",
+    "tests/test_thesis_ledger_chart_v3.py",
+    "tests/test_thesis_ledger_chip_capability_path.py",
+    "tests/test_thesis_ledger_cn_quote_paths.py",
+    "tests/test_thesis_ledger_consumer_boundary.py",
+    "tests/test_thesis_ledger_contract.py",
+    "tests/test_thesis_ledger_control.py",
+    "tests/test_thesis_ledger_control_v3.py",
+    "tests/test_thesis_ledger_core_facades.py",
+    "tests/test_thesis_ledger_current_data_route.py",
+    "tests/test_thesis_ledger_daily_tradability.py",
+    "tests/test_thesis_ledger_daily_units_policy.py",
+    "tests/test_thesis_ledger_daily_window_contract.py",
+    "tests/test_thesis_ledger_data_gateway.py",
+    "tests/test_thesis_ledger_data_v3_target_pins.py",
+    "tests/test_thesis_ledger_dependency_facts.py",
+    "tests/test_thesis_ledger_eastmoney_cash_capability_path.py",
+    "tests/test_thesis_ledger_eastmoney_split_capability_path.py",
+    "tests/test_thesis_ledger_environment_credential_lifecycle.py",
+    "tests/test_thesis_ledger_event_catalog_v3.py",
+    "tests/test_thesis_ledger_event_control_v3.py",
+    "tests/test_thesis_ledger_event_exact_probe.py",
+    "tests/test_thesis_ledger_events_v3.py",
+    "tests/test_thesis_ledger_exact_dependencies.py",
+    "tests/test_thesis_ledger_exact_source_probe.py",
+    "tests/test_thesis_ledger_factory_error_boundary.py",
+    "tests/test_thesis_ledger_feature_policy.py",
+    "tests/test_thesis_ledger_field_units.py",
+    "tests/test_thesis_ledger_finnhub_capability_path.py",
+    "tests/test_thesis_ledger_foreign_quote_capability_path.py",
+    "tests/test_thesis_ledger_four_stock_quote_paths.py",
+    "tests/test_thesis_ledger_fund_holdings_capability_path.py",
+    "tests/test_thesis_ledger_fund_nav_capability_path.py",
+    "tests/test_thesis_ledger_fund_nav_history_capability_path.py",
+    "tests/test_thesis_ledger_futu_capability_path.py",
+    "tests/test_thesis_ledger_futu_minute_capability_path.py",
+    "tests/test_thesis_ledger_futu_quote_capability_path.py",
+    "tests/test_thesis_ledger_futu_static_capability_path.py",
+    "tests/test_thesis_ledger_fx_cache_timestamp.py",
+    "tests/test_thesis_ledger_generic_probe_lifecycle.py",
+    "tests/test_thesis_ledger_hithink_admission_path_v3.py",
+    "tests/test_thesis_ledger_hithink_cash_capability_path.py",
+    "tests/test_thesis_ledger_hithink_credential_admission_runtime.py",
+    "tests/test_thesis_ledger_hithink_credential_revision.py",
+    "tests/test_thesis_ledger_hithink_dividend_contract_v3.py",
+    "tests/test_thesis_ledger_hithink_dormant_v3.py",
+    "tests/test_thesis_ledger_hithink_etf.py",
+    "tests/test_thesis_ledger_hithink_etf_binding.py",
+    "tests/test_thesis_ledger_hithink_events_v3.py",
+    "tests/test_thesis_ledger_hithink_known_cash.py",
+    "tests/test_thesis_ledger_hithink_mapped_dividend_read.py",
+    "tests/test_thesis_ledger_hithink_market_v3_contract.py",
+    "tests/test_thesis_ledger_hithink_overlap.py",
+    "tests/test_thesis_ledger_hithink_quote.py",
+    "tests/test_thesis_ledger_hithink_quote_admission.py",
+    "tests/test_thesis_ledger_hithink_quote_capability_path.py",
+    "tests/test_thesis_ledger_hithink_quote_runtime.py",
+    "tests/test_thesis_ledger_hithink_stock.py",
+    "tests/test_thesis_ledger_hithink_stock_control_gate.py",
+    "tests/test_thesis_ledger_hithink_stock_error_semantics.py",
+    "tests/test_thesis_ledger_hithink_stock_read.py",
+    "tests/test_thesis_ledger_hithink_stock_runtime_v3.py",
+    "tests/test_thesis_ledger_hithink_windows.py",
+    "tests/test_thesis_ledger_holding_rows.py",
+    "tests/test_thesis_ledger_holdings_diagnostics.py",
+    "tests/test_thesis_ledger_http_error_projection.py",
+    "tests/test_thesis_ledger_identity_only.py",
+    "tests/test_thesis_ledger_implicit_daily_boundary.py",
+    "tests/test_thesis_ledger_indicator_calculation.py",
+    "tests/test_thesis_ledger_installed_calendar.py",
+    "tests/test_thesis_ledger_inventory_export.py",
+    "tests/test_thesis_ledger_known_cash_control_v3.py",
+    "tests/test_thesis_ledger_known_cash_v3.py",
+    "tests/test_thesis_ledger_legacy_status_capability_path.py",
+    "tests/test_thesis_ledger_listing_dimensions.py",
+    "tests/test_thesis_ledger_listing_information.py",
+    "tests/test_thesis_ledger_listing_routes.py",
+    "tests/test_thesis_ledger_listing_sources.py",
+    "tests/test_thesis_ledger_local_history_manifest.py",
+    "tests/test_thesis_ledger_longbridge_capability_path.py",
+    "tests/test_thesis_ledger_manifest_source_facts.py",
+    "tests/test_thesis_ledger_mapping_evidence_store.py",
+    "tests/test_thesis_ledger_market_calendar.py",
+    "tests/test_thesis_ledger_market_daily_points.py",
+    "tests/test_thesis_ledger_market_errors_v3.py",
+    "tests/test_thesis_ledger_market_tradability_common.py",
+    "tests/test_thesis_ledger_market_v3.py",
+    "tests/test_thesis_ledger_market_v3_admission_runtime.py",
+    "tests/test_thesis_ledger_market_v3_calendar.py",
+    "tests/test_thesis_ledger_market_v3_pagination.py",
+    "tests/test_thesis_ledger_multi_window_api.py",
+    "tests/test_thesis_ledger_multi_window_fingerprint.py",
+    "tests/test_thesis_ledger_multi_window_response.py",
+    "tests/test_thesis_ledger_multimarket_public_fee_expansion.py",
+    "tests/test_thesis_ledger_multimarket_rule_routes.py",
+    "tests/test_thesis_ledger_multimarket_rules.py",
+    "tests/test_thesis_ledger_nav_calendar.py",
+    "tests/test_thesis_ledger_nav_dates.py",
+    "tests/test_thesis_ledger_nav_diagnostics.py",
+    "tests/test_thesis_ledger_nav_production.py",
+    "tests/test_thesis_ledger_nav_rules.py",
+    "tests/test_thesis_ledger_news_cache.py",
+    "tests/test_thesis_ledger_news_contract_v1.py",
+    "tests/test_thesis_ledger_news_execution.py",
+    "tests/test_thesis_ledger_news_fallback.py",
+    "tests/test_thesis_ledger_news_feed.py",
+    "tests/test_thesis_ledger_news_gateway.py",
+    "tests/test_thesis_ledger_news_http_acceptance.py",
+    "tests/test_thesis_ledger_news_results.py",
+    "tests/test_thesis_ledger_news_service.py",
+    "tests/test_thesis_ledger_news_sources.py",
+    "tests/test_thesis_ledger_news_transport.py",
+    "tests/test_thesis_ledger_notice_cash_capability_path.py",
+    "tests/test_thesis_ledger_notice_dividends.py",
+    "tests/test_thesis_ledger_notice_events_v3.py",
+    "tests/test_thesis_ledger_notice_exact_probe.py",
+    "tests/test_thesis_ledger_official_capability_path.py",
+    "tests/test_thesis_ledger_order_book.py",
+    "tests/test_thesis_ledger_period_indicators.py",
+    "tests/test_thesis_ledger_policy_admission_guard.py",
+    "tests/test_thesis_ledger_provider_credentials_runtime.py",
+    "tests/test_thesis_ledger_provider_first_save.py",
+    "tests/test_thesis_ledger_provider_runtime.py",
+    "tests/test_thesis_ledger_provider_v3_boundary.py",
+    "tests/test_thesis_ledger_public_fee_archive.py",
+    "tests/test_thesis_ledger_public_fee_routes.py",
+    "tests/test_thesis_ledger_public_fees.py",
+    "tests/test_thesis_ledger_public_fees_capability_path.py",
+    "tests/test_thesis_ledger_quote_public_units.py",
+    "tests/test_thesis_ledger_quote_result_contract.py",
+    "tests/test_thesis_ledger_quote_source_aliases.py",
+    "tests/test_thesis_ledger_quote_time.py",
+    "tests/test_thesis_ledger_quote_values.py",
+    "tests/test_thesis_ledger_request_budget.py",
+    "tests/test_thesis_ledger_research_calendar.py",
+    "tests/test_thesis_ledger_research_calendar_binding.py",
+    "tests/test_thesis_ledger_research_frame_projection.py",
+    "tests/test_thesis_ledger_research_instrument_binding.py",
+    "tests/test_thesis_ledger_risk_price_limits.py",
+    "tests/test_thesis_ledger_risk_price_limits_routes.py",
+    "tests/test_thesis_ledger_rqdata_event_capability_path.py",
+    "tests/test_thesis_ledger_rqdata_events_v3.py",
+    "tests/test_thesis_ledger_rqdata_mapped_read.py",
+    "tests/test_thesis_ledger_rqdata_read.py",
+    "tests/test_thesis_ledger_secret_rotation.py",
+    "tests/test_thesis_ledger_security_lot_contract.py",
+    "tests/test_thesis_ledger_security_static_contract.py",
+    "tests/test_thesis_ledger_source_credential_revisions.py",
+    "tests/test_thesis_ledger_source_probe_policy.py",
+    "tests/test_thesis_ledger_source_quote_admission.py",
+    "tests/test_thesis_ledger_source_quote_guards.py",
+    "tests/test_thesis_ledger_split_event_control_v3.py",
+    "tests/test_thesis_ledger_split_mapping_v3.py",
+    "tests/test_thesis_ledger_status_acquisition.py",
+    "tests/test_thesis_ledger_status_cache.py",
+    "tests/test_thesis_ledger_status_capabilities_v1.py",
+    "tests/test_thesis_ledger_status_error_envelope.py",
+    "tests/test_thesis_ledger_status_query_support_v1.py",
+    "tests/test_thesis_ledger_target_circuit_isolation.py",
+    "tests/test_thesis_ledger_tickflow_capability_path.py",
+    "tests/test_thesis_ledger_tradability_provider.py",
+    "tests/test_thesis_ledger_trading_status.py",
+    "tests/test_thesis_ledger_trading_status_listing.py",
+    "tests/test_thesis_ledger_trading_status_routes.py",
+    "tests/test_thesis_ledger_tushare_capability_path.py",
+    "tests/test_thesis_ledger_tushare_cash_capability_path.py",
+    "tests/test_thesis_ledger_tushare_credential_revision.py",
+    "tests/test_thesis_ledger_tushare_etf_binding.py",
+    "tests/test_thesis_ledger_tushare_event_registry_v3.py",
+    "tests/test_thesis_ledger_tushare_events_v3.py",
+    "tests/test_thesis_ledger_tushare_mapped_read.py",
+    "tests/test_thesis_ledger_tushare_market_v3.py",
+    "tests/test_thesis_ledger_v3_target_count.py",
+    "tests/test_thesis_ledger_yfinance_capability_path.py",
+    "tests/test_thesis_ledger_zero_volume_observations.py",
+    "tests/test_threadless_test_client.py",
+    "tests/test_tickflow_fetcher.py",
+    "tests/test_tickflow_free_history.py",
+    "tests/test_tickflow_manager_routing.py",
+    "tests/test_tickflow_market_review_fallback.py",
+    "tests/test_trading_calendar.py",
+    "tests/test_tushare_account_access.py",
+    "tests/test_tushare_exact_daily.py",
+    "tests/test_tushare_fetcher_followups.py",
+    "tests/test_tushare_fetcher_get_stock_list.py",
+    "tests/test_tushare_fetcher_http_client.py",
+    "tests/test_tushare_fund_adj.py",
+    "tests/test_tushare_fund_daily.py",
+    "tests/test_tushare_fund_dividend_reader.py",
+    "tests/test_tushare_fund_dividends.py",
+    "tests/test_tushare_fund_identity_evidence.py",
+    "tests/test_tushare_index_daily_rows.py",
+    "tests/test_tw_institution_report_wiring.py",
+    "tests/test_tw_institutional_fetcher.py",
+    "tests/test_tw_institutional_network.py",
+    "tests/test_tw_market_support.py",
+    "tests/test_us_index_mapping.py",
+    "tests/test_yahoo_hk_share_window.py",
+    "tests/test_yahoo_hk_share_window_routes.py",
+    "tests/test_yahoo_news.py",
+    "tests/test_yahoo_share_window.py",
+    "tests/test_yahoo_share_window_routes.py",
+    "tests/test_yfinance_financial_period.py",
+    "tests/test_yfinance_fundamental_adapter.py",
+    "tests/test_yfinance_hk_bare_code.py",
+    "tests/test_yfinance_hk_indices.py",
+    "tests/test_yfinance_jp_kr_indices.py",
+    "tests/test_yfinance_normalize.py",
+    "tests/test_yfinance_us_indices.py",
+    "tests/test_reference_backup_financial.py",
+    "tests/test_reference_backup_margin.py",
+    "tests/test_reference_backup_dragon.py",
+    "tests/test_reference_backup_reports.py",
+    "tests/test_thesis_ledger_etf_public_fees.py",
+    "tests/test_rule_monitor_store.py",
+    "tests/test_rule_monitor_fetch.py",
+    "tests/test_rule_monitor_runtime.py"
+  ],
+  "retiredByOwner": {
+    "D5": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/agent/test_disagreement.py",
+        "tests/agent/test_risk_override_application.py",
+        "tests/agent/test_runtime_facts.py",
+        "tests/test_agent_backend_status_service.py",
+        "tests/test_agent_chat_executor.py",
+        "tests/test_agent_orchestrator_sniper_fallback.py",
+        "tests/test_agent_prompt_cache_router_boundary.py",
+        "tests/test_agent_registry.py",
+        "tests/test_agent_sse_cleanup.py",
+        "tests/test_agent_stream_events.py",
+        "tests/test_agent_tool_surface.py",
+        "tests/test_codex_tool_process.py",
+        "tests/test_conversation_manager.py",
+        "tests/test_data_tools_get_capital_flow.py",
+        "tests/test_data_tools_get_stock_info.py",
+        "tests/test_data_tools_portfolio_snapshot.py",
+        "tests/test_litellm_fallback_pricing.py",
+        "tests/test_llm_adapter_provider_trace.py",
+        "tests/test_provider_trace.py",
+        "tests/test_search_tools_persistence.py",
+        "tests/test_strategy_deliberation.py"
+      ]
+    },
+    "D5/D6": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/agent/test_final_explanation.py",
+        "tests/test_agent_backend.py",
+        "tests/test_agent_litellm_route_resolution.py",
+        "tests/test_generation_backend.py",
+        "tests/test_native_quote_pipeline_logging.py",
+        "tests/test_report_language_prompt_directives.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D4a/D5": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_agent_chat_api.py"
+      ]
+    },
+    "D2b/D8d/D5": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_agent_chat_session_service.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D5/D6": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_agent_executor.py",
+        "tests/test_chat_context.py",
+        "tests/test_skill_opinion_samples.py"
+      ]
+    },
+    "D5/D7": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_agent_frozen_context.py",
+        "tests/test_ask_command.py",
+        "tests/test_data_tools_daily_history_cache.py",
+        "tests/test_skill_load_warning.py",
+        "tests/test_strategy_scheduler.py"
+      ]
+    },
+    "D1a/D6/D5/D6": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_agent_models_api.py"
+      ]
+    },
+    "D1a/D6/D5/D6/D8b2": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_agent_pipeline.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D4a/D8a/D8b1/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_alert_api.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D7/D8b1/D8b2": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_alert_worker.py"
+      ]
+    },
+    "D8b2": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_alerts_docs.py",
+        "tests/test_decision_action.py",
+        "tests/test_decision_profile_policy.py",
+        "tests/test_decision_signal_data_quality.py",
+        "tests/test_decision_signal_summary.py",
+        "tests/test_stock_analyzer_bias.py"
+      ]
+    },
+    "D1a/D6/D4a/D6/D8a/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_analysis_api_contract.py"
+      ]
+    },
+    "D6": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_analysis_context_builder.py",
+        "tests/test_analysis_context_pack_docs.py",
+        "tests/test_analysis_context_pack_overview.py",
+        "tests/test_analysis_context_pack_prompt.py",
+        "tests/test_analysis_context_pack_schema.py",
+        "tests/test_analysis_metadata.py",
+        "tests/test_analyzer_news_prompt.py",
+        "tests/test_autocomplete_pr0.py",
+        "tests/test_chip_structure_fallback.py",
+        "tests/test_daily_analysis_workflow_llm_env.py",
+        "tests/test_daily_market_context.py",
+        "tests/test_daily_market_context_guardrail.py",
+        "tests/test_decision_stability.py",
+        "tests/test_generation_backend_status_service.py",
+        "tests/test_llm_param_recovery.py",
+        "tests/test_llm_response_content.py",
+        "tests/test_market_phase_prompt.py",
+        "tests/test_market_phase_summary.py",
+        "tests/test_market_review_lock.py",
+        "tests/test_market_review_runtime.py",
+        "tests/test_market_strategy.py",
+        "tests/test_native_market_index_identity.py",
+        "tests/test_pipeline_augment_realtime.py",
+        "tests/test_pipeline_daily_market_context.py",
+        "tests/test_pipeline_fetch_error.py",
+        "tests/test_pipeline_optional_service_resilience.py",
+        "tests/test_pipeline_prefetch_dry_run.py",
+        "tests/test_pipeline_single_notify_thread_safety.py",
+        "tests/test_pipeline_single_stock_notify.py",
+        "tests/test_pipeline_stock_name_fetch.py",
+        "tests/test_prompt_cache_request_boundary.py",
+        "tests/test_provider_cache.py",
+        "tests/test_report_integrity.py",
+        "tests/test_report_language.py",
+        "tests/test_report_language_fallbacks_ko.py",
+        "tests/test_report_schema.py",
+        "tests/test_scheduler_background.py",
+        "tests/test_signal_attribution.py",
+        "tests/test_social_sentiment_service.py",
+        "tests/test_task_queue_config_sync.py",
+        "tests/test_task_service.py",
+        "tests/test_tickflow_pipeline_prefetch.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D4a/D6/D7/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_analysis_history.py"
+      ]
+    },
+    "D1a/D6/D4a/D6/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_analysis_integration.py"
+      ]
+    },
+    "D4a": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_api_app_cors.py",
+        "tests/test_api_health.py",
+        "tests/test_mimetypes_windows_init.py",
+        "tests/test_static_assets_consistency.py",
+        "tests/test_thesis_ledger_legacy_routes_with_spa.py",
+        "tests/test_usage_api.py"
+      ]
+    },
+    "D4a/D6/D7/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_api_schema_pydantic.py"
+      ]
+    },
+    "D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_auth.py",
+        "tests/test_auth_status_setup_state.py",
+        "tests/test_config_manager.py",
+        "tests/test_config_registry.py",
+        "tests/test_cwe345_xff_bypass.py",
+        "tests/test_decision_signal_docs.py"
+      ]
+    },
+    "D1a/D6/D4a/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_auth_api.py"
+      ]
+    },
+    "D8c2": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_backtest_engine.py",
+        "tests/test_backtest_summary.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D8c2": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_backtest_service.py"
+      ]
+    },
+    "D7": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_bot_dispatcher_async.py",
+        "tests/test_bot_market_command.py",
+        "tests/test_discord_platform.py",
+        "tests/test_feishu_stream.py",
+        "tests/test_feishu_stream_ordering.py",
+        "tests/test_formatters.py",
+        "tests/test_history_comparison_service.py",
+        "tests/test_history_loader.py",
+        "tests/test_history_news_fallback.py",
+        "tests/test_history_share_image.py",
+        "tests/test_notification_capabilities.py",
+        "tests/test_notification_noise.py",
+        "tests/test_notification_report_fixtures.py",
+        "tests/test_notification_routing.py",
+        "tests/test_share_image.py"
+      ]
+    },
+    "D1a/D6/D7": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_bot_status_command.py",
+        "tests/test_dingtalk_sender.py",
+        "tests/test_md2img_template.py",
+        "tests/test_notification_diagnostics.py",
+        "tests/test_notification_sender.py"
+      ]
+    },
+    "D4a/D8c1": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_builtin_screening_engine.py"
+      ]
+    },
+    "D9a/D9b": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_check_env_encoding.py"
+      ]
+    },
+    "D5/D9a/D9b": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_codex_app_server_gate_a.py"
+      ]
+    },
+    "D1a/D6": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_config_env_compat.py",
+        "tests/test_news_strategy_config.py"
+      ]
+    },
+    "D1a/D6/D6": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_config_validate_structured.py",
+        "tests/test_market_analyzer_generate_text.py",
+        "tests/test_pipeline_realtime_indicators.py"
+      ]
+    },
+    "D7/D9a/D9b": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_daily_analysis_workflow_notification_env.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D4a/D6/D8b2/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_decision_signal_api.py"
+      ]
+    },
+    "D7/D8c2": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_decision_signal_contract_isolation.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D6/D8b2": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_decision_signal_extractor.py",
+        "tests/test_decision_signal_service.py",
+        "tests/test_market_light_service.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D4a/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_decision_signal_outcome_api.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D8b2": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_decision_signal_outcome_service.py",
+        "tests/test_decision_signal_repo.py"
+      ]
+    },
+    "D4b": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_desktop_installer_config.py",
+        "tests/test_desktop_packaging_assets.py",
+        "tests/test_packaging_build_scripts.py",
+        "tests/test_webui_frontend.py"
+      ]
+    },
+    "D8a": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_futu_portfolio_service.py",
+        "tests/test_import_parser.py",
+        "tests/test_portfolio_alerts.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_get_latest_data.py",
+        "tests/test_news_intel.py",
+        "tests/test_storage.py"
+      ]
+    },
+    "D1a/D6/D8a": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_image_stock_extractor_litellm.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D6/D7": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_intelligence_analysis_integration.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D4a": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_intelligence_api.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D7": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_intelligence_service.py"
+      ]
+    },
+    "D1a/D6/D6/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_llm_channel_config.py"
+      ]
+    },
+    "D2b/D8d/D6": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_llm_usage.py"
+      ]
+    },
+    "D6/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_local_cli_backend.py"
+      ]
+    },
+    "D4a/D6/D8a": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_main_portfolio.py"
+      ]
+    },
+    "D1a/D6/D4a/D6/D8a": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_main_schedule_mode.py"
+      ]
+    },
+    "D8b1": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_market_light_alerts.py",
+        "tests/test_stock_analyzer_rsi.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D2c/D7/D6": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_market_review.py"
+      ]
+    },
+    "D6/D8c1": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_market_structure_service.py",
+        "tests/test_screening_ranker.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D5/D6/D7": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_multi_agent.py"
+      ]
+    },
+    "D6/D8a/D8b1/D8b2": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_native_data_migration_oracles.py"
+      ]
+    },
+    "D6/D7": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_native_queue_diagnostics.py",
+        "tests/test_report_renderer.py",
+        "tests/test_signal_attribution_real_paths.py",
+        "tests/test_signal_attribution_supplement.py",
+        "tests/test_tw_report_consumption.py"
+      ]
+    },
+    "D1a/D6/D6/D7": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_notification.py"
+      ]
+    },
+    "D6/D8b2": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_phase_decision_guardrail.py"
+      ]
+    },
+    "D2c/D7/D5/D6": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_pipeline_market_phase_context.py"
+      ]
+    },
+    "D2c/D7/D6": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_pipeline_notification_image_routing.py"
+      ]
+    },
+    "D6/D7/D8c1": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_pipeline_related_boards.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D4a/D8a/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_portfolio_api.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D4a/D8a/D8b2/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_portfolio_pr2.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D8a": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_portfolio_service.py"
+      ]
+    },
+    "D2c/D7/D7": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_run_diagnostics_p2.py"
+      ]
+    },
+    "D2c/D7/D6/D7/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_run_flow.py"
+      ]
+    },
+    "D4a/D6/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_runtime_scheduler_service.py"
+      ]
+    },
+    "D1a/D6/D6/D8c1": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_screening_api.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D8c1": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_screening_history.py"
+      ]
+    },
+    "D8c1": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_screening_prompt_cache_router_boundary.py",
+        "tests/test_screening_selection_variant.py"
+      ]
+    },
+    "D5/D6/D7": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_signal_attribution_e2e.py"
+      ]
+    },
+    "D1a/D6/D2b/D8d/D5": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_skill_opinion_outcome_stats.py",
+        "tests/test_skill_opinion_outcomes.py",
+        "tests/test_skill_opinion_weights.py"
+      ]
+    },
+    "D8c2/D8b2": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_stock_daily_window_resolver.py"
+      ]
+    },
+    "D7/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_stock_watchlist_api.py"
+      ]
+    },
+    "D1a/D6/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_system_config_api.py"
+      ]
+    },
+    "D1a/D6/D5/D6/D8d": {
+      "reason": "按原 Task 的产品职责退役 CI 收集；源码测试暂存，实际移除仍按对应叶的引用及数据保全前置执行",
+      "files": [
+        "tests/test_system_config_service.py"
+      ]
+    }
+  }
+}

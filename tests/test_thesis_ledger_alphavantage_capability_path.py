@@ -1,6 +1,7 @@
 """Alpha Vantage 唯一绑定、原 HTTP 语义与实际工厂/执行器验证。"""
 
 from dataclasses import replace
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -35,15 +36,18 @@ def test_original_registration_revisions_and_credential_definition():
     assert SOURCE.factory_scope == 'provider' and SOURCE.dependency_modules == ('requests',)
     assert credential_schema('alphavantage')['methods'][0]['method'] == 'api_key'
     revision = market_v3_current_route_revisions(KEY, TARGET, PROVIDER_MANIFESTS['alphavantage'], credential_version=1)
-    assert revision['adapterRevision'] == 'dsa-v3-us-stock-alphavantage-none-exact-daily-v1'
+    assert revision['adapterRevision'] == 'dsa-v3-us-stock-alphavantage-none-exact-daily-v2'
     assert revision['sourceRevision'] == PROTOCOL
+    assert PROTOCOL == 'dsa-alphavantage-compact-daily-single-response-v2'
+    assert SOURCE.bindings[0].maximum_rows == 100
+    assert SOURCE.bindings[1].adapter_revision == 'alphavantage-us-stock-exact-quote-v2'
 
 
-def test_actual_factory_and_runtime_preserve_pinned_full_response(monkeypatch, store):
+def test_actual_factory_and_runtime_read_one_pinned_compact_response(monkeypatch, store):
     calls = []
     def get(url, params, timeout):
         calls.append((url, params, timeout))
-        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {'Time Series (Daily)': {
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {'Meta Data': {'2. Symbol': 'AAPL'}, 'Time Series (Daily)': {
             '2026-05-19': {'1. open': '99', '2. high': '99', '3. low': '99', '4. close': '99'},
             '2026-05-18': {'1. open': '1', '2. high': '1.2', '3. low': '.9', '4. close': '1.1', '5. volume': '100'},
         }})
@@ -60,7 +64,7 @@ def test_actual_factory_and_runtime_preserve_pinned_full_response(monkeypatch, s
     assert result.value.iloc[0]['close'] == 1.1 and result.value.iloc[0]['volume'] == 100
     assert result.value.iloc[0]['amount'] is None
     assert calls == [('https://www.alphavantage.co/query', {'function': 'TIME_SERIES_DAILY',
-        'symbol': 'AAPL', 'outputsize': 'full', 'apikey': 'synthetic'}, 4.5)]
+        'symbol': 'AAPL', 'outputsize': 'compact', 'apikey': 'synthetic'}, 4.5)]
     no_admissions(store)
 
 
@@ -107,3 +111,64 @@ def test_http_failure_uses_original_error_boundary(monkeypatch, status, code):
     with pytest.raises(CapabilityContractError) as error:
         CAPABILITY_SOURCES.daily(request(), KEY, TARGET, ReadContext(SimpleNamespace(_api_key='synthetic')))
     assert error.value.code == code and calls == [1]
+
+
+def compact_payload():
+    return {'Meta Data': {'2. Symbol': 'AAPL'}, 'Time Series (Daily)': {
+        day: {'1. open': '1', '2. high': '1.2', '3. low': '.9', '4. close': '1.1', '5. volume': '100'}
+        for day in ['2026-05-15', '2026-05-18', '2026-05-19']}}
+
+
+@pytest.mark.parametrize('start,end', [
+    ('2026-05-14', '2026-05-18'),  # 请求包含旧窗，不能返回近期片段。
+    ('2026-05-13', '2026-05-14'),
+    ('2026-05-18', '2026-05-20'),
+    ('2026-05-16', '2026-05-17'),  # 区间内没有实际数据。
+])
+def test_compact_refuses_uncovered_window_without_full_fallback(monkeypatch, start, end):
+    calls = []
+    def get(url, params, timeout):
+        calls.append(params.copy())
+        return SimpleNamespace(raise_for_status=lambda: None, json=compact_payload)
+    monkeypatch.setattr('data_provider.multimarket_exact_daily.requests.get', get)
+    with pytest.raises(CapabilityContractError) as error:
+        CAPABILITY_SOURCES.daily(replace(request(), start=start, end=end), KEY, TARGET,
+            ReadContext(SimpleNamespace(_api_key='synthetic')))
+    assert error.value.code == 'not_covered'
+    assert calls == [{'function': 'TIME_SERIES_DAILY', 'symbol': 'AAPL',
+        'outputsize': 'compact', 'apikey': 'synthetic'}]
+
+
+@pytest.mark.parametrize('change', [
+    {'Meta Data': {'2. Symbol': 'MSFT'}},
+    {'Meta Data': {}},
+    {'Time Series (Daily)': {'not-a-date': {}}},
+    {'Time Series (Daily)': {'2026-05-18': []}},
+])
+def test_compact_rejects_wrong_identity_and_malformed_response(monkeypatch, change):
+    payload = compact_payload()
+    payload.update(change)
+    monkeypatch.setattr('data_provider.multimarket_exact_daily.requests.get', lambda *args, **kwargs:
+        SimpleNamespace(raise_for_status=lambda: None, json=lambda: payload))
+    with pytest.raises(CapabilityContractError) as error:
+        CAPABILITY_SOURCES.daily(request(), KEY, TARGET, ReadContext(SimpleNamespace(_api_key='synthetic')))
+    assert error.value.code == 'invalid_response'
+
+
+@pytest.mark.parametrize('rows', [1, 100, 101])
+def test_compact_response_limit_and_earliest_observed_boundary(monkeypatch, rows):
+    payload = compact_payload()
+    bar = payload['Time Series (Daily)']['2026-05-18']
+    payload['Time Series (Daily)'] = {
+        (date(2026, 5, 18) + timedelta(days=i)).isoformat(): bar.copy() for i in range(rows)}
+    monkeypatch.setattr('data_provider.multimarket_exact_daily.requests.get', lambda *args, **kwargs:
+        SimpleNamespace(raise_for_status=lambda: None, json=lambda: payload))
+    if rows == 101:
+        with pytest.raises(CapabilityContractError) as error:
+            CAPABILITY_SOURCES.daily(request(), KEY, TARGET, ReadContext(SimpleNamespace(_api_key='synthetic')))
+        assert error.value.code == 'invalid_response'
+    else:
+        result = CAPABILITY_SOURCES.daily(request(), KEY, TARGET, ReadContext(SimpleNamespace(_api_key='synthetic')))
+        assert result.frame['date'].tolist() == ['2026-05-18']
+        assert result.frame.attrs['upstream_source'] == 'alphavantage'
+        assert result.frame.iloc[0]['amount'] is None

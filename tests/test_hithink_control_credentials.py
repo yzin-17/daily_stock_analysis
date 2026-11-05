@@ -135,7 +135,12 @@ def test_draft_http_probe_uses_input_for_all_capabilities_without_saving_or_admi
     })
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
-    assert len(calls) == 3
+    assert sorted(calls) == [
+        ("CASH_DISTRIBUTION", "fund-corporate-actions-dividends"),
+        ("DAILY_BAR", "hithink-financial-api"),
+        ("NEWS_SEARCH", "hithink-news-stock-timeline"),
+        ("REALTIME_QUOTE", "a-share-prices-snapshot"),
+    ]
     redacted(response.json())
     assert store.provider_credential_snapshot("hithink").source == "environment"
     with sqlite3.connect(database) as connection:

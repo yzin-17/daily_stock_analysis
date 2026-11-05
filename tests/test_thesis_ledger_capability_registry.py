@@ -67,6 +67,8 @@ def test_bad_registration_rejected(change):
         fields = {"missing-handler": {"read": None}, "wrong-operation": {"operation": "subscribe"},
                   "wrong-contract": {"contract_version": 2},
                   "unknown-capability": {"key": ExactKey("CN", "STOCK", "MYSTERY", "none")}}
+        if change == "wrong-contract" and isinstance(binding, QueryBinding):
+            fields[change] = {"contract": replace(binding.contract, version=0)}
         bindings = (replace(binding, **fields[change]),)
     with pytest.raises(ValueError):
         CapabilityRegistry((replace(SOURCE, bindings=bindings, quote_source_aliases=()),))
@@ -112,7 +114,7 @@ def test_wider_semantic_contract_does_not_grant_source_subscription(monkeypatch,
 
 
 @pytest.mark.parametrize('provider,binding', tuple((provider, binding) for provider, binding in PRODUCTION_BINDINGS
-                                                  if binding.key.capability != 'DAILY_BAR'))
+                                                  if binding.key.route_key()['kind'] != 'bar'))
 def test_non_bar_binding_cannot_hide_price_basis_in_exact_key(provider, binding):
     calls = []
     changed_key = replace(binding.key, adjustment='qfq')
@@ -123,6 +125,15 @@ def test_non_bar_binding_cannot_hide_price_basis_in_exact_key(provider, binding)
     with pytest.raises(ValueError):
         CapabilityRegistry((source,))
     assert calls == []
+
+
+@pytest.mark.parametrize('provider,binding', tuple((provider, binding) for provider, binding in PRODUCTION_BINDINGS
+                                                  if binding.key.capability == 'MINUTE_BAR'))
+def test_minute_bar_key_exposes_basis_and_rejects_unimplemented_adjustment(provider, binding):
+    changed = replace(binding, key=replace(binding.key, adjustment='qfq'))
+    assert changed.key.route_key() != binding.key.route_key()
+    with pytest.raises(ValueError, match='分钟线'):
+        CapabilityRegistry((SourceDefinition(provider, lambda: {}, lambda _: None, (changed,)),))
 
 
 def test_inventory_and_revisions_have_one_owner():

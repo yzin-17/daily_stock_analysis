@@ -13,6 +13,7 @@ from data_provider.tencent_etf_quote import fetch_tencent_etf_quote
 from src.services.thesis_ledger_control import PROVIDER_MANIFESTS, ThesisLedgerControlStore
 from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from src.services.thesis_ledger_capability_registry import QuoteBinding
+from src.services.thesis_ledger_capability_contracts import QuoteQuery, ReadContext
 from src.services.thesis_ledger_provider_runtime import (
     ThesisLedgerDataGateway, ThesisLedgerDataRequest, ThesisLedgerGatewayError,
     ThesisLedgerProviderRuntime,
@@ -107,6 +108,8 @@ def test_catalog_policy_and_authenticated_http_without_manual_admission(tmp_path
         response = client.get(path, params={"symbol": "510300.SH"}, headers={"Authorization": "Bearer synthetic-token"})
     assert response.status_code == 200, response.text
     assert response.json()["provider"] == "tencent"
+    assert response.json()["upstreamSource"] == "tencent"
+    assert response.json()["units"] == {"priceCurrency": "CNY", "volume": "unknown", "turnoverCurrency": "unknown"}
     assert response.json()["marketTime"] == "2026-09-30T08:14:43+00:00"
     assert response.json()["freshness"] == "stale"
     assert response.json()["volume"] is None and response.json()["amount"] is None
@@ -138,3 +141,26 @@ def test_scope_does_not_relax_other_sources_or_capabilities():
     for key, target in [({**KEY, "assetType": "STOCK"}, TARGET),
                         (KEY, {"providerId": "hithink", "upstreamSource": "fund-market-snapshot"})]:
         assert CAPABILITY_SOURCES.resolve(key, target) is not binding
+
+
+def test_native_declared_identity_and_units_survive_standard_quote_result():
+    value = read("510300.SH")
+    adapter = SimpleNamespace(get_realtime_quote_single_symbol=lambda symbol: value)
+    result = CAPABILITY_SOURCES.quote(QuoteQuery(symbol="510300.SH", instrument_type="ETF"),
+                                      KEY, TARGET, ReadContext(adapter))
+    assert result.upstream_source == "tencent" and result.unit_error is None
+    assert result.units.model_dump() == {"priceCurrency": "CNY", "volume": "unknown", "turnoverCurrency": "unknown"}
+    assert result.price == 10 and result.volume is None and result.amount is None
+
+
+@pytest.mark.parametrize("changes", [
+    {"units": None}, {"units": {}}, {"source": "unverified-source"},
+    {"units": {"price_currency": "USD", "volume": "unknown", "turnover_currency": "unknown"}},
+    {"units": {"price_currency": "CNY", "volume": "share", "turnover_currency": "CNY"}},
+])
+def test_unverified_or_missing_units_are_not_inferred_from_etf_symbol(changes):
+    value = {**read("510300.SH"), **changes}
+    adapter = SimpleNamespace(get_realtime_quote_single_symbol=lambda symbol: value)
+    result = CAPABILITY_SOURCES.quote(QuoteQuery(symbol="510300.SH", instrument_type="ETF"),
+                                      KEY, TARGET, ReadContext(adapter))
+    assert result.units is None and result.unit_error is not None

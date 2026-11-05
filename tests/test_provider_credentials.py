@@ -213,9 +213,10 @@ def test_credentials_reject_oauth_unknown_fields_and_conflicting_clear(monkeypat
 
 
 def test_clearing_page_credential_restores_environment_source(monkeypatch, tmp_path):
+    from src.data_config import DataServiceConfig
     monkeypatch.setattr(
-        "src.config.get_config",
-        lambda: type("EnvironmentConfig", (), {"tushare_token": "environment-token"})(),
+        "src.data_config.get_data_config",
+        lambda: DataServiceConfig(tushare_token="environment-token"),
     )
     store = _store(monkeypatch, tmp_path)
     store.save_provider_config(
@@ -238,9 +239,10 @@ def test_clearing_page_credential_restores_environment_source(monkeypatch, tmp_p
 
 
 def test_old_string_credential_is_rejected_without_changing_environment(monkeypatch, tmp_path):
+    from src.data_config import DataServiceConfig
     monkeypatch.setattr(
-        "src.config.get_config",
-        lambda: type("EnvironmentConfig", (), {"tushare_token": "environment-token"})(),
+        "src.data_config.get_data_config",
+        lambda: DataServiceConfig(tushare_token="environment-token"),
     )
     store = _store(monkeypatch, tmp_path)
     with pytest.raises(ControlContractError) as raised:

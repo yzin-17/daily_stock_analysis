@@ -63,7 +63,19 @@ def test_us_winter_clock_is_not_fixed_utc_offset():
     assert read_futu_quote(sdk, "localhost", 11111, "AAPL.US", "STOCK")["provider_timestamp"] == "2026-01-06T15:00:00+00:00"
 
 
-@pytest.mark.parametrize("changes", [{"update_time": "bad"}, {"last_price": float("nan")}, {"last_price": True}])
+@pytest.mark.parametrize('symbol,code,observed,expected', [
+    ('AAPL.US', 'US.AAPL', '2026-10-14 23:47:30.626', '2026-10-15T03:47:30.626000+00:00'),
+    ('SPY.US', 'US.SPY', '2026-01-06 10:00:00.001', '2026-01-06T15:00:00.001000+00:00'),
+    ('00700.HK', 'HK.00700', '2026-07-01 10:00:00.123456', '2026-07-01T02:00:00.123456+00:00'),
+])
+def test_sdk_fractional_snapshot_clock_preserves_precision_and_market_zone(symbol, code, observed, expected):
+    sdk, context = sdk_for(code, update_time=observed)
+    assert read_futu_quote(sdk, 'localhost', 11111, symbol, 'STOCK')['provider_timestamp'] == expected
+    context.close.assert_called_once()
+
+
+@pytest.mark.parametrize("changes", [{"update_time": "bad"}, {"update_time": "2026-10-14"},
+    {"update_time": "2026-10-14 23:47:30.1234567"}, {"last_price": float("nan")}, {"last_price": True}])
 def test_bad_fields_close_context(changes):
     sdk, context = sdk_for(**changes)
     with pytest.raises(FutuMarketError) as error:

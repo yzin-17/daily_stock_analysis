@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError
 from src.services.thesis_ledger_fund_holdings_contract_v1 import Holding, HoldingsResult, holdings_digest
 from src.services.thesis_ledger_holding_rows import holding_period, validate_holding_rows
+from data_provider.fund_disclosure_reference import disclosure_for_observation
 
 
 def holding_symbol(value: str) -> str:
@@ -29,9 +30,12 @@ def holdings_result(frame, request, provider, upstream) -> HoldingsResult:
             weight=float(row['占净值比例']) / 100) for period, row in rows if period == latest),
             key=lambda holding: (-holding.weight, holding.symbol)))
         attrs = getattr(frame, 'attrs', {})
+        digest = holdings_digest(holdings)
+        report_period = f'{latest[0]}-Q{latest[1]}'
         return HoldingsResult(symbol=request.symbol, report_period=f'{latest[0]}-Q{latest[1]}', disclosure_date=None,
             holdings=holdings, provider=provider, upstream_source=upstream, observed_at=datetime.now(timezone.utc).isoformat(),
             source_endpoint=attrs.get('sourceEndpoint'), source_query_year=attrs.get('sourceQueryYear'),
-            source_observed_at=attrs.get('sourceObservedAt'), evidence_version=holdings_digest(holdings))
+            source_observed_at=attrs.get('sourceObservedAt'), evidence_version=digest,
+            disclosure_evidence=disclosure_for_observation(request.symbol, report_period, holdings, digest, provider, upstream))
     except (ValueError, TypeError) as error:
         raise CapabilityContractError('invalid_response', str(error)) from error

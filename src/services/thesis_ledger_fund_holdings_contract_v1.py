@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from .thesis_ledger_capability_registry import CapabilityContract
 from .thesis_ledger_fund_identity_v1 import fund_symbol
+from .thesis_ledger_fund_disclosure_evidence import DisclosureEvidence, correlate_disclosure
 
 CAPABILITY = 'FUND_HOLDINGS'
 
@@ -60,6 +61,7 @@ class HoldingsResult(BaseModel):
     source_query_year: int | None = Field(default=None, ge=2000)
     source_observed_at: str | None = None
     evidence_version: str = Field(pattern=r'^[0-9a-f]{64}$')
+    disclosure_evidence: DisclosureEvidence | None = None
     identity_basis: Literal['request_bound'] = 'request_bound'
     _symbol = field_validator('symbol')(fund_symbol)
 
@@ -78,6 +80,8 @@ class HoldingsResult(BaseModel):
         for clock in (self.observed_at, self.source_observed_at, self.disclosure_date):
             if clock is not None and datetime.fromisoformat(clock).utcoffset() is None:
                 raise ValueError('持仓观察/披露时间须含时区')
+        correlate_disclosure(self.disclosure_evidence, self.symbol, self.report_period,
+                             self.evidence_version, len(self.holdings), self.observed_at, self.disclosure_date)
         return self
 
 

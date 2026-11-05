@@ -69,7 +69,8 @@ def read_futu_quote(sdk, host, port, symbol, instrument_type):
         provider_time = None
         if observed is not None and str(observed).strip():
             try:
-                provider_time = datetime.strptime(str(observed), "%Y-%m-%d %H:%M:%S").replace(
+                time_format = "%Y-%m-%d %H:%M:%S.%f" if "." in str(observed) else "%Y-%m-%d %H:%M:%S"
+                provider_time = datetime.strptime(str(observed), time_format).replace(
                     tzinfo=ZoneInfo(zone),
                 ).astimezone(timezone.utc).isoformat()
             except (TypeError, ValueError):
@@ -116,6 +117,10 @@ class FutuMarketAdapter(FutuLotSizeAdapter):
         from .futu_static_info import static_identity
         static_identity(symbol, asset_type)
         return self._query({"operation": "static-info", "symbol": symbol, "instrumentType": asset_type})
+
+    def get_exact_minute(self, request):
+        return self._query({"operation": "minute", "symbol": request.symbol, "instrumentType": request.instrument_type,
+                            "start": request.start, "end": request.end, "adjustment": "none"})
 
     def _query(self, request):
         try:

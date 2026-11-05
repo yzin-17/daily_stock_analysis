@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Iterator
 from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
-from src.services.thesis_ledger_capability_registry import DailyBinding
+from src.services.thesis_ledger_capability_registry import DailyBinding, QueryBinding
 from data_provider.thesis_ledger_sources.hithink import (
     STOCK_SOURCE as HITHINK_STOCK_HISTORY_SOURCE,
     STOCK_SOURCE_REVISION as HITHINK_STOCK_SOURCE_CONTRACT_REVISION,
@@ -29,7 +29,8 @@ def market_v3_bar_adapter_reason(
     key: dict[str, Any], target: dict[str, Any]
 ) -> str | None:
     """Return a fail-closed reason unless this exact bar route has an adapter."""
-    if isinstance(CAPABILITY_SOURCES.resolve(key, target), DailyBinding):
+    binding = CAPABILITY_SOURCES.resolve(key, target)
+    if isinstance(binding, DailyBinding) or (isinstance(binding, QueryBinding) and key.get("capability") == "MINUTE_BAR"):
         return None
     if key.get("kind") == "bar" and any(
         candidate[0].get("market") == key.get("market")
@@ -65,7 +66,7 @@ def market_v3_bar_adapter_reason(
 
 def iter_market_v3_bar_adapters() -> Iterator[tuple[dict[str, Any], dict[str, str]]]:
     """Yield the established deterministic exact route inventory."""
-    for key, target, binding in CAPABILITY_SOURCES.routes("DAILY_BAR"):
+    for key, target, binding in (*CAPABILITY_SOURCES.routes("DAILY_BAR"), *CAPABILITY_SOURCES.routes("MINUTE_BAR")):
         if not binding.gated:
             yield key, target
     for (asset_type, provider_id, upstream_source), adjustments in sorted(_ROUTE_ADJUSTMENTS.items()):
@@ -90,7 +91,7 @@ def basic_market_price_route(key, target) -> bool:
 
 def iter_market_v3_gated_bar_adapters() -> Iterator[tuple[dict[str, Any], dict[str, str]]]:
     """按注册来源补充精确库存；普通能力是否就绪由配置控制。"""
-    for key, target, binding in CAPABILITY_SOURCES.routes("DAILY_BAR"):
+    for key, target, binding in (*CAPABILITY_SOURCES.routes("DAILY_BAR"), *CAPABILITY_SOURCES.routes("MINUTE_BAR")):
         if binding.gated:
             yield key, target
     for (asset_type, provider_id, upstream_source), adjustments in sorted(

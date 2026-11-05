@@ -1,6 +1,6 @@
 # 股票历史状态按需读取实施记录
 
-对应 [规格](../specs/2026-10-09-history-data-on-demand.md)，跨仓进度由 [主任务](../../../thesis-ledger/docs/tasks/2026-10-09-history-data-on-demand.md) 统一维护。
+对应 [规格](../specs/2026-10-09-history-data-on-demand.md)，跨仓进度由 [主任务](../../../thesis-ledger/docs/archive/tasks/2026-10-09-history-data-on-demand.md) 统一维护。
 
 2026-10-14 TickFlow免费历史由主仓统一适配Task TF-F拥有：独立免费连接三个沪深A股日K绑定，原完整服务/Key/报价保持；六组实源、有限口径核对、正常新Run及断网重放已过。330项受影响及末次99项定向/边界复用；取消紧张期1个历史回滚底线后正式update.sh dsa退出0，新镜像d9cdba416f1f…及源码/6卷/新旧重放核对通过，TF-F1～F4完成。[真实证据](../../../thesis-ledger/docs/reviews/2026-10-11-unified-data-capability-runtime-evidence.md#record-tickflow-free-history)。本记录仅回链，不重复来源任务或RQ/Tushare外部验证。
 

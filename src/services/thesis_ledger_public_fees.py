@@ -44,7 +44,8 @@ def build_public_fee_manifest() -> dict[str, Any]:
     for source in manifest["upstreamSources"]:
         source["capabilities"] = {CAPABILITY: ["STOCK"]}
     from src.services.thesis_ledger_local_history_manifest import attach_local_history
-    return attach_local_history(manifest, {UPSTREAM_SOURCE: DATA_PATH, ARCHIVE_SOURCE: ARCHIVE_DATA_PATH})
+    from src.services.thesis_ledger_etf_fee_sources import extend_manifest
+    return extend_manifest(attach_local_history(manifest, {UPSTREAM_SOURCE: DATA_PATH, ARCHIVE_SOURCE: ARCHIVE_DATA_PATH}))
 
 
 class PublicFeeSourceError(ValueError):
@@ -82,6 +83,7 @@ class OfficialPublicFeeProvider:
 
     def __init__(self, data_path: Path | None = None, *, clock: Callable[[], datetime] | None = None) -> None:
         self.data_path = data_path or DATA_PATH
+        self._data_path_override = data_path
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     def read(self, request: Mapping[str, Any]) -> dict[str, Any]:
@@ -97,6 +99,9 @@ class OfficialPublicFeeProvider:
     def _read(self, request: Mapping[str, Any]) -> dict[str, Any]:
         key = request.get("routeKey")
         target = request.get("routeTarget")
+        if isinstance(key, Mapping) and key.get("assetType") == "ETF":
+            from src.services.thesis_ledger_multimarket_rules import MultimarketRuleProvider
+            return MultimarketRuleProvider(self._data_path_override, clock=self.clock).read(request)
         expected_key = {"kind": "data", "market": "CN", "assetType": "STOCK", "capability": CAPABILITY}
         if key != expected_key:
             raise PublicFeeSourceError("unsupported_capability", "该公共收费源只覆盖 CN STOCK")

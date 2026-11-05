@@ -34,7 +34,7 @@ def manifest():
 
 def factory(context):
     from data_provider.tickflow_fetcher import TickFlowFetcher
-    from src.config import get_config
+    from src.data_config import get_data_config as get_config
 
     config = get_config()
     values = context.snapshot.values if context.snapshot else {}

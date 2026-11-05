@@ -13,7 +13,6 @@ import pandas as pd
 from data_provider.base import BaseFetcher, DataFetchError, DataFetcherManager, normalize_stock_code
 from data_provider.yfinance_fetcher import YfinanceFetcher
 from src.core.trading_calendar import MARKET_EXCHANGE, MARKET_TIMEZONE, get_market_for_stock
-from src.market_context import detect_market, get_market_guidelines
 from src.services.stock_code_utils import is_code_like, normalize_code
 
 
@@ -54,18 +53,13 @@ def test_normalize_and_detect_tw_suffix_codes() -> None:
     assert normalize_stock_code("00878.tw") == "00878.TW"
     assert normalize_stock_code("006208.tw") == "006208.TW"
 
-    assert detect_market("2330.TW") == "tw"
-    assert detect_market("0050.TW") == "tw"
-    assert detect_market("006208.TW") == "tw"  # 6-digit ETF
-    assert detect_market("6505.TWO") == "tw"
-    # Bare numeric codes must stay A-share to avoid collision with .TW opt-in.
-    assert detect_market("2330") == "cn"
-
     assert get_market_for_stock("2330.TW") == "tw"
+    assert get_market_for_stock("0050.TW") == "tw"
+    assert get_market_for_stock("006208.TW") == "tw"
     assert get_market_for_stock("6505.TWO") == "tw"
-    # A bare 6-digit code that doubles as a TW ETF (e.g. 006208) must stay
-    # A-share without the explicit .TW suffix. (Bare 4-digit codes like "2330"
-    # are unrecognized -> None / fail-open, which is existing behavior.)
+    assert get_market_for_stock("2330") == "hk"
+    assert get_market_for_stock("") is None
+    # 无 .TW 后缀的六位码保持 A 股规则；短数字按既有港股识别规则处理。
     assert get_market_for_stock("006208") == "cn"
 
     assert is_code_like("2330.TW") is True
@@ -74,17 +68,6 @@ def test_normalize_and_detect_tw_suffix_codes() -> None:
     assert normalize_code("2330.TW") == "2330.TW"
 
 
-def test_market_guidelines_for_tw_keep_taiwan_context() -> None:
-    tw_guidelines = get_market_guidelines("2330.TW")
-
-    assert "台股" in tw_guidelines
-    # Taiwan keeps its own positive framing (±10% limit + three institutional
-    # groups); do NOT copy the JP/KR "no A-share price-limit board" wording.
-    assert "三大法人" in tw_guidelines
-    assert ("±10%" in tw_guidelines) or ("涨跌停" in tw_guidelines)
-    # Only China A-share-specific concepts are excluded.
-    assert "北向资金" in tw_guidelines
-    assert "龙虎榜" in tw_guidelines
 
 
 def test_yfinance_keeps_tw_suffix_codes_and_indices() -> None:
@@ -130,23 +113,3 @@ def test_data_fetcher_manager_routes_tw_daily_only_to_yfinance() -> None:
 def test_trading_calendar_registers_tw_exchange_and_timezone() -> None:
     assert MARKET_EXCHANGE["tw"] == "XTAI"
     assert MARKET_TIMEZONE["tw"] == "Asia/Taipei"
-
-
-def test_tw_is_first_class_on_write_paths() -> None:
-    """TW is a first-class market on the decision-signal / portfolio / intelligence
-    write paths, matching jp/kr.
-
-    Regression guard: the analysis pipeline auto-extracts a DecisionSignal after
-    history save (pipeline._extract_decision_signal_after_history_save). If `tw`
-    were absent from VALID_MARKETS, _normalize_market("tw") would raise ValueError
-    on that main path and the signal would be silently dropped — making tw the
-    only yfinance-supported market that can be analyzed but never produces a signal.
-    """
-    from src.services.decision_signal_service import DecisionSignalService
-    from src.services.portfolio_service import VALID_MARKETS
-    from src.services.intelligence_service import _ALLOWED_MARKETS
-
-    assert get_market_for_stock("2330.TW") == "tw"  # data layer recognizes tw
-    assert DecisionSignalService._normalize_market("tw") == "tw"
-    assert "tw" in VALID_MARKETS
-    assert "tw" in _ALLOWED_MARKETS

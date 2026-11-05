@@ -18,6 +18,10 @@ from data_provider.hithink_cash_capability import CONTRACT as CASH_CONTRACT, rea
 from src.services.thesis_ledger_hithink_quote import HITHINK_ETF_SNAPSHOT_SOURCE, HITHINK_STOCK_SNAPSHOT_SOURCE
 from src.services.thesis_ledger_quote_units_contract import QuotePublicUnits, QuotePublicUnitsError
 from src.services.thesis_ledger_daily_units_contract import DailyUnitsPolicy
+from data_provider.thesis_ledger_sources.hithink_news import BINDING as NEWS_BINDING, UPSTREAM as NEWS_SOURCE
+from data_provider.market_reference_bindings import reference_bindings, reference_manifest
+
+REFERENCE_BINDINGS = reference_bindings('hithink')
 
 STOCK_SOURCE = "hithink-financial-api"
 STOCK_SOURCE_REVISION = "dsa-hithink-stock-request-contract-v1"
@@ -106,22 +110,26 @@ def manifest():
     etf_source = "fund-market-historical"
     value = build_provider_manifest("hithink", "HiThink", {
         "REALTIME_QUOTE": ("ETF", "STOCK"), "DAILY_BAR": ("ETF", "STOCK"), "CASH_DISTRIBUTION": ("ETF",),
+        "NEWS_SEARCH": ("STOCK",),
     }, requires_credential=True, upstream_sources=(
         (etf_source, "HiThink ETF 历史接口"), (STOCK_SOURCE, "HiThink 股票历史接口"),
         (HITHINK_STOCK_SNAPSHOT_SOURCE, "HiThink A股行情快照"),
         (HITHINK_ETF_SNAPSHOT_SOURCE, "HiThink ETF/LOF 场内快照"),
         (HITHINK_DIVIDEND_SOURCE, "HiThink 场内基金分红"),
+        (NEWS_SOURCE, "HiThink 个股新闻"),
     ), markets=("CN",), configuration_mode="dsa_environment")
     capabilities = {
         etf_source: {"DAILY_BAR": ["ETF"]}, STOCK_SOURCE: {"DAILY_BAR": ["STOCK"]},
         HITHINK_STOCK_SNAPSHOT_SOURCE: {"REALTIME_QUOTE": ["STOCK"]},
         HITHINK_ETF_SNAPSHOT_SOURCE: {"REALTIME_QUOTE": ["ETF"]},
         HITHINK_DIVIDEND_SOURCE: {"CASH_DISTRIBUTION": ["ETF"]},
+        NEWS_SOURCE: {"NEWS_SEARCH": ["STOCK"]},
     }
     for source in value["upstreamSources"]:
         source["capabilities"] = capabilities[source["sourceId"]]
     value["credentialEnvironmentKey"] = "HITHINK_API_KEY"
-    return value
+    value["version"] = 2
+    return reference_manifest(value, REFERENCE_BINDINGS)
 
 
 def factory(context):
@@ -233,7 +241,7 @@ SOURCE = SourceDefinition("hithink", manifest, factory, tuple(
                  STOCK_SOURCE_REVISION, STOCK_PROTOCOL, None, daily, gated=True,
                  research_calendar_eligible=research_calendar_eligible if adjustment in {'none', 'qfq'} else None)
     for adjustment in ("none", "qfq", "hfq")
-) + (
+) + (NEWS_BINDING,
     DailyBinding(ExactKey('CN', 'ETF', 'DAILY_BAR', 'qfq'), HITHINK_ETF_HISTORY_SOURCE,
         'dsa-v3-etf-hithink-fund-market-historical-qfq-adapter-v3',
         HITHINK_ETF_SOURCE_CONTRACT_REVISION_V1, HITHINK_ETF_LOCAL_PAGINATION_PROTOCOL_V1,
@@ -246,7 +254,7 @@ SOURCE = SourceDefinition("hithink", manifest, factory, tuple(
         "dsa-hithink-etf-quote-adapter-v1", "dsa-hithink-etf-snapshot-request-v1", quote),
     EventBinding(CASH_CONTRACT, ExactKey('CN', 'ETF', 'CASH_DISTRIBUTION'), HITHINK_DIVIDEND_SOURCE,
         read_cash, cash_revisions, cash_wire, revision_facts=CASH_REVISIONS, current_admission=cash_admission, probe_read=probe_cash),
-), credentials=(("api_key", ("apiKey",)),), dependency_modules=("requests",), unscoped_factory=factory,
+) + REFERENCE_BINDINGS, credentials=(("api_key", ("apiKey",)),), dependency_modules=("requests",), unscoped_factory=factory,
     credential_revision_kind='hmac', credential_revision_payload=credential_revision_payload,
     quote_guard_policy=QuoteGuardPolicy(prepare_quote_guard, 'HiThink 报价缺少当前精确准入', 'HiThink 报价准入已变更'),
     quote_admission_reader=read_quote_admission,

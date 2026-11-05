@@ -10,8 +10,8 @@ from pydantic import ValidationError
 from data_provider.thesis_ledger_sources.yfinance import SOURCE
 from src.services.thesis_ledger_capability_registry import CapabilityRegistry
 from src.services.thesis_ledger_dependency_facts import DependencyFactError, instrument_facts_response
-from src.services import thesis_ledger_dependency_facts as facts
 from src.services import thesis_ledger_reference_identity as identity
+from src.services import thesis_ledger_research_instrument_reader as instrument_reader
 from src.services.thesis_ledger_research_instrument_contract import ResearchInstrumentFact, ResearchInstrumentPolicy
 
 NOW = datetime(2026, 10, 12, tzinfo=timezone.utc)
@@ -62,8 +62,7 @@ def new_source(monkeypatch, reader):
         manifest=lambda: build_provider_manifest('new-source', '隔离单位来源', {'DAILY_BAR': ('STOCK',)},
             markets=('HK',), upstream_sources=(('new-units', '隔离单位观察'),)), bindings=(binding,)),))
     assert registry.manifests()['new-source']['providerId'] == 'new-source'
-    monkeypatch.setattr(identity, 'CAPABILITY_SOURCES', registry)
-    monkeypatch.setattr(facts, 'CAPABILITY_SOURCES', registry)
+    monkeypatch.setattr(instrument_reader, 'CAPABILITY_SOURCES', registry)
     return {'providerId': 'new-source', 'upstreamSource': 'new-units', 'routeIndex': 0}
 
 

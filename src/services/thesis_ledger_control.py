@@ -14,16 +14,15 @@ import hmac
 import json
 import logging
 import os
-import queue
 import secrets
 import sqlite3
 import threading
 import time
 import uuid
+from contextlib import AbstractContextManager
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
-from .thesis_ledger_feature_policy import validate_feature_route_shape, canonical_feature_route, effective_feature_route, feature_target_reason
+from .thesis_ledger_feature_policy import validate_feature_route_shape, canonical_feature_route, effective_feature_route, feature_target_reason, provider_enabled
 
 from src.services.provider_credentials import (
     CredentialValue,
@@ -37,6 +36,9 @@ from src.services.provider_credentials import (
     validate_stored_credential,
 )
 from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
+from src.services.thesis_ledger_control_sqlite import control_connection
+from src.services import thesis_ledger_catalog_worker as catalog_worker
+from src.services.thesis_ledger_catalog_execution import catalog_checkpoint
 from src.services.thesis_ledger_environment_credentials import environment_credential_values as _environment_credential_values
 from src.services.thesis_ledger_environment_credentials import environment_credential_method, environment_snapshot_values
 from src.services.provider_oauth_contract import OAuthStateError, validate_oauth_token
@@ -57,15 +59,7 @@ CATALOG_JOB_LEASE_SECONDS = 300
 CATALOG_JOB_LEASE_EXPIRED_CODE = "CATALOG_JOB_LEASE_EXPIRED"
 PROVIDER_REQUEST_BUDGET_SECONDS = 600
 
-INSTRUMENT_TYPES = (
-    "STOCK",
-    "ETF",
-    "MUTUAL_FUND",
-    "LOF",
-    "INDEX",
-    "BOND",
-    "CONVERTIBLE_BOND",
-)
+from .thesis_ledger_route_asset_types import INSTRUMENT_TYPES, route_asset_type_allowed
 
 
 from src.services.thesis_ledger_provider_manifests import PROVIDER_MANIFESTS
@@ -417,7 +411,6 @@ def normalize_policy_v3(payload: dict[str, Any]) -> dict[str, Any]:
         fail("INVALID_POLICY_SCHEMA", "V3 routes 必须是数组", request_id)
     normalized_routes: list[dict[str, Any]] = []
     seen_routes: set[tuple[Any, ...]] = set()
-    valid_asset_types = set(INSTRUMENT_TYPES)
     for route in routes:
         validate_feature_route_shape(route, fail, request_id)
         key = route.get("key")
@@ -430,7 +423,7 @@ def normalize_policy_v3(payload: dict[str, Any]) -> dict[str, Any]:
             not isinstance(market, str)
             or market not in {"CN", "HK", "US"}
             or not isinstance(asset_type, str)
-            or asset_type not in valid_asset_types
+            or not route_asset_type_allowed(kind, asset_type)
         ):
             fail("INVALID_POLICY_SCHEMA", "V3 route key 的 market 或 assetType 不受支持", request_id)
         if kind == "bar":
@@ -520,23 +513,13 @@ class ThesisLedgerControlStore:
 
     def __init__(self, database_path: str | None = None) -> None:
         self.database_path = database_path or _database_path()
-        # Every store instance gets a fencing identity. A new service process
-        # therefore cannot accidentally finalize a lease owned by its
-        # predecessor, while valid running jobs remain globally deduplicated.
+        # Instance identity fences predecessor leases while preserving global job deduplication.
         self._catalog_job_owner = f"pid:{os.getpid()}:{uuid.uuid4().hex}"
         self._ensure_schema()
         self._rotate_provider_credentials()
 
-    def _connect(self) -> sqlite3.Connection:
-        if self.database_path != ":memory:":
-            Path(self.database_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database_path, timeout=10, isolation_level=None)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA busy_timeout = 10000")
-        connection.execute("PRAGMA foreign_keys = ON")
-        if self.database_path != ":memory:":
-            connection.execute("PRAGMA journal_mode = WAL")
-        return connection
+    def _connect(self) -> AbstractContextManager[sqlite3.Connection]:
+        return control_connection(self.database_path)
 
     def _ensure_schema(self) -> None:
         with self._schema_lock, self._connect() as connection:
@@ -1147,7 +1130,7 @@ class ThesisLedgerControlStore:
         if not policy["enabled"]:
             return "disabled"
         config = configurations.get(provider_id)
-        if config is not None and not bool(config["enabled"]):
+        if not provider_enabled(provider_id, config):
             return "disabled"
         if not _provider_configured(manifest, config):
             return "credential_missing"
@@ -1523,12 +1506,13 @@ class ThesisLedgerControlStore:
                     {
                         **manifest,
                         "configured": configured,
-                        "enabled": (bool(config["enabled"]) if config else True) and configured,
+                        "enabled": provider_enabled(provider_id, config) and configured,
                         "credentialConfigured": credential_configured,
                         "credentialSource": credential_source,
                         "credentialFieldsConfigured": credential_fields,
                         "credentialMethod": credential_method,
                         "configVersion": int(config["config_version"]) if config else 0,
+                        "settings": {k: v for k, v in _json_load(config["settings_json"], {}).items() if k == "accountLevel"} if config else {},
                         "updatedAt": config["updated_at"] if config else None,
                         "health": {"scopes": health_by_provider.get(provider_id, [])},
                         "tombstone": (
@@ -1662,7 +1646,7 @@ class ThesisLedgerControlStore:
             "requestId": request_id,
         }
 
-    def save_provider_config(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def save_provider_config(self, provider_id: str, payload: dict[str, Any], *, after_save=None) -> dict[str, Any]:
         request_id = _request_id(payload.get("requestId"))
         provider_id = _validate_provider_id(provider_id, request_id)
         try:
@@ -1715,10 +1699,10 @@ class ThesisLedgerControlStore:
                                                status_code=409, request_id=request_id)
                 if enabled_provided:
                     enabled = enabled_value
-                elif existing is not None:
-                    enabled = bool(existing["enabled"])
                 else:
-                    enabled = True
+                    enabled = provider_enabled(provider_id, existing)
+                    if existing is None:
+                        enabled = enabled and _provider_configured(PROVIDER_MANIFESTS[provider_id], None)
                 if settings_provided:
                     settings = settings_value
                 elif existing is not None:
@@ -1778,9 +1762,8 @@ class ThesisLedgerControlStore:
                             request_id=request_id,
                         )
                     enabled = False
-                current_config_version = int(existing["config_version"]) if existing else 0
                 current_credential_version = int(existing["credential_version"]) if existing else 0
-                config_version = current_config_version + 1
+                config_version = version + 1
                 credential_version = current_credential_version + (1 if credential_changed else 0)
                 now = _utc_now()
                 connection.execute(
@@ -1814,6 +1797,8 @@ class ThesisLedgerControlStore:
                     (provider_id,),
                 )
                 effective = self._current_v3_effective(connection)
+                if after_save is not None:
+                    after_save(connection, config_version, credential_version)
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -2314,6 +2299,15 @@ class ThesisLedgerControlStore:
                 connection.rollback()
                 raise
 
+    def release_catalog_job_on_stop(self, job_id: str, owner: str) -> None:
+        """仅释放当前仍有效的领取，未完成目录保持可恢复。"""
+        with self._schema_lock, self._connect() as connection:
+            connection.execute(
+                "UPDATE thesis_ledger_catalog_job SET status='pending', lease_expires_at=NULL, "
+                "error_json=?, updated_at=? WHERE id=? AND owner=? AND status='running' AND lease_expires_at>?",
+                (_json({"code": "CATALOG_WORKER_STOPPED", "retryable": True}), _utc_now(), job_id, owner, _utc_now()),
+            )
+
     def execute_catalog_job(self, job_id: str, owner: str) -> dict[str, Any]:
         """Run one claimed Job; called by the process-local Catalog worker."""
         started = self._start_catalog_job(job_id, owner)
@@ -2347,6 +2341,7 @@ class ThesisLedgerControlStore:
                     item["instrumentType"],
                 ),
             )
+            catalog_checkpoint()
             completed = self._complete_catalog_job(job_id, owner, items, failures)
             return self._job_payload(completed)
         except Exception as exc:
@@ -2383,52 +2378,9 @@ class ThesisLedgerControlStore:
         }
 
 
-class _CatalogJobManager:
-    """One bounded process-local queue for manual and scheduled Catalog triggers."""
-
-    def __init__(self, database_path: str) -> None:
-        self.database_path = database_path
-        self.owner = f"catalog-worker:pid:{os.getpid()}:{uuid.uuid4().hex}"
-        self._queue: queue.Queue[tuple[str, str]] = queue.Queue()
-        self._thread = threading.Thread(
-            target=self._run,
-            name="thesis-ledger-catalog-worker",
-            daemon=True,
-        )
-        self._thread.start()
-        self._recover()
-
-    def enqueue(self, job_id: str, owner: str) -> None:
-        """将已声明的 Catalog Job 放入当前进程的有界工作流。"""
-        self._queue.put((job_id, owner))
-
-    def _recover(self) -> None:
-        """恢复 pending 与 lease 过期后可重试的 Job。"""
-        store = ThesisLedgerControlStore(self.database_path)
-        for job_id, owner in store.recover_catalog_jobs(self.owner):
-            self.enqueue(job_id, owner)
-
-    def _run(self) -> None:
-        """持续消费 Job，并让 Job 自身记录稳定失败状态。"""
-        store = ThesisLedgerControlStore(self.database_path)
-        while True:
-            job_id, owner = self._queue.get()
-            try:
-                store.execute_catalog_job(job_id, owner)
-            except Exception:  # noqa: BLE001 - the Job itself records stable failure state.
-                logger.exception("Catalog worker failed job=%s", job_id)
-            finally:
-                self._queue.task_done()
+_catalog_job_managers = catalog_worker.catalog_job_workers
+_catalog_job_managers_lock = catalog_worker.catalog_job_workers_lock
 
 
-_catalog_job_managers: dict[str, _CatalogJobManager] = {}
-_catalog_job_managers_lock = threading.Lock()
-
-
-def _catalog_job_manager_for(database_path: str) -> _CatalogJobManager:
-    with _catalog_job_managers_lock:
-        manager = _catalog_job_managers.get(database_path)
-        if manager is None:
-            manager = _CatalogJobManager(database_path)
-            _catalog_job_managers[database_path] = manager
-        return manager
+def _catalog_job_manager_for(database_path: str) -> catalog_worker.CatalogJobWorker:
+    return catalog_worker.catalog_worker_for(database_path, ThesisLedgerControlStore)

@@ -1,0 +1,15 @@
+{
+  "contractVersion": "dsa-data-runtime-v1",
+  "entrypoint": ["python", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"],
+  "files": ["server.py", "scripts/admit_nav_research.py"],
+  "directories": ["api", "data_provider", "src"],
+  "dataAssets": ["src/data/assets/stocks.index.json"],
+  "imageContractPath": "/app/scripts/data-runtime-contract.json",
+  "runtimeBaselinePath": "/app/scripts/data-runtime-inputs.json",
+  "compatibilityInputs": [".dockerignore", "requirements.txt", "docker/Dockerfile", "docker/entrypoint.sh", "patches/longbridge-sdk", "scripts/build_thesis_ledger_longbridge_sdk.py", "scripts/verify_longbridge_native_storage.py", "src/data/fx_rate_repository.py", "src/services/provider_oauth_store.py", "src/services/thesis_ledger_control.py"],
+  "imageLabel": "org.openai.thesis-ledger.data-runtime",
+  "healthPath": "/health",
+  "persistentDirectories": ["/app/data", "/app/logs", "/app/reports"],
+  "oauthStorageDirectory": "/home/dsa/.longbridge",
+  "nativeBuildInputs": ["patches/longbridge-sdk", "scripts/build_thesis_ledger_longbridge_sdk.py", "scripts/verify_longbridge_native_storage.py"]
+}

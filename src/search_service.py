@@ -34,7 +34,7 @@ from tenacity import (
 )
 
 from data_provider.us_index_mapping import is_us_index_code
-from src.config import (
+from src.data_config import (
     NEWS_STRATEGY_WINDOWS,
     normalize_news_strategy_profile,
     resolve_news_window_days,
@@ -341,7 +341,7 @@ class BaseSearchProvider(ABC):
         with self._state_lock:
             self._key_errors[key] = self._key_errors.get(key, 0) + 1
             error_count = self._key_errors[key]
-        logger.warning(f"[{self._name}] API Key {key[:8]}... 错误计数: {error_count}")
+        logger.warning("[%s] 凭据错误计数: %s", self._name, error_count)
     
     @abstractmethod
     def _do_search(self, query: str, api_key: str, max_results: int, days: int = 7) -> SearchResponse:
@@ -1052,7 +1052,7 @@ class BochaSearchProvider(BaseSearchProvider):
             payload = {
                 "query": query,
                 "freshness": freshness,  # 动态时间范围
-                "summary": True,  # 启用AI摘要
+                "summary": False,  # 数据取数只保留来源片段
                 "count": min(max_results, 50)  # 最大50条
             }
             
@@ -4878,7 +4878,7 @@ def get_search_service() -> SearchService:
     if _search_service is None:
         with _search_service_lock:
             if _search_service is None:
-                from src.config import get_config
+                from src.data_config import get_data_config as get_config
                 config = get_config()
                 
                 _search_service = SearchService(

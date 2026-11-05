@@ -30,8 +30,6 @@ from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
-from dotenv import load_dotenv
-load_dotenv()
 
 # 添加项目根目录到 Python 路径，解决模块导入问题
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -45,7 +43,7 @@ if "newspaper" not in sys.modules:
     mock_np.Config = MagicMock()
     sys.modules["newspaper"] = mock_np
 
-from src.config import Config, get_config
+from src.data_config import DataServiceConfig, reset_data_config
 from src.search_service import (
     AnspireSearchProvider,
     SearchService,
@@ -80,7 +78,7 @@ class TestAnspireConfigLoading(unittest.TestCase):
             del os.environ['ANSPIRE_API_KEYS']
         
         # 重置 Config 单例
-        Config._Config__instance = None
+        reset_data_config()
         reset_search_service()
 
     def tearDown(self):
@@ -92,14 +90,14 @@ class TestAnspireConfigLoading(unittest.TestCase):
             del os.environ['ANSPIRE_API_KEYS']
         
         # 重置 Config 单例
-        Config._Config__instance = None
+        reset_data_config()
         reset_search_service()
 
     def test_anspire_keys_loaded_from_env(self):
         """Test that ANSPIRE_API_KEYS is correctly parsed from environment."""
         # ✅ 使用 patch.dict 临时设置，测试后自动恢复
         with patch.dict(os.environ, {'ANSPIRE_API_KEYS': 'key1,key2,key3'}):
-            config = Config._load_from_env()
+            config = DataServiceConfig.from_env(os.environ)
             
             self.assertEqual(len(config.anspire_api_keys), 3)
             self.assertIn('key1', config.anspire_api_keys)
@@ -109,7 +107,7 @@ class TestAnspireConfigLoading(unittest.TestCase):
     def test_anspire_keys_single_key(self):
         """Test single API Key parsing."""
         with patch.dict(os.environ, {'ANSPIRE_API_KEYS': 'single_key_test'}):
-            config = Config._load_from_env()
+            config = DataServiceConfig.from_env(os.environ)
             
             self.assertEqual(len(config.anspire_api_keys), 1)
             self.assertEqual(config.anspire_api_keys[0], 'single_key_test')
@@ -117,14 +115,14 @@ class TestAnspireConfigLoading(unittest.TestCase):
     def test_anspire_keys_empty_env(self):
         """Test empty environment variable handling."""
         with patch.dict(os.environ, {'ANSPIRE_API_KEYS': ''}):
-            config = Config._load_from_env()
+            config = DataServiceConfig.from_env(os.environ)
             
             self.assertEqual(len(config.anspire_api_keys), 0)
 
     def test_anspire_keys_whitespace_handling(self):
         """Test whitespace trimming in API Keys."""
         with patch.dict(os.environ, {'ANSPIRE_API_KEYS': ' key1 , key2 , key3 '}):
-            config = Config._load_from_env()
+            config = DataServiceConfig.from_env(os.environ)
             
             self.assertEqual(len(config.anspire_api_keys), 3)
             self.assertEqual(config.anspire_api_keys, ['key1', 'key2', 'key3'])
@@ -404,7 +402,7 @@ class TestAnspireSearchService(unittest.TestCase):
     """SearchService 中 Anspire 集成测试"""
     
     def setUp(self):
-        Config._Config__instance = None
+        reset_data_config()
         reset_search_service()
 
     def test_search_service_with_anspire(self):
@@ -555,7 +553,7 @@ class TestAnspireIntegration(unittest.TestCase):
 def run_manual_test():
     """手动测试函数（用于快速验证）"""
     import logging
-    from src.config import get_config
+    from src.data_config import get_data_config
     
     # 配置日志
     logging.basicConfig(
@@ -568,7 +566,7 @@ def run_manual_test():
     print("=" * 60)
     
     # 检查配置
-    config = get_config()
+    config = get_data_config()
     if not config.anspire_api_keys:
         print("\n❌ 未检测到 Anspire API Keys")
         print("请设置环境变量：")

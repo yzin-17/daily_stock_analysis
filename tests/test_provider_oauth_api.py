@@ -1,4 +1,6 @@
 import asyncio
+import sqlite3
+import time
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -51,14 +53,20 @@ def test_control_boundary_create_resume_and_cancel(monkeypatch, tmp_path):
         session_id = response.json()["sessionId"]
         assert response.json()["contractVersion"] == 3
         assert response.json()["consumer"] == "thesis-ledger"
-        import sqlite3
+        deadline = time.monotonic() + 5
+        while client.get(base + "/current", headers=headers).json()["session"]["status"] != "authorizing":
+            assert time.monotonic() < deadline, "受控授权地址尚未落库"
+            time.sleep(0.01)
+
         def snapshot():
             with sqlite3.connect(control.database_path) as connection:
                 return tuple(connection.iterdump())
         before = snapshot()
         for version in (1, 2):
-            cancelled_old = client.post(base + f"/{session_id}/cancel", headers=headers,
-                json={"contractVersion": version, "consumer": "thesis-ledger", "requestId": "old-cancel"})
+            cancelled_old = client.post(
+                base + f"/{session_id}/cancel", headers=headers,
+                json={"contractVersion": version, "consumer": "thesis-ledger", "requestId": "old-cancel"},
+            )
             assert cancelled_old.status_code == 422
             assert snapshot() == before
         resumed = client.get(base + "/current", headers=headers).json()["session"]

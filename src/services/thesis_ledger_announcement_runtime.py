@@ -1,8 +1,12 @@
 """生命周期内执行公告任务与每日增量更新；网络适配器由装配层注入。"""
 from datetime import datetime, timedelta
 import logging
-from threading import Event, Thread
+import time
+from threading import Event, RLock, Thread
 from zoneinfo import ZoneInfo
+from src.services.thesis_ledger_announcement_execution import (
+    AnnouncementAcquisitionStopped, announcement_acquisition, announcement_checkpoint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -12,32 +16,54 @@ class AnnouncementRuntime:
         self.jobs, self.acquire, self.allowed = jobs, acquire, allowed
         self.stopping = Event()
         self.threads = []
+        self._lifecycle_lock = RLock()
 
     def start(self):
-        for name, function in (("announcement-fetch", self.work), ("announcement-schedule", self.schedule)):
-            thread = Thread(target=function, name=name, daemon=True)
-            thread.start()
-            self.threads.append(thread)
+        with self._lifecycle_lock:
+            if any(thread.is_alive() for thread in self.threads):
+                return
+            self.stopping.clear()
+            self.threads = []
+            try:
+                for name, function in (("announcement-fetch", self.work), ("announcement-schedule", self.schedule)):
+                    thread = Thread(target=function, name=name, daemon=True)
+                    self.threads.append(thread)
+                    thread.start()
+            except BaseException:
+                self.stop()
+                raise
 
-    def stop(self):
-        self.stopping.set()
-        for thread in self.threads:
-            thread.join(timeout=1)
+    def stop(self, timeout=30):
+        with self._lifecycle_lock:
+            self.stopping.set()
+            deadline = time.monotonic() + timeout
+            for thread in self.threads:
+                if thread.ident is not None:
+                    thread.join(timeout=max(0, deadline - time.monotonic()))
+            if any(thread.is_alive() for thread in self.threads):
+                raise RuntimeError("公告执行器未在退出期限内结束")
+            self.threads = []
 
     def prepare(self, symbols, start, end):
+        if self.stopping.is_set():
+            raise RuntimeError("公告执行器已停止")
         if not self.allowed():
             return {"status": "ready", "jobIds": [], "total": 0, "completed": 0, "failed": 0,
                     "matched": 0, "downloaded": 0, "parsed": 0, "errors": []}
         return self.jobs.ensure(symbols, start, end)
 
     def execute_one(self):
-        if not self.allowed():
+        if self.stopping.is_set() or not self.allowed():
             return False
         row = self.jobs.claim()
         if row is None:
             return False
         try:
-            result = self.acquire([row["symbol"]], row["start"], row["end"], max_pages=5, parse=True, budget_seconds=180)
+            with announcement_acquisition(self.stopping):
+                result = self.acquire([row["symbol"]], row["start"], row["end"], max_pages=5, parse=True, budget_seconds=180)
+                announcement_checkpoint()
+        except AnnouncementAcquisitionStopped:
+            return False
         except Exception as exc:
             logger.exception("公告获取任务失败")
             result = {"errors": [{"stage": "execution", "reason": str(exc)}]}

@@ -44,6 +44,7 @@ from src.services.thesis_ledger_market_v3_facts import (
     market_calendar_evidence_v3,
 )
 from src.services.thesis_ledger_research_calendar import research_market_coverage_context
+from src.services.fx_rate_service import FX_MAX_AGE_DAYS, fx_row as _fx_row
 
 from api.thesis_ledger_auth import (
     CONTRACT_VERSION as CONTRACT_VERSION, _error, _request_id_context, require_contract_token, require_control_token,
@@ -54,7 +55,6 @@ LOCAL_FIXTURE_VERSION = "dsa-thesis-ledger-fixture-v1"
 MARKET_DATA_V3_METHOD_VERSION = "dsa-market-bars-v3-native-source-v1"
 from src.services.thesis_ledger_market_v3_adapters import market_v3_bar_provider_ids, MARKET_DATA_V3_SUPPORTED_PROVIDER_IDS
 FX_CURRENCIES = {"CNY", "HKD", "USD"}
-FX_MAX_AGE_DAYS = 7
 logger = logging.getLogger(__name__)
 
 router_v3 = APIRouter(
@@ -353,31 +353,6 @@ def _parse_fx_as_of(value: Optional[str]) -> date:
         _error("invalid_as_of", f"asOf 不是有效日期: {value}", 422)
 
 
-def _fx_row(
-    *,
-    from_currency: str,
-    to_currency: str,
-    rate: float,
-    rate_date: date,
-    provider: str,
-    fetched_at: str,
-    stale: bool,
-    as_of: date,
-) -> dict[str, Any]:
-    age_days = max(0, (as_of - rate_date).days)
-    effective_stale = stale or age_days > 0
-    return {
-        "fromCurrency": from_currency,
-        "toCurrency": to_currency,
-        "rate": rate,
-        "rateDate": rate_date.isoformat(),
-        "provider": provider,
-        "fetchedAt": fetched_at,
-        "freshness": "stale" if effective_stale else "delayed",
-        "stale": effective_stale,
-        "ageDays": age_days,
-        "available": age_days <= FX_MAX_AGE_DAYS,
-    }
 
 
 def _fixture_fx_rates(
@@ -432,125 +407,11 @@ def _fixture_fx_rates(
     }
 
 
-def _cached_fx_rate(
-    *,
-    repo: Any,
-    from_currency: str,
-    to_currency: str,
-    as_of: date,
-) -> Optional[dict[str, Any]]:
-    direct = repo.get_latest_fx_rate(
-        from_currency=from_currency,
-        to_currency=to_currency,
-        as_of=as_of,
-    )
-    if direct is not None and float(direct.rate or 0) > 0:
-        return {
-            "rate": float(direct.rate),
-            "rate_date": direct.rate_date,
-            "provider": direct.source or "cache",
-            "fetched_at": direct.updated_at.isoformat() if direct.updated_at else _now_iso(),
-            "stale": bool(direct.is_stale),
-        }
-    inverse = repo.get_latest_fx_rate(
-        from_currency=to_currency,
-        to_currency=from_currency,
-        as_of=as_of,
-    )
-    if inverse is not None and float(inverse.rate or 0) > 0:
-        return {
-            "rate": 1 / float(inverse.rate),
-            "rate_date": inverse.rate_date,
-            "provider": inverse.source or "cache",
-            "fetched_at": inverse.updated_at.isoformat() if inverse.updated_at else _now_iso(),
-            "stale": bool(inverse.is_stale),
-        }
-    return None
 
 
 def _real_fx_rates(base_currency: str, currencies: list[str], as_of: date) -> dict[str, Any]:
-    from src.services.portfolio_service import PortfolioService
-
-    service = PortfolioService()
-    rows: list[dict[str, Any]] = []
-    for currency in currencies:
-        if currency == base_currency:
-            rows.append(
-                _fx_row(
-                    from_currency=currency,
-                    to_currency=base_currency,
-                    rate=1.0,
-                    rate_date=as_of,
-                    provider="identity",
-                    fetched_at=_now_iso(),
-                    stale=False,
-                    as_of=as_of,
-                )
-            )
-            continue
-        cached = _cached_fx_rate(
-            repo=service.repo,
-            from_currency=currency,
-            to_currency=base_currency,
-            as_of=as_of,
-        )
-        if cached is None or (as_of - cached["rate_date"]).days > FX_MAX_AGE_DAYS:
-            try:
-                fetched = service._fetch_fx_rate_from_yfinance(
-                    from_currency=currency,
-                    to_currency=base_currency,
-                    as_of_date=as_of,
-                )
-            except Exception:  # noqa: BLE001 - contract returns unavailable status.
-                fetched = None
-            if fetched is not None and fetched > 0:
-                service.repo.save_fx_rate(
-                    from_currency=currency,
-                    to_currency=base_currency,
-                    rate_date=as_of,
-                    rate=fetched,
-                    source="yfinance",
-                    is_stale=False,
-                )
-                cached = {
-                    "rate": float(fetched),
-                    "rate_date": as_of,
-                    "provider": "yfinance",
-                    "fetched_at": _now_iso(),
-                    "stale": False,
-                }
-        if cached is None or (as_of - cached["rate_date"]).days > FX_MAX_AGE_DAYS:
-            rows.append(
-                {
-                    "fromCurrency": currency,
-                    "toCurrency": base_currency,
-                    "freshness": "unavailable",
-                    "stale": False,
-                    "ageDays": None if cached is None else (as_of - cached["rate_date"]).days,
-                    "available": False,
-                }
-            )
-            continue
-        rows.append(
-            _fx_row(
-                from_currency=currency,
-                to_currency=base_currency,
-                rate=cached["rate"],
-                rate_date=cached["rate_date"],
-                provider=cached["provider"],
-                fetched_at=cached["fetched_at"],
-                stale=cached["stale"],
-                as_of=as_of,
-            )
-        )
-    return {
-        "version": 3,
-        "baseCurrency": base_currency,
-        "asOf": as_of.isoformat(),
-        "fetchedAt": _now_iso(),
-        "maxAgeDays": FX_MAX_AGE_DAYS,
-        "rates": rows,
-    }
+    from src.services.fx_rate_service import real_fx_rates
+    return real_fx_rates(base_currency, currencies, as_of)
 
 
 def _real_fund_nav(symbol: str, request_id: str | None = None) -> dict[str, Any]:
@@ -638,7 +499,6 @@ def _real_fund_nav_history(
             continue
         if end_at and parsed > end_at:
             continue
-        age_days = max(0, (datetime.now(timezone.utc).date() - parsed.date()).days)
         result.append(
             {
                 "version": 3,
@@ -647,7 +507,7 @@ def _real_fund_nav_history(
                 "navDate": nav_date,
                 "provider": provider,
                 "fetchedAt": fetched_at,
-                "freshness": "stale" if age_days > 7 else "delayed",
+                "freshness": "delayed",
                 "fallbackUsed": fallback_used,
             }
         )
@@ -1192,6 +1052,8 @@ def _fund_holdings_payload(symbol: str, value: Any, provider: str, fallback_used
         "provider": provider,
         "fetchedAt": _now_iso(),
         "evidenceVersion": holdings.evidence_version,
+        **({"disclosureEvidence": holdings.disclosure_evidence.model_dump(by_alias=True)}
+           if holdings.disclosure_evidence is not None else {}),
         "fallbackUsed": fallback_used,
         "holdings": [holding.model_dump() for holding in holdings.holdings],
     }
@@ -1553,8 +1415,8 @@ def control_provider_config(
     payload: dict[str, Any] = Body(default_factory=dict),
 ) -> dict[str, Any]:
     try:
-        value = _control_v3_envelope(payload)
-        return _control_store().save_provider_config(provider_id, value)
+        from src.services.thesis_ledger_account_access_configuration import configure_provider
+        return configure_provider(_control_store(), provider_id, _control_v3_envelope(payload), fixture=_fixture_mode())
     except ControlContractError as error:
         _control_http_error(error)
 

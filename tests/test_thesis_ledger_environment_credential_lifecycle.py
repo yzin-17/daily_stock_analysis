@@ -21,7 +21,7 @@ SINGLE_KEYS = [('tushare', 'tushare_token', 'token', 'token'),
 
 def store_and_reads(monkeypatch, tmp_path, config):
     config_reads, value_reads = [], []
-    monkeypatch.setattr('src.config.get_config', lambda: config_reads.append('config') or config)
+    monkeypatch.setattr('src.data_config.get_data_config', lambda: config_reads.append('config') or config)
     original = control._environment_credential_values
 
     def read(provider):
@@ -90,11 +90,22 @@ def test_longbridge_original_reader_and_method_selection(monkeypatch, tmp_path, 
     assert configs == ['config'] * 3 and values == ['longbridge'] * 3 and delegates == [config] * 3
 
 
-@pytest.mark.parametrize('provider', ['tushare', 'tickflow', 'finnhub', 'alphavantage', 'longbridge', 'unknown'])
-def test_config_read_failure_remains_empty_credentials(monkeypatch, provider):
+@pytest.mark.parametrize('provider', ['tushare', 'tickflow', 'finnhub', 'alphavantage', 'longbridge'])
+def test_config_read_failure_is_distinct_from_empty_credentials(monkeypatch, provider):
+    from src.data_config import DataConfigurationError
+
     def fail():
-        raise RuntimeError('isolated config error')
-    monkeypatch.setattr('src.config.get_config', fail)
+        raise DataConfigurationError('数据配置文件加载失败')
+    monkeypatch.setattr('src.data_config.get_data_config', fail)
+    with pytest.raises(DataConfigurationError, match='配置文件加载失败'):
+        environment_credential_values(provider)
+
+
+def test_unknown_source_does_not_load_config(monkeypatch):
+    def fail():
+        raise AssertionError('unknown source must not load configuration')
+    monkeypatch.setattr('src.data_config.get_data_config', fail)
+    provider = 'unknown'
     assert environment_credential_values(provider) == {}
 
 

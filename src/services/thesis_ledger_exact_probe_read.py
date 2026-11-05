@@ -53,6 +53,9 @@ def read_exact_probe(runtime, key, target, snapshot):
         from src.services.thesis_ledger_exact_evidence_probe import read_evidence_probe
         return read_evidence_probe(runtime, key, target, snapshot)
     symbol, start, end = probe_sample(key)
+    if capability == 'RESEARCH_REPORT_METADATA':
+        from .thesis_ledger_report_metadata_query import read_report_metadata_probe
+        return read_report_metadata_probe(runtime, key, target, snapshot, symbol, end)
     if capability == 'CHIP_SUMMARY':
         from .thesis_ledger_chip_summary_contract_v1 import ChipRequest
         from .thesis_ledger_chip_summary_query import read_chip_query

@@ -8,7 +8,7 @@ Input:
   - Seed format: scripts/stock_index_seeds/stock_list_{jp,kr}.csv
   - AkShare format: logs/stock_basic_*.csv
 
-Output: apps/dsa-web/public/stocks.index.json
+输出：src/data/assets/stocks.index.json
 
 Usage:
     python3 scripts/generate_index_from_csv.py              # 默认使用 Tushare
@@ -663,7 +663,7 @@ def main():
 
     # 输出路径
     output_path = (
-        Path(__file__).parent.parent / "apps" / "dsa-web" / "public" / "stocks.index.json"
+        Path(__file__).parent.parent / "src" / "data" / "assets" / "stocks.index.json"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import tempfile
 from zoneinfo import ZoneInfo
+from src.services.thesis_ledger_announcement_execution import announcement_checkpoint
 
 QUERY_URL = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 SEARCH_URL = "https://www.cninfo.com.cn/new/information/topSearch/query"
@@ -18,6 +19,7 @@ KEYWORDS = ("停牌", "复牌", "风险警示")
 def query_announcements(client, symbols, start, end, max_pages, deadline=float("inf"), *, root=None, force=False, validate=None):
     items, errors, truncated = [], [], False
     for symbol in symbols:
+        announcement_checkpoint()
         path = None
         if root is not None:
             identity = sha256(f"company-v1:{symbol}:{start}:{end}".encode()).hexdigest()
@@ -59,6 +61,7 @@ def query_announcements(client, symbols, start, end, max_pages, deadline=float("
 def _query_announcements(client, symbols, start, end, max_pages, deadline):
     items, errors, truncated = [], [], False
     for symbol in symbols:
+        announcement_checkpoint()
         code = symbol.split(".")[0]
         try:
             response = client.post(SEARCH_URL, data={"keyWord": code, "maxNum": 10}, headers=HEADERS, timeout=20)
@@ -72,6 +75,7 @@ def _query_announcements(client, symbols, start, end, max_pages, deadline):
             continue
         for keyword in KEYWORDS:
             for page in range(1, max_pages + 1):
+                announcement_checkpoint()
                 try:
                     if time.monotonic() >= deadline:
                         raise ValueError("公告获取达到本次时间上限")

@@ -15,7 +15,7 @@ from .thesis_ledger_quote_units_contract import QuotePublicUnitsError
 from .thesis_ledger_quote_result_contract import QuoteResult, QuoteUnitFailure
 from .thesis_ledger_daily_units_contract import DailyUnitsPolicy
 from .thesis_ledger_daily_window_contract import DailyWindowPlan, DailyWindowPlanningContext
-from .thesis_ledger_account_access_contract import AccountAccessProbeContext
+from .thesis_ledger_account_access_contract import AccountAccessProbeContext, AccountAccessLevelPolicy, validate_account_access_policy
 
 from .thesis_ledger_capability_contracts import (
     CapabilityContractError, DailyQuery, DailyRead, QuoteQuery, QuoteValue, ReadContext, ExactProbeReadContext, ResearchCalendarContext, ResearchFrameContext, ResearchFrameProjection,
@@ -59,9 +59,9 @@ class ExactKey:
     adjustment: str | None = None
 
     def route_key(self):
-        if self.capability == "DAILY_BAR":
+        if self.capability in {"DAILY_BAR", "MINUTE_BAR"}:
             return {"kind": "bar", "market": self.market, "assetType": self.asset_type,
-                    "capability": self.capability, "timeframe": "1d", "adjustment": self.adjustment}
+                    "capability": self.capability, "timeframe": "1m" if self.capability == "MINUTE_BAR" else "1d", "adjustment": self.adjustment}
         return {"kind": "data", "market": self.market, "assetType": self.asset_type, "capability": self.capability}
 
 
@@ -176,6 +176,7 @@ class SourceDefinition:
     probe_policy: SourceProbePolicy | None = None
     account_access_probe: Callable[[AccountAccessProbeContext], Mapping] | None = None
     account_access_snapshot: Callable[[ProviderCredentialSnapshot], ProviderCredentialSnapshot] | None = None
+    account_access_level: AccountAccessLevelPolicy | None = None
     catalog_manifest_policy: Callable[[CatalogManifestContext], bool | None] | None = None
     catalog_readiness: Callable[[CatalogReadinessContext], bool | None] | None = None
     environment_credential_policy: EnvironmentCredentialPolicy | None = None
@@ -183,6 +184,7 @@ class SourceDefinition:
     policy_admission_guard: Callable[[PolicyAdmissionContext], bool] | None = None
     quote_public_units: Callable[[QuotePublicUnitsContext], QuotePublicUnits] | None = None
     quote_source_aliases: tuple[tuple[str, str], ...] = ()
+    default_enabled: bool = True
 
 
 class CapabilityRegistry:
@@ -195,6 +197,8 @@ class CapabilityRegistry:
             if not source.provider_id or source.provider_id in providers or not callable(source.factory):
                 raise ValueError("来源重复或缺少工厂")
             providers.add(source.provider_id)
+            if type(source.default_enabled) is not bool:
+                raise ValueError("来源默认启停声明无效")
             if source.catalog_readiness is not None and not callable(source.catalog_readiness):
                 raise ValueError('来源目录就绪检查器无效')
             if source.factory_scope not in {"route", "provider"}:
@@ -225,10 +229,7 @@ class CapabilityRegistry:
                 raise ValueError('来源目录兼容策略无效')
             if source.exact_probe_read is not None and not callable(source.exact_probe_read):
                 raise ValueError('来源精确只读检查声明无效')
-            if source.account_access_probe is not None and not callable(source.account_access_probe):
-                raise ValueError('来源账户访问检查声明无效')
-            if source.account_access_snapshot is not None and not callable(source.account_access_snapshot):
-                raise ValueError('来源账户检查凭证快照声明无效')
+            validate_account_access_policy(source)
             if source.probe_policy is not None:
                 probe = source.probe_policy
                 if not isinstance(probe, SourceProbePolicy) or not callable(probe.read):
@@ -321,7 +322,9 @@ class CapabilityRegistry:
                     type(binding.query_support).model_validate(binding.query_support.model_dump())
                 if isinstance(binding, DailyBinding) and binding.key.adjustment not in {"none", "qfq", "hfq"}:
                     raise ValueError("日线缺少精确价格口径")
-                if binding.key.capability != 'DAILY_BAR' and binding.key.adjustment is not None:
+                if binding.key.capability == 'MINUTE_BAR' and binding.key.adjustment != 'none':
+                    raise ValueError("分钟线缺少精确不复权口径")
+                if binding.key.capability not in {'DAILY_BAR', 'MINUTE_BAR'} and binding.key.adjustment is not None:
                     raise ValueError("非日线能力不得携带日线价格口径")
                 if isinstance(binding, QuoteBinding):
                     dependencies = binding.dependency_modules

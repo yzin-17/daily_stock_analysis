@@ -1,38 +1,19 @@
-# Repository Instructions
+# 仓库协作指令
 
-Canonical source: [`AGENTS.md`](../AGENTS.md).
+唯一真源为 [AGENTS.md](../AGENTS.md)，冲突时遵循该文件。
 
-If any instruction in this file conflicts with `AGENTS.md`, follow `AGENTS.md`.
+本仓是 ThesisLedger 的独立数据服务。数据实现维护在 `src/`、`data_provider/`、`api/`，部署与工程入口维护在 `scripts/`、`.github/workflows/`、`docker/`。服务通过 `server:app` 装配，镜像与快更遵循 `dsa-data-runtime-v1` 合同。
 
-## Core Rules
+- 保留未提交改动；提交、tag、push 和对外消息需要明确授权。
+- PR/Issue 工作遵循 AGENTS 的基线同步、必要性、范围、证据和恢复要求；脏工作区不得强行 pull、stash、reset 或覆盖。
+- 不写入密钥或环境专属值；优先复用现有模块、配置、脚本和测试。
+- 来源、路由、凭据和准入分别管理；未知状态、配置失败与缺失必须区分。
+- 修改 API、配置、存储或部署行为，同步专题文档和 CHANGELOG；README 只保留项目定位、总览、快速开始与入口。
+- CHANGELOG 的 `[Unreleased]` 采用扁平的 `- [类型] 描述`，不新增分类标题。
+- 数据/消费者、物理环境、SDK/镜像、目标升级恢复和实源验证分别记录，不以局部通过替代外部门禁。
 
-- Respect directory boundaries:
-  - Backend: `src/`, `data_provider/`, `api/`, `bot/`
-  - Web: `apps/dsa-web/`
-  - Desktop: `apps/dsa-desktop/`
-  - Deployment/workflows: `scripts/`, `.github/workflows/`, `docker/`
-- Do not run `git commit`, `git tag`, or `git push` without explicit user confirmation.
-- Before creating/updating PRs, PR review, or issue analysis, refresh the latest code baseline with `git fetch --all --prune`; if the worktree is clean and the current branch can fast-forward, run `git pull --ff-only`. If local changes, conflicts, missing upstream, or non-fast-forward history make that unsafe, do not stash/reset/overwrite local state; analyze against fetched remote refs or record the baseline gap before proceeding.
-- PR titles should use `<type>: <change summary>` such as `fix: 修复大盘分析历史记录丢失`; use `fix`/`feat`/`refactor`/`docs`/`chore`/`test`/`ci` where possible, and avoid `[codex]`, `codex`, `autocode`, `copilot`, or other tool/agent source prefixes. Treat this as process guidance and do not use title format mismatches as a hard review blocker.
-- Do not hardcode secrets, accounts, ports, model names, absolute environment-specific paths, or environment-specific branches.
-- Reuse existing modules, configuration entrypoints, scripts, and tests instead of adding parallel implementations.
-- For user-visible behavior changes, CLI/API changes, deployment changes, notification changes, or report-structure changes, update the relevant docs and `docs/CHANGELOG.md`.
-- In `docs/CHANGELOG.md`, the `[Unreleased]` section uses a **flat format**: one line per entry formatted as `- [type] description`, where type is one of `新功能`/`改进`/`修复`/`文档`/`测试`/`chore`. **Do not add `### category headers` inside `[Unreleased]`** to minimize merge conflicts in concurrent PRs. A maintainer will reorganize into the full categorized format at release time.
-- Use `README.md` only for project positioning, high-level capabilities, quick start, main entrypoints, and sponsorship/cooperation information; avoid updating README unless the change is homepage-level.
-- Put detailed module behavior, page interaction, topic configuration, troubleshooting, field contracts, implementation semantics, and edge cases in the appropriate `docs/*.md` file instead of README.
-- When config semantics change, sync `.env.example` and assess impact on local runs, Docker, GitHub Actions, API, Web, and Desktop.
+## 验证与治理
 
-## Validation
+先定向测试，再按成本执行数据边界、lint、完整数据测试和目标运行验证。默认 pytest 与 CI 使用明确的数据测试清单；未登记测试不能静默忽略。
 
-- Backend changes: prefer `./scripts/ci_gate.sh`; at minimum run `python -m py_compile` on changed Python files and the closest deterministic tests.
-- Web changes: run `cd apps/dsa-web && npm ci && npm run lint && npm run build`.
-- Desktop changes: build web first, then desktop if feasible.
-- Review work should prioritize CI evidence (`gh pr checks`, workflow logs) before re-running local validation.
-- AI governance changes: run `python scripts/check_ai_assets.py`.
-
-## AI Asset Governance
-
-- `AGENTS.md` is the single source of truth for repository AI collaboration rules.
-- `CLAUDE.md` must remain a symlink to `AGENTS.md`.
-- Use `.github/instructions/*.instructions.md` for path-specific guidance.
-- Current repository collaboration skills live in `.claude/skills/`; keep them aligned with `AGENTS.md`.
+治理资产变更执行 `python scripts/check_ai_assets.py`。`CLAUDE.md` 保持为指向 `AGENTS.md` 的软链接，分层指令在 `.github/instructions/`，工程协作 skills 在 `.claude/skills/`。执行 Docker 操作前必须读取同级工作区的正式入口约束。

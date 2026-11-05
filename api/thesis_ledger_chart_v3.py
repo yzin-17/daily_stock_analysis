@@ -6,20 +6,17 @@ import uuid
 import logging
 from datetime import datetime
 from typing import Any, Mapping
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from api.thesis_ledger_source_basis import native_field_units, native_source_basis
-from api.thesis_ledger_exact_bar_fields import chart_bar_point
+from api.thesis_ledger_exact_bar_fields import chart_bar_point, minute_chart_point
 from src.services.thesis_ledger_market_errors_v3 import market_runtime_error
 
 from api.thesis_ledger import (
     MARKET_DATA_V3_METHOD_VERSION,
     market_v3_bar_provider_ids,
     _bar_series_fingerprint,
-    _bar_series_point,
-    _iso_timestamp,
     _market_data_v3_error,
     _market_data_v3_request,
     _now_iso,
@@ -38,7 +35,9 @@ def chart_request(payload: Any, request_id: str) -> dict[str, Any]:
     parsed = _market_data_v3_request(base, request_id)
     if "routeTarget" not in parsed:
         _market_data_v3_error("invalid_response", 422, parsed["requestId"])
-    if parsed["routeKey"]["timeframe"] != "1d":
+    key = parsed["routeKey"]
+    if key["timeframe"] == "1m" and (key["market"] not in {"HK", "US"}
+            or key["assetType"] not in {"STOCK", "ETF"} or key["adjustment"] != "none"):
         _market_data_v3_error("unsupported_price_basis", 422, parsed["requestId"])
     return parsed
 
@@ -61,18 +60,25 @@ def chart_response(request: Mapping[str, Any], execution: Any) -> dict[str, Any]
     ):
         _market_data_v3_error("invalid_response", 502, request_id)
     frame = getattr(execution, "value", None)
+    minute = request["routeKey"]["timeframe"] == "1m"
     fetched_at = _now_iso()
     points = []
     dates: set[str] = set()
     try:
+        if minute:
+            fetched_at = frame.attrs["observedAt"]
         for _, row in frame.iterrows():
-            point = chart_bar_point(row, request["routeKey"]["market"], fetched_at, _number)
+            project = minute_chart_point if minute else chart_bar_point
+            point = project(row, request["routeKey"]["market"], fetched_at, _number)
             trading_date = datetime.fromisoformat(point["timestamp"]).date().isoformat()
-            if trading_date in dates or not request["start"] <= trading_date <= request["end"]:
+            identity = point["timestamp"] if minute else trading_date
+            if identity in dates or not request["start"] <= trading_date <= request["end"]:
                 raise ValueError("invalid date")
-            dates.add(trading_date)
+            dates.add(identity)
             points.append(point)
         attrs = frame.attrs
+        if minute and attrs.get("session") != "regular":
+            raise ValueError("invalid minute session")
         units = native_field_units(attrs, request["routeKey"],
                                    provenance["providerId"], provenance["upstreamSource"], request)
         has_more_before = attrs.get("has_more_before", False)
@@ -93,7 +99,7 @@ def chart_response(request: Mapping[str, Any], execution: Any) -> dict[str, Any]
     complete_dates = [
         datetime.fromisoformat(point["timestamp"])
         .date().isoformat()
-        for point in points if point["completionStatus"] == "complete"
+        for point in points if not minute and point["completionStatus"] == "complete"
     ]
     return {
         "contractVersion": 3, "purpose": "interactive-chart",
@@ -110,6 +116,7 @@ def chart_response(request: Mapping[str, Any], execution: Any) -> dict[str, Any]
             key["adjustment"], MARKET_DATA_V3_METHOD_VERSION, fingerprint, fetched_at, units,
         ),
         "provenance": provenance, "inputFingerprint": fingerprint,
+        **({"session": "regular"} if minute else {}),
     }
 
 

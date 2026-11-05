@@ -1,0 +1,470 @@
+{
+  "format": "fund-publication-reference-v1",
+  "fundSymbol": "161725.OF",
+  "reportPeriod": "2026-Q2",
+  "reportDate": "2026-06-30",
+  "issuer": "招商基金管理有限公司",
+  "publishedOn": "2026-08-31",
+  "precision": "DATE_ONLY",
+  "timezone": "Asia/Shanghai",
+  "referenceObservedAt": "2026-10-20T17:22:53.805Z",
+  "sources": [
+    {
+      "role": "report",
+      "url": "https://static.cninfo.com.cn/finalpage/2026-08-31/1225533191.PDF",
+      "sha256": "114d6b12bcd56dbc6bf5952f9cb975d7a9b5990aca3f38e4fa4dba968cb07a3d"
+    },
+    {
+      "role": "publication_notice",
+      "url": "https://www.cmfchina.com/web/fundnoticedetail/225627/index.html",
+      "sha256": "5765e46d4989f2c7d8226e4c0f36378b58cf12a9a853b1617456ac12e8d1a948"
+    }
+  ],
+  "holdings": [
+    {
+      "symbol": "600519.SH",
+      "name": "贵州茅台",
+      "weight": "0.1728",
+      "printedPage": 40
+    },
+    {
+      "symbol": "600809.SH",
+      "name": "山西汾酒",
+      "weight": "0.1519",
+      "printedPage": 40
+    },
+    {
+      "symbol": "000568.SZ",
+      "name": "泸州老窖",
+      "weight": "0.1503",
+      "printedPage": 40
+    },
+    {
+      "symbol": "000858.SZ",
+      "name": "五粮液",
+      "weight": "0.1422",
+      "printedPage": 40
+    },
+    {
+      "symbol": "002304.SZ",
+      "name": "洋河股份",
+      "weight": "0.0788",
+      "printedPage": 40
+    },
+    {
+      "symbol": "000596.SZ",
+      "name": "古井贡酒",
+      "weight": "0.0486",
+      "printedPage": 40
+    },
+    {
+      "symbol": "603369.SH",
+      "name": "今世缘",
+      "weight": "0.0467",
+      "printedPage": 40
+    },
+    {
+      "symbol": "603198.SH",
+      "name": "迎驾贡酒",
+      "weight": "0.0272",
+      "printedPage": 40
+    },
+    {
+      "symbol": "000799.SZ",
+      "name": "酒鬼酒",
+      "weight": "0.0223",
+      "printedPage": 40
+    },
+    {
+      "symbol": "600702.SH",
+      "name": "舍得酒业",
+      "weight": "0.0187",
+      "printedPage": 40
+    },
+    {
+      "symbol": "600779.SH",
+      "name": "水井坊",
+      "weight": "0.0185",
+      "printedPage": 40
+    },
+    {
+      "symbol": "603589.SH",
+      "name": "口子窖",
+      "weight": "0.0177",
+      "printedPage": 40
+    },
+    {
+      "symbol": "600559.SH",
+      "name": "老白干酒",
+      "weight": "0.0162",
+      "printedPage": 40
+    },
+    {
+      "symbol": "603919.SH",
+      "name": "金徽酒",
+      "weight": "0.0121",
+      "printedPage": 40
+    },
+    {
+      "symbol": "000860.SZ",
+      "name": "顺鑫农业",
+      "weight": "0.0115",
+      "printedPage": 40
+    },
+    {
+      "symbol": "600199.SH",
+      "name": "金种子酒",
+      "weight": "0.0064",
+      "printedPage": 40
+    },
+    {
+      "symbol": "000995.SZ",
+      "name": "皇台酒业",
+      "weight": "0.0017",
+      "printedPage": 40
+    },
+    {
+      "symbol": "600197.SH",
+      "name": "伊力特",
+      "weight": "0.0028",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688981.SH",
+      "name": "中芯国际",
+      "weight": "0.0012",
+      "printedPage": 41
+    },
+    {
+      "symbol": "601658.SH",
+      "name": "邮储银行",
+      "weight": "0.0001",
+      "printedPage": 41
+    },
+    {
+      "symbol": "601077.SH",
+      "name": "渝农商行",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688223.SH",
+      "name": "晶科能源",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "001248.SZ",
+      "name": "华润新能源",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688295.SH",
+      "name": "中复神鹰",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688308.SH",
+      "name": "欧科亿",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688686.SH",
+      "name": "奥普特",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "301666.SZ",
+      "name": "大普微",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688131.SH",
+      "name": "皓元医药",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688180.SH",
+      "name": "君实生物",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688508.SH",
+      "name": "芯朋微",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688820.SH",
+      "name": "盛合晶微",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688313.SH",
+      "name": "仕佳光子",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "300999.SZ",
+      "name": "金龙鱼",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688808.SH",
+      "name": "联讯仪器",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688772.SH",
+      "name": "珠海冠宇",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688698.SH",
+      "name": "伟创电气",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "001399.SZ",
+      "name": "惠科股份",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688733.SH",
+      "name": "壹石通",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688818.SH",
+      "name": "电科蓝天",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "301682.SZ",
+      "name": "宏明电子",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688797.SH",
+      "name": "臻宝科技",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688316.SH",
+      "name": "青云科技",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688339.SH",
+      "name": "亿华通",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688712.SH",
+      "name": "北芯生命",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688785.SH",
+      "name": "恒运昌",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688575.SH",
+      "name": "亚辉龙",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688317.SH",
+      "name": "之江生物",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688813.SH",
+      "name": "泰金新能",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688635.SH",
+      "name": "长进光子",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "001257.SZ",
+      "name": "盛龙股份",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "603459.SH",
+      "name": "红板科技",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "001365.SZ",
+      "name": "天海电子",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688811.SH",
+      "name": "有研复材",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "301696.SZ",
+      "name": "三瑞智能",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "688613.SH",
+      "name": "奥精医疗",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "001237.SZ",
+      "name": "惠康科技",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "301669.SZ",
+      "name": "高特电子",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "301687.SZ",
+      "name": "新广益",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "001393.SZ",
+      "name": "维通利",
+      "weight": "0.0000",
+      "printedPage": 41
+    },
+    {
+      "symbol": "301531.SZ",
+      "name": "春光集团",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "301599.SZ",
+      "name": "理奇智能",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "601112.SH",
+      "name": "振石股份",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "301680.SZ",
+      "name": "固德电材",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "301683.SZ",
+      "name": "慧谷新材",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "688781.SH",
+      "name": "视涯科技",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "688816.SH",
+      "name": "易思维",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "603407.SH",
+      "name": "长裕集团",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "301513.SZ",
+      "name": "尚水智能",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "603435.SH",
+      "name": "嘉德利",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "603352.SH",
+      "name": "至信股份",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "603293.SH",
+      "name": "埃泰克",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "001312.SZ",
+      "name": "福恩股份",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "603284.SH",
+      "name": "林平发展",
+      "weight": "0.0000",
+      "printedPage": 42
+    },
+    {
+      "symbol": "001220.SZ",
+      "name": "世盟股份",
+      "weight": "0.0000",
+      "printedPage": 42
+    }
+  ],
+  "qualification": "仅逐项匹配规范证券代码和原披露比例，名称及印刷页码保留审计；不归一，不推断精确披露时刻。"
+}

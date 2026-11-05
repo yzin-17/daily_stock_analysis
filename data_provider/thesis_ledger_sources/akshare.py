@@ -14,18 +14,25 @@ from src.services.thesis_ledger_fund_holdings_contract_v1 import CONTRACT as HOL
 from src.services.thesis_ledger_chip_summary_contract_v1 import CONTRACT as CHIP_CONTRACT
 from src.services.thesis_ledger_daily_units_contract import DailyUnitsPolicy
 from data_provider.akshare_daily_contract import project_public_units
+from data_provider.thesis_ledger_sources.akshare_news import BINDING as NEWS_BINDING, admission_current
+from data_provider.eastmoney_report_metadata import BINDING as REPORT_METADATA_BINDING
+from data_provider.market_reference_bindings import reference_bindings, reference_manifest
+
+REFERENCE_BINDINGS = reference_bindings('akshare')
 
 
 def manifest():
     from src.services.thesis_ledger_akshare_manifest import build_akshare_manifest
     sina_daily_assets = tuple(sorted({binding.key.asset_type for binding in SOURCE.bindings
         if isinstance(binding, DailyBinding) and binding.upstream_source == 'sina'}))
-    return build_akshare_manifest(sina_daily_assets=sina_daily_assets)
+    return reference_manifest(build_akshare_manifest(sina_daily_assets=sina_daily_assets), REFERENCE_BINDINGS)
 
 
 def factory(context):
     from data_provider.akshare_fetcher import AkshareFetcher
-    return AkshareFetcher()
+    adapter = AkshareFetcher()
+    adapter.values = dict(context.snapshot.values) if context.snapshot is not None else {}
+    return adapter
 
 
 def probe_cash(context):
@@ -167,7 +174,7 @@ SOURCE = SourceDefinition("akshare", manifest, factory, tuple(
         ("ETF", "eastmoney", "akshare-etf-range-response-v1"),
     )
     for adjustment in ("none", "qfq", "hfq")
-) + (QuoteBinding(ExactKey("CN", "ETF", "REALTIME_QUOTE"), "eastmoney",
+) + (*REFERENCE_BINDINGS, NEWS_BINDING, REPORT_METADATA_BINDING, QuoteBinding(ExactKey("CN", "ETF", "REALTIME_QUOTE"), "eastmoney",
     "akshare-etf-single-em-v1", "eastmoney-single-security-v1", etf_quote, dependency_modules=('requests',)),
     QuoteBinding(ExactKey("CN", "STOCK", "REALTIME_QUOTE"), "eastmoney",
         "akshare-stock-em-v2", "akshare-stock-spot-em-v1", stock_quote_reader("eastmoney")),
@@ -188,5 +195,6 @@ SOURCE = SourceDefinition("akshare", manifest, factory, tuple(
     EventBinding(SPLIT_CONTRACT, ExactKey('CN', 'ETF', 'SPLIT_EVENT'), 'eastmoney',
                  read_split, split_revisions, split_wire, probe_read=probe_split)),
     ("data_provider.akshare_fetcher", "AkshareFetcher"), dependency_modules=("akshare",),
+    policy_admission_guard=admission_current,
     quote_source_aliases=(('eastmoney', 'eastmoney'), ('akshare_em', 'eastmoney'), ('sina', 'sina'),
                           ('akshare_sina', 'sina'), ('akshare_qq', 'tencent'), ('tencent', 'tencent')))

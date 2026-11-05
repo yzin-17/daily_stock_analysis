@@ -14,6 +14,9 @@ _SOURCE_CODES = {
     "hk-stock-public-fees": {"handlingFee", "stampDuty", "regulatoryFee", "afrcLevy"},
     "us-section31-exchange-t2": {"regulatoryFee"},
     "us-stock-public-fees": {"regulatoryFee", "tradingActivityFee"},
+    "cn-etf-handling-fee": {"handlingFee"},
+    "hk-etf-public-fees": {"handlingFee", "stampDuty", "regulatoryFee", "afrcLevy"},
+    "us-etf-public-fees": {"regulatoryFee", "tradingActivityFee"},
 }
 
 
@@ -35,6 +38,8 @@ def validate_multimarket_fee_charges(pack, charges, ids):
     for fee in charges:
         code = fee["code"]
         spec = _FEES.get(code)
+        if code == "handlingFee" and pack["market"] == "CN":
+            spec = ("both", "CNY", "turnover")
         if code == "regulatoryFee":
             spec = ("both", "HKD", "turnover") if pack["market"] == "HK" else ("sell", "USD", "turnover")
         if (fee["side"], fee["currency"], fee["basis"]) != spec:

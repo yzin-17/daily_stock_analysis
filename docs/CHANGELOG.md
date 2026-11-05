@@ -9,6 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 登记华夏成长（000001.OF）2026 年三季报及官方发布日期参考，逐项核对东方财富持仓代码与原权重；披露资格从实际核对时刻起生效，保持日期精度与既有来源配置。
+
+- [修复] ThesisLedger 基金净值历史不再因历史日期超过七天误报陈旧；成功读取的历史点保留延迟净值语义，实际缓存回退由消费方记录失败原因。
+
+- [改进] 增加财报三表、沪深官方两融／龙虎榜及新浪研报四组备用来源的离线资格核对，区分条目、字段与分页兼容，保留显示精度、目录截断和缺字段证据；当前产品来源选择保持。
+
+- [新功能] 增加 16 类期货、ETF 期权与可转债资料，使用独立 Data 资产身份、官方日期见证和来源单位，支持四个沪市 ETF 的近月合约、报价及来源 Greeks；现有资料合计 63 类，保留连续线、调整合约和可转债状态边界。
+- [修复] 基金身份读取不再依赖 AKShare `fund_em` 的私有传递导出，兼容新版 JSONish 与旧版解码入口，保持来源原文、身份分类及读取预算。
+
+- [新功能] 借鉴 a-stock-data 公开实现补齐 18 类市场资料：官方份额／指数／宏观利率、来源 EPS、问答、央视元数据、编辑题材及 HTTP 盘后包；来源身份、单位、日期、错误和查询控制独立验证，原 29 类保留。
+
+- [新功能] 增加 29 类现有来源市场资料的严格按需读取、精确能力绑定和 Data V3 入口，保留单位、日期、空值、分页与控制状态变化保护；EPS 与行业排名未纳入交付。
+
+- [修复] 东方财富研报无日期读取保留必需的 beginTime/endTime 字段并传空值，满足来源协议；省略筛选仍表示无日期窗口，避免字段缺失触发 HTTP 400，不填入固定日期。
+- [修复] 研报输入错误及来源失败使用标准 Data V3 错误信封，保留请求标识，避免 Server 将实际来源错误遮成无效响应；传输诊断只记录稳定错误码、HTTP 状态或异常类型，不包含来源原文或凭据。
+- [调整] 研报 v2 对全部已支持沪深股票提供长期按需读取，日期改为可选筛选，业务就绪由既有显式路由、来源启停及当前绑定修订控制；保留单标单页预算、局部历史边界与旧快照合同。目标实源验收仍由主仓任务记录。
+
+- 增加沪深股票研报最小元数据的独立单页合同、东方财富精确绑定及受控 HTTP 入口；保留日期精度和局部历史边界，不读取附件或正文，不自动修改来源启停与路由。
+
+- [修复] 首次保存来源凭据且省略启停字段时保留保存前状态，缺少凭据而停用的来源继续停用；原环境凭据、公开来源及显式启停沿用既有合同。
+- [修复] Alpha Vantage 精确日线改用免费 compact 单次读取，核对证券与最多 100 条数据；超出实际响应日期范围的历史窗口明确受限，日线修订独立更新，原报价与冻结不变。
+- [新功能] 复用 a-stock-data 的财联社签名和华尔街见闻频道实现，新增独立 `NEWS_FEED/news-feed-v1` 市场快讯、精确来源准入与有界元数据读取；两家 DSA/Docker/Market/Web、零尝试拒绝及原数据保全通过，保留个股新闻与研究模型边界。
+- [新功能] 复用已验证的 Yahoo Search.news，增加既有来源的美股新闻精确绑定，保留关联代码核验、近期有限覆盖、隔离预算与首次准入；不使用旧 Ticker 新闻路径，不改变原行情语义或账户权限。
+- [新功能] 复用现有 HiThink Key 接入个股新闻元数据，沿用当前 HMAC 准入及有界首屏，A 股新闻采用 HiThink 首源、AKShare 备用；Yahoo 官方 Search 新闻在宿主与目标验证通过，Ticker 路径 404 的事实保留。
+- [新功能] 复用现有 AKShare 接入东方财富 A 股新闻元数据，沿用精确新闻准入、总预算与有限覆盖；`600519.SH` 的 V3、Market、Web 和保全已验收，原 NVIDIA 新闻与 Tushare 120 分配置保持。
+- [改进] Tushare 配置先按用户填写的积分和独立权限检查，再原子保存账号等级与本地权限记录；重启后保留可用功能，未包含项目零请求，功能说明、路由选项及检查入口按账号范围展示。
+- [改进] 基金持仓仅在精确匹配已核对公开参考时附加日期证据，精确披露时分继续未知；保守使用边界取发布日期结束与参考核对的较晚值，失配明确降级，不归一比例或增加来源请求。
+- [修复] 正式 DSA 恢复对默认监听地址省略空 `host_ip`，保留显式 IPv4/IPv6 绑定及地址漂移拒绝；目标已验证原镜像与候选的保留数据往返。
+- [测试] 增加逐对象留存审计和同一候选数据副本的真实进程中断恢复，明确记录目录五代缓存清理，验证公告重试上限、旧 owner 拒绝及 OAuth 终态；DG2b/DG2c 通过，新闻实源配置继续由原 Task 的 TODO 承接。
+- [修复] 数据镜像及 CI 验证使用自有普通空配置文件，保留配置路径严格校验；构建上下文递归排除宿主字节码，并将 `.dockerignore` 纳入镜像与快更兼容指纹，防止退役代码缓存进入镜像。
+- [测试] 增加目标候选的无外网、无业务卷数据矩阵及实际主仓 SDK 消费入口，独立验证定制 Longbridge 加密存储；DG2a 的目标结果和数据留存、恢复及实源门禁分别记录。
+- [新功能] 提供 ThesisLedger 新闻 `NEWS_SEARCH/news-search-v1` 的独立数据合同、认证 V3 路由、显式来源准入和有预算检索；12 组共享样例覆盖来源、时间、覆盖与证据分组，来源默认关闭。
+- [改进] 数据服务固定 `server:app` 与 `dsa-data-runtime-v1` 载荷，退役原生分析 CLI、V1 产品装配及 Web/Electron 客户端链；股票索引迁入独立数据资产目录，既有状态和用户文件继续保全。
+- [改进] infra 数据快更绑定依赖、SDK 和存储结构指纹，正式更新前保存镜像/命令/挂载快照，提供持锁的 DSA 恢复入口；实际镜像、目标升级/恢复与实源验收仍按 Task 独立记录。
+- [测试] 默认 pytest 与 CI 共用明确数据清单，恢复数据工程和旧策略备份测试覆盖，分片只执行各自的数据文件，产品测试在导入前拒绝。
+
+- [文档] 新增纯数据服务收敛规格与实施任务，明确新闻合同、数据留存、原生产品移除和 ThesisLedger 消费边界；统一列入跨仓 P1 排期，D0 盘点可独立推进，保留原依赖与运行验收条件。
+
+- [修复] ThesisLedger 汇率缓存的直接及反向读取保留可靠时区，缺少时区或抓取时间时省略可选时间字段，避免把合法汇率误报为不可用或把旧缓存伪装成新抓取；汇率值、日期、来源及过期规则保持。
+
+- [新功能] 富途港美股票/ETF 的正常时段历史 1 分钟已接入精确目录与生产图表，保留完整分钟、分页及未知量额；四类真实 API、独立 SDK 全量值核对与 Web 消费通过。日线冻结重放及镜像交付继续验收，不将分钟图表用于历史回测资格。
+- [修复] 当前报价缓存围栏按来源既有的版本号或 HMAC 策略计算凭据修订，修复 OpenD 连接被误判不可用；富途快照兼容美股毫秒时间，保留市场时区及非法时间拒绝。四类报价真实 API 通过，请求冷却和来源失败语义保持。
+
 - [新功能] Tushare凭证面板支持六个已接入接口的有界账户权限检查，分别显示可访问、缺权限、凭证异常及待验证；功能条目保留原因并控制新选择，草稿不保存、当前结果短期绑定配置，检查不替代历史覆盖或现金消费验收。
 
 - [新功能] 明确登记TickFlow免费历史连接的沪深A股none/qfq/hfq日K，复用现有SDK与精确日线/固定快照研究；固定免费端点、禁用自动重试及环境Key继承，原完整服务与报价保持。量额保留原值及未知单位，不自动修改用户主备。
@@ -457,7 +500,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 - [文档] FAQ 补充 macOS 桌面应用被 Gatekeeper quarantine 阻止启动时的受信任安装包临时放行步骤（refs #2113）。
-- [新功能] LLM 渠道新增显式 Chat Completions / Responses API Surface，支持 Anspire GPT-5.6 系列等 Responses-only 模型，并统一连接测试、主分析、筛选、图片识别与状态诊断路由；所有运行路径先按同一规则解析协议再校验 Surface，混合 Surface 的同名路由按未知能力保守处理；显式 Anspire 渠道独占共享 Key，非法 Surface 或协议不匹配时不会把该 Key 回退为旧版 Chat 部署，同时保留无关的 Gemini/OpenAI 等 legacy provider；本地 loopback 渠道可在图片识别路径继续无 Key 调用，远端渠道仍要求凭据；禁用渠道不会因残留 Surface 配置阻断其他兼容 fallback；Web 编辑器不会静默改写非法历史值，并允许将 Hermes 非法 Surface 修复为 Chat Completions。
+- [新功能] LLM 渠道新增显式 Chat Completions / Responses API Surface，支持 Anspire GPT-5.6 系列等 Responses-only 模型，并统一连接测试、主分析、筛选与状态诊断路由；所有运行路径先按同一规则解析协议再校验 Surface，混合 Surface 的同名路由按未知能力保守处理；显式 Anspire 渠道独占共享 Key，非法 Surface 或协议不匹配时不会把该 Key 回退为旧版 Chat 部署，同时保留无关的 Gemini/OpenAI 等 legacy provider；禁用渠道不会因残留 Surface 配置阻断其他兼容 fallback；Web 编辑器不会静默改写非法历史值，并允许将 Hermes 非法 Surface 修复为 Chat Completions。
 - [修复] 将 Responses 渠道的协议、模型 provider、公开 route alias 与 wire-model 构造收敛为统一路由契约，保存校验、运行时加载、状态诊断、选股入口和 Web 编辑器共同使用当前安装的 LiteLLM provider registry，拒绝 `openai` 协议下显式非 OpenAI provider 的模型、拒绝同一 alias 混用 Chat/Responses，并保留 OpenAI-compatible 网关自有的带斜杠模型 ID。
 
 ## [3.29.0] - 2026-08-02
@@ -1219,7 +1262,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - LLM 渠道测试补充结构化诊断与设置页排障提示，便于定位 provider、模型、Base URL 和鉴权配置问题。
 - 明确 runtime 清理兼容边界：仅对托管 provider（`gemini`、`vertex_ai`、`anthropic`、`openai`、`deepseek`）触发保存前失效值清理，`cohere/*`、`google/*`、`xai/*` 直连值按 legacy 兼容路径保留，不做无提示迁移或覆写。
 - 将 MiniMax 预设调整为官方 OpenAI-compatible Base URL 和当前模型示例，并补充 MiniMax、火山方舟、LiteLLM 兼容来源与回退说明。
-- 移除截图识别对 Gemini 3 Vision 模型的过时降级逻辑，默认推断改用当前 Gemini 模型配置。
 
 ### 文档
 
@@ -1769,10 +1811,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 🤖 **Agent chat export & send** (#495) — export conversation to .md file; send to configured notification channels; new `POST /api/v1/agent/chat/send`
 - 🤖 **Agent background execution** (#495) — analysis continues when switching pages; badge notification on completion; auto-cancel in-progress stream on session switch
 - 📝 **Report Engine P0** — Pydantic schema validation for LLM JSON; Jinja2 templates (markdown/wechat/brief) with legacy fallback; content integrity checks with retry; brief mode (`REPORT_TYPE=brief`); history signal comparison
-- 📦 **Smart import** — multi-source import from image/CSV/Excel/clipboard; Vision LLM extracts code+name+confidence; name→code resolver (local map + pinyin + AkShare); confidence-tiered confirmation
+- 📦 **Smart import** — multi-source import from CSV/Excel/clipboard; name→code resolver (local map + pinyin + AkShare); confidence-tiered confirmation
 - ⚙️ **GitHub Actions LiteLLM config** — workflow supports `LITELLM_CONFIG`/`LITELLM_CONFIG_YAML` for flexible AI provider configuration
 - ⚙️ **Config engine refactor & system API** (#602) — unified config registry, validation and API exposure
-- 📖 **LLM configuration guide** — new `docs/LLM_CONFIG_GUIDE.md` covering 3-tier config, quick start, Vision/Agent/troubleshooting
+- 📖 **LLM configuration guide** — new `docs/LLM_CONFIG_GUIDE.md` covering 3-tier config, quick start, Agent/troubleshooting
 
 ### Fixed
 - 🐛 **analyze_trend always reports No historical data** (#600) — now fetches from DB/DataFetcher instead of broken `get_analysis_context`
@@ -1794,12 +1836,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 - 🔎 **Fetcher failure observability** — logs record start/success/failure with elapsed time, failover transitions; Efinance/Akshare include upstream endpoint and classified failure categories
 - ♻️ **Data source resilience & cleanup** (#602) — fallback chain optimization
-- ♻️ **Image extract API response extension** — new `items` field (code/name/confidence); `codes` preserved for backward compatibility
 - ♻️ **Import parse error messages** — specific failure reasons for Excel/CSV; improved logging with file type and size
 
 ### Docs
 - 📖 LLM config guide refactored for clarity (#583)
-- 📖 `image-extract-prompt.md` with full prompt documentation
 - 📖 AkShare fallback cache TTL documentation
 ## [3.4.10] - 2026-03-07
 
@@ -1826,14 +1866,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 - 🧠 **Structured config validation** — `ConfigIssue` dataclass and `validate_structured()` with severity-aware logging; `CONFIG_VALIDATE_MODE=strict` aborts startup on errors
-- 🖼️ **Vision model config** — `VISION_MODEL` and `VISION_PROVIDER_PRIORITY` for image stock extraction; provider fallback (Gemini → Anthropic → OpenAI → DeepSeek) when primary fails
 - 🚀 **CLI init wizard** — `python -m dsa init` 3-step interactive bootstrap (model → data source → notification), 9 provider presets, incremental merge by default
 - 🔧 **Multi-channel LLM support** with visual channel editor (#494)
 
 ### Changed
-- ♻️ **Vision extraction** — migrated from gemini-3 hardcode to `litellm.completion()` with configurable model and provider fallback; `OPENAI_VISION_MODEL` deprecated in favor of `VISION_MODEL`
 - ♻️ **Market analyzer** — uses `Analyzer.generate_text()` for LLM calls; fixes bypass and Anthropic `AttributeError` when using non-Router path
-- ♻️ **Config validation refinements** — test_env output format syncs with `validate_structured` (severity-aware ✓/✗/⚠/·); Vision key warning when `VISION_MODEL` set but no provider API key; market_analyzer test covers `generate_market_review` fallback when `generate_text` returns None
+- ♻️ **Config validation refinements** — test_env output format syncs with `validate_structured` (severity-aware ✓/✗/⚠/·); market_analyzer test covers `generate_market_review` fallback when `generate_text` returns None
 - ⚙️ **Auto-tag workflow defaults to NO tag** — only tags when commit message explicitly contains `#patch`, `#minor`, or `#major`
 - ♻️ **Formatter and notification refactor** (#516)
 
@@ -1844,8 +1882,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 🐛 **Telegram Markdown link escaping** — `_convert_to_telegram_markdown` escaped `[]()` characters, breaking all Markdown links in reports
 - 🐛 **Duplicate `discord_bot_status` field** in Config dataclass — second declaration silently shadowed the first
 - 🧹 **Unused imports** — removed `shutil`/`subprocess` from `main.py`
-- 🔧 **Config validation and Vision key check** (#525)
-
 ### Docs
 - 📝 Clarified GitHub Actions non-trading-day manual run controls (`TRADING_DAY_CHECK_ENABLED` + `force_run`) for Issue #461 / PR #466
 
@@ -2087,10 +2123,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 🤖 **Anthropic Claude API 支持**（Issue #257）
   - 支持 `ANTHROPIC_API_KEY`、`ANTHROPIC_MODEL`、`ANTHROPIC_TEMPERATURE`、`ANTHROPIC_MAX_TOKENS`
   - AI 分析优先级：Gemini > Anthropic > OpenAI
-- 📷 **从图片识别股票代码**（Issue #257）
-  - 上传自选股截图，通过 Vision LLM 自动提取股票代码
-  - API: `POST /api/v1/stocks/extract-from-image`；支持 JPEG/PNG/WebP/GIF，最大 5MB
-  - 支持 `OPENAI_VISION_MODEL` 单独配置图片识别模型
 - ⚙️ **通达信数据源手动配置**（Issue #257）
   - 支持 `PYTDX_HOST`、`PYTDX_PORT` 或 `PYTDX_SERVERS` 配置自建通达信服务器
 

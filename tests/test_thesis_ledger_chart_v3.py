@@ -150,7 +150,7 @@ def test_safe_errors(setup, code, expected, status):
 
 
 def test_route_is_mounted_in_app(tmp_path, monkeypatch):
-    from api.app import create_app
+    from api.data_app import create_app
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "test-token")
-    client = TestClient(create_app(static_dir=tmp_path / "empty"))
+    client = TestClient(create_app())
     assert client.post(PATH, json=REQUEST).status_code == 401

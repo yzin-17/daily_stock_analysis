@@ -1,14 +1,14 @@
-"""Alpha Vantage 既有美股未复权日线；来源拥有嵌套字典投影及工厂。"""
+"""Alpha Vantage 免费近期美股未复权日线；来源拥有窗口边界及工厂。"""
 
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 from data_provider.exact_daily_contract import ExactDailyError, normalize_exact_daily
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError, DailyRead, SourceProbePolicy, EnvironmentCredentialPolicy, provider_symbol_for_contract
 from src.services.thesis_ledger_capability_registry import DailyBinding, QuoteBinding, ExactKey, SourceDefinition
 
-PROTOCOL = "dsa-alphavantage-exact-daily-single-response-v1"
+PROTOCOL = "dsa-alphavantage-compact-daily-single-response-v2"
 
 
 def environment_credentials():
@@ -36,15 +36,31 @@ def factory(context):
 
 def read_frame(adapter, request):
     from data_provider.multimarket_exact_daily import _http_json
+    symbol = request.symbol.removesuffix(".US")
     payload = _http_json("https://www.alphavantage.co/query", {
-        "function": "TIME_SERIES_DAILY", "symbol": request.symbol.removesuffix(".US"),
-        "outputsize": "full", "apikey": adapter._api_key,
+        "function": "TIME_SERIES_DAILY", "symbol": symbol,
+        "outputsize": "compact", "apikey": adapter._api_key,
     })
     if "Note" in payload or "Information" in payload:
-        raise ExactDailyError("quota_unavailable", "Alpha Vantage 完整日线权限或额度不可用")
+        raise ExactDailyError("quota_unavailable", "Alpha Vantage 免费日线权限或额度不可用")
     series = payload.get("Time Series (Daily)")
     if not isinstance(series, dict) or not series:
         raise ExactDailyError("not_covered", "Alpha Vantage 未返回请求日线")
+    metadata = payload.get("Meta Data")
+    if not isinstance(metadata, dict) or metadata.get("2. Symbol") != symbol:
+        raise ExactDailyError("invalid_response", "Alpha Vantage 日线证券不匹配")
+    if len(series) > 100 or any(not isinstance(values, dict) for values in series.values()):
+        raise ExactDailyError("invalid_response", "Alpha Vantage 免费日线响应超额或结构无效")
+    try:
+        dates = sorted(date.fromisoformat(day).isoformat() for day in series)
+        if dates != sorted(series):
+            raise ValueError("noncanonical date")
+    except (TypeError, ValueError):
+        raise ExactDailyError("invalid_response", "Alpha Vantage 日线日期无效") from None
+    if request.start < dates[0] or request.end > dates[-1]:
+        raise ExactDailyError("not_covered", "请求超出 Alpha Vantage 免费近期日线范围")
+    if not any(request.start <= day <= request.end for day in dates):
+        raise ExactDailyError("not_covered", "请求窗口没有 Alpha Vantage 日线")
     raw = pd.DataFrame([{"date": day, **{field: values.get(source) for field, source in {
         "open": "1. open", "high": "2. high", "low": "3. low", "close": "4. close", "volume": "5. volume",
     }.items()}} for day, values in series.items()])
@@ -92,8 +108,8 @@ def quote(query, context):
 
 SOURCE = SourceDefinition("alphavantage", manifest, factory, (
     DailyBinding(ExactKey("US", "STOCK", "DAILY_BAR", "none"), "alphavantage",
-                 "dsa-v3-us-stock-alphavantage-none-exact-daily-v1", PROTOCOL, PROTOCOL,
-                 None, daily, gated=True),
+                 "dsa-v3-us-stock-alphavantage-none-exact-daily-v2", PROTOCOL, PROTOCOL,
+                 100, daily, gated=True),
     QuoteBinding(ExactKey("US", "STOCK", "REALTIME_QUOTE"), "alphavantage",
         "alphavantage-us-stock-exact-quote-v2", "alphavantage-direct-quote-v1", quote),
 ), ("data_provider.alphavantage_fetcher", "AlphaVantageFetcher"),

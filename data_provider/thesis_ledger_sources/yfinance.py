@@ -9,6 +9,7 @@ from src.services.thesis_ledger_capability_contracts import CapabilityContractEr
 from src.services.thesis_ledger_capability_registry import DailyBinding, QuoteBinding, ExactKey, SourceDefinition
 from data_provider.yfinance_research_frame import project_normalized, project_hk_share_window
 from src.services.thesis_ledger_research_instrument_contract import ResearchInstrumentFact, ResearchInstrumentPolicy
+from data_provider.thesis_ledger_sources.yahoo_news import BINDING as NEWS_BINDING, UPSTREAM as NEWS_SOURCE, admission_current
 
 PROTOCOL = "dsa-yfinance-exact-daily-single-response-v1"
 
@@ -17,12 +18,19 @@ def manifest():
     from src.services.provider_manifest import build_provider_manifest
     value = build_provider_manifest("yfinance", "Yahoo Finance", {
         "REALTIME_QUOTE": ("STOCK", "ETF", "INDEX"), "DAILY_BAR": ("STOCK", "ETF", "INDEX"),
+        "NEWS_SEARCH": ("STOCK",),
     }, upstream_sources=(("yfinance", "Yahoo Finance"), ("yahoo-gme-share-window", "Yahoo GME按股历史窗口（有界）"),
-                         ("yahoo-hk-share-window", "Yahoo 00147按股历史窗口（研究整手）")),
+                         ("yahoo-hk-share-window", "Yahoo 00147按股历史窗口（研究整手）"),
+                         (NEWS_SOURCE, "Yahoo 美股近期新闻搜索")),
         markets=("CN", "HK", "US", "JP", "KR", "TW"), configuration_mode="built_in")
     for source in value["upstreamSources"]:
         if source["sourceId"] in {"yahoo-gme-share-window", "yahoo-hk-share-window"}:
             source["capabilities"] = {"DAILY_BAR": ["STOCK"]}
+        elif source["sourceId"] == NEWS_SOURCE:
+            source["capabilities"] = {"NEWS_SEARCH": ["STOCK"]}
+        else:
+            source["capabilities"] = {key: assets for key, assets in value["capabilities"].items() if key != "NEWS_SEARCH"}
+    value["version"] = 2
     return value
 
 
@@ -141,4 +149,5 @@ SOURCE = SourceDefinition("yfinance", manifest, factory, tuple(
         "yfinance-direct-quote-v2", quote)
     for market, asset in (("CN", "STOCK"), ("CN", "ETF"), ("HK", "STOCK"), ("HK", "ETF"),
                           ("US", "STOCK"), ("US", "ETF"), ("US", "INDEX"))
-), ("data_provider.yfinance_fetcher", "YfinanceFetcher"), dependency_modules=("yfinance",), factory_scope="provider")
+) + (NEWS_BINDING,), ("data_provider.yfinance_fetcher", "YfinanceFetcher"), dependency_modules=("yfinance",),
+    factory_scope="provider", policy_admission_guard=admission_current)

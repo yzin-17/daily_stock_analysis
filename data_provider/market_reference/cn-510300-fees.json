@@ -1,0 +1,46 @@
+{
+  "market": "CN",
+  "assetType": "ETF",
+  "symbol": "510300.SH",
+  "upstreamSource": "cn-etf-handling-fee",
+  "datasetId": "cn-510300-auction-handling-fee-2023-08-v1",
+  "coverage": {
+    "start": "2023-08-28",
+    "end": "2023-08-29"
+  },
+  "exchange": "XSHG",
+  "tradingMethod": "auction",
+  "calculationSettings": "executionModel",
+  "coverageDescription": "仅覆盖上交所ETF二级市场竞价交易经手费，按成交金额双侧0.004%；其他公共费用、佣金、最低额和扣收由所选研究模型明确提供，不证明其历史事实，非完整账单。",
+  "segments": [
+    {
+      "range": {
+        "start": "2023-08-28",
+        "endExclusive": "2023-08-30"
+      },
+      "charges": [
+        {
+          "code": "handlingFee",
+          "side": "both",
+          "currency": "CNY",
+          "rate": "0.00004",
+          "basis": "turnover",
+          "sourceDocumentIds": [
+            "sse-fees-2023-137-etf"
+          ]
+        }
+      ]
+    }
+  ],
+  "sourceDocuments": [
+    {
+      "id": "sse-fees-2023-137-etf",
+      "title": "上交所2023年8月收费管理规则第3.3.1条：ETF竞价经手费",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/charge/c/10781461/files/6ead9e7d60e14272a19cd75b622dd2ef.docx",
+      "publishedDate": "2023-08-18",
+      "kind": "officialPublication",
+      "sha256": "b42cb6ad16be71f59618e2150ec31af57e8cf8874bc83973934ca8237fd56e84",
+      "observedAt": "2026-11-05T05:05:25.836515+00:00"
+    }
+  ]
+}

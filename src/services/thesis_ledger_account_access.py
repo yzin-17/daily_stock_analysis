@@ -1,4 +1,4 @@
-"""有界账户检查和短期显示缓存；不持久化凭证或改变业务路由。"""
+"""有界账户检查、草稿缓存及当前账号本地权限投影。"""
 
 from copy import deepcopy
 import hmac
@@ -53,6 +53,15 @@ def account_access_for(runtime, key, target):
     if not basic_price_credential_ready(snapshot):
         return {"state": "credential_missing", "attempted": False, "errorCode": "credential_missing"}
     identity = _identity(snapshot)
+    from src.services.thesis_ledger_account_access_store import configured_level, load_record
+    try:
+        stored = load_record(runtime.store, snapshot, configured_level(runtime.store, source.provider_id))
+    except (ControlContractError, ValueError):
+        return {"state": "unknown", "attempted": False, "errorCode": "account_level_invalid"}
+    if stored:
+        for route in stored["routes"]:
+            if route["key"] == key and route["target"] == target:
+                return deepcopy(route["access"])
     with _LOCK:
         cached = _cache(runtime)["reports"].get(target["providerId"])
         if cached and cached[0] == identity and runtime.clock() < cached[1]:
@@ -97,6 +106,12 @@ def check_account_access(runtime, provider, value, catalog, *, fixture=False):
         raise ControlContractError("INVALID_PROVIDER_TEST", "账户检查库存超出有界请求数量")
     baseline, snapshot = _snapshot(runtime.store, provider, value)
     normalized_baseline, snapshot = _account_snapshot(source, baseline), _account_snapshot(source, snapshot)
+    from src.services.thesis_ledger_account_access_store import configured_level, save_record
+    policy = source.account_access_level
+    try:
+        level = policy.parse(value["accountLevel"]) if policy and "accountLevel" in value else configured_level(runtime.store, source.provider_id)
+    except ValueError as error:
+        raise ControlContractError("INVALID_ACCOUNT_LEVEL", str(error)) from error
     def check_current():
         _check_baseline(runtime, baseline, catalog)
         current = _account_snapshot(source, runtime.store.provider_credential_snapshot(source.provider_id))
@@ -115,8 +130,10 @@ def check_account_access(runtime, provider, value, catalog, *, fixture=False):
     routes = []
     for entry in entries:
         check_current()
-        access = _check_one(runtime, source, entry, snapshot, adapter, deadline - runtime.clock(), fixture=fixture)
-        if runtime.clock() > deadline:
+        excluded = policy.excluded(entry["key"], level) if policy else None
+        access = excluded or _check_one(
+            runtime, source, entry, snapshot, adapter, deadline - runtime.clock(), fixture=fixture)
+        if not excluded and runtime.clock() > deadline:
             access = {"state": "unknown", "attempted": access["attempted"], "errorCode": "request_budget_exceeded"}
         check_current()
         routes.append({"key": deepcopy(entry["key"]), "target": deepcopy(entry["target"]), "access": access})
@@ -124,16 +141,25 @@ def check_account_access(runtime, provider, value, catalog, *, fixture=False):
     valid_until = (checked_at + timedelta(seconds=TTL_SECONDS)).isoformat()
     for route in routes:
         route["access"].update(checkedAt=checked_at.isoformat(), validUntil=valid_until, configVersion=baseline.config_version)
-    report = {"scope": "account_interfaces", "credentialContext": "draft" if "credentials" in value else "current",
+    draft = "credentials" in value or "accountLevel" in value
+    report = {"scope": "account_interfaces", "credentialContext": "draft" if draft else "current",
               "configVersion": baseline.config_version, "checkedAt": checked_at.isoformat(),
               "validUntil": valid_until, "routes": routes}
-    if "credentials" not in value and not fixture:
+    if level is not None:
+        report["accountLevel"] = level
+    if draft and not fixture:
+        from src.services.thesis_ledger_account_access_configuration import remember_draft
+        remember_draft(runtime, snapshot, level, report)
+    if not draft and not fixture:
         with _LOCK:
             if _cache(runtime)["generations"].get(source.provider_id) != generation:
                 raise ControlContractError("PROVIDER_CHECK_SUPERSEDED", "已有更新的账户检查，不采用迟到结果")
             check_current()
             _cache(runtime)["reports"][source.provider_id] = (_identity(snapshot), runtime.clock() + TTL_SECONDS, deepcopy(report))
-    status = "healthy" if all(r["access"]["state"] == "allowed" for r in routes) else "degraded"
+            if level is not None and ready:
+                report = save_record(runtime.store, snapshot, level, report)
+    included = [r for r in routes if r["access"]["state"] != "not_included"]
+    status = "healthy" if included and all(r["access"]["state"] == "allowed" for r in included) else "degraded"
     if not ready:
         status = "unconfigured"
     return {"contractVersion": 3, "consumer": "thesis-ledger", "providerId": source.provider_id,

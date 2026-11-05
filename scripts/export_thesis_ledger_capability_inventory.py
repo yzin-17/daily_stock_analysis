@@ -146,6 +146,14 @@ def binding_revisions(binding):
     return {'adapterRevision': binding.adapter_revision, 'sourceRevision': binding.source_revision}
 
 
+def callable_identity(value):
+    from functools import partial
+    if isinstance(value, partial):
+        # 固定参数可能含凭据，库存只记录绑定的真实函数，不序列化参数。
+        return "functools.partial(" + callable_identity(value.func) + ")"
+    return f"{value.__module__}.{value.__qualname__}"
+
+
 def inventory():
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(ROOT))
@@ -161,9 +169,9 @@ def inventory():
         from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
         definitions = []
         for source in CAPABILITY_SOURCES.sources:
-            definitions.append({"providerId": source.provider_id, "factory": f"{source.factory.__module__}.{source.factory.__name__}",
+            definitions.append({"providerId": source.provider_id, "factory": callable_identity(source.factory),
                                 "dependencies": source.dependency_modules, "credentials": source.credentials,
-                                **({'credentialValueNormalizer': f'{source.normalize_credential_value.__module__}.{source.normalize_credential_value.__name__}'}
+                                **({'credentialValueNormalizer': callable_identity(source.normalize_credential_value)}
                                    if source.normalize_credential_value is not None else {}),
                                 "bindings": [{"key": binding.key.route_key(), "upstreamSource": binding.upstream_source,
                                               "operation": binding.operation, "contractVersion": binding.contract_version,
@@ -172,7 +180,7 @@ def inventory():
                                                  if getattr(binding, "query_support", None) is not None else {}),
                                               **({"legacyProbeDefault": True}
                                                  if getattr(binding, "legacy_probe_default", False) else {}),
-                                              "handler": f"{binding.read.__module__}.{binding.read.__name__}"}
+                                              "handler": callable_identity(binding.read)}
                                              for binding in source.bindings]})
         exact = [{"key": key, "target": target, "gated": gated} for key, target, gated in exact_route_inventory()]
         providers = [{key: manifest.get(key) for key in (

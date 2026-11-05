@@ -20,7 +20,10 @@ from data_provider.thesis_ledger_sources.official_hk_rules import SOURCE as OFFI
 from data_provider.thesis_ledger_sources.official_us_rules import SOURCE as OFFICIAL_US_RULES
 from data_provider.thesis_ledger_sources.official_dividends import SOURCE as OFFICIAL_DIVIDENDS
 from data_provider.thesis_ledger_sources.rqdata import SOURCE as RQDATA
+from data_provider.thesis_ledger_sources.news import SOURCES as NEWS_SOURCES
+from data_provider.thesis_ledger_sources.nvidia_news import SOURCE as NVIDIA_NEWS
+from data_provider.thesis_ledger_sources.market_flash_news import SOURCES as FLASH_NEWS
 from .thesis_ledger_capability_registry import CapabilityRegistry
 
 
-CAPABILITY_SOURCES = CapabilityRegistry((TENCENT, HITHINK, BAOSTOCK, OFFICIAL_STATES, EFINANCE, AKSHARE, PYTDX, TICKFLOW, TICKFLOW_FREE, ALPHAVANTAGE, FINNHUB, TUSHARE, YFINANCE, LONGBRIDGE, FUTU, OFFICIAL_RULES, OFFICIAL_HK_RULES, OFFICIAL_US_RULES, OFFICIAL_DIVIDENDS, RQDATA))
+CAPABILITY_SOURCES = CapabilityRegistry((TENCENT, HITHINK, BAOSTOCK, OFFICIAL_STATES, EFINANCE, AKSHARE, PYTDX, TICKFLOW, TICKFLOW_FREE, ALPHAVANTAGE, FINNHUB, TUSHARE, YFINANCE, LONGBRIDGE, FUTU, OFFICIAL_RULES, OFFICIAL_HK_RULES, OFFICIAL_US_RULES, OFFICIAL_DIVIDENDS, RQDATA, *NEWS_SOURCES, NVIDIA_NEWS, *FLASH_NEWS))

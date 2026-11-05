@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import requests
 
@@ -208,7 +208,11 @@ def _record_remote_failure(now: float, ttl_hours: int) -> int:
         return _REMOTE_CONSECUTIVE_FAILURES
 
 
-def refresh_remote_stock_index_cache(settings: RemoteStockIndexSettings) -> RemoteStockIndexResult:
+def refresh_remote_stock_index_cache(
+    settings: RemoteStockIndexSettings,
+    *,
+    download: Callable[[RemoteStockIndexSettings], bytes] | None = None,
+) -> RemoteStockIndexResult:
     """Refresh the remote stock index cache without breaking callers on failure."""
     cache_path = settings.cache_path
     if not settings.enabled:
@@ -239,7 +243,7 @@ def refresh_remote_stock_index_cache(settings: RemoteStockIndexSettings) -> Remo
                 _reset_remote_failure_state()
                 return RemoteStockIndexResult(cache_path=cache_path, skipped=True)
 
-        content = _download_remote_stock_index(settings)
+        content = (download or _download_remote_stock_index)(settings)
         _atomic_write(cache_path, content)
         _clear_backend_stock_index_cache()
         _reset_remote_failure_state()

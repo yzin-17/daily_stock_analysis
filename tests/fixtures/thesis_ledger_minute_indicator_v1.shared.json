@@ -1,0 +1,1549 @@
+{
+  "description": "受控美股Session与合成分钟，只证明跨运行时协议和指标计算。",
+  "cases": [
+    {
+      "timeframe": "5m",
+      "aggregationEncoding": "[{\"market\":\"US\",\"timezone\":\"America/New_York\",\"revision\":\"controlled-session-v1\",\"availableAt\":\"2026-10-01T00:00:00Z\",\"coverageStart\":\"2026-10-08\",\"coverageEnd\":\"2026-10-08\",\"sessions\":[{\"tradingDate\":\"2026-10-08\",\"startAt\":\"2026-10-08T13:30:00Z\",\"endAt\":\"2026-10-08T20:00:00Z\"}]},\"5m\",\"2026-10-08T21:00:00Z\",\"bb11a7606a50c93af30ca28682514c855b50cc6f0bb6d8c25c1d077ca28ebd06\",[{\"timestamp\":\"2026-10-08T13:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T13:35:00.000Z\",\"observedEndAt\":\"2026-10-08T13:35:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":100,\"close\":105,\"high\":106,\"low\":99,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T13:35:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T13:40:00.000Z\",\"observedEndAt\":\"2026-10-08T13:40:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":105,\"close\":110,\"high\":111,\"low\":104,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T13:40:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T13:45:00.000Z\",\"observedEndAt\":\"2026-10-08T13:45:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":110,\"close\":115,\"high\":116,\"low\":109,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T13:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T13:50:00.000Z\",\"observedEndAt\":\"2026-10-08T13:50:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":115,\"close\":120,\"high\":121,\"low\":114,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T13:50:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T13:55:00.000Z\",\"observedEndAt\":\"2026-10-08T13:55:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":120,\"close\":125,\"high\":126,\"low\":119,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T13:55:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:00:00.000Z\",\"observedEndAt\":\"2026-10-08T14:00:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":125,\"close\":130,\"high\":131,\"low\":124,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:05:00.000Z\",\"observedEndAt\":\"2026-10-08T14:05:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":130,\"close\":135,\"high\":136,\"low\":129,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:05:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:10:00.000Z\",\"observedEndAt\":\"2026-10-08T14:10:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":135,\"close\":140,\"high\":141,\"low\":134,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:10:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:15:00.000Z\",\"observedEndAt\":\"2026-10-08T14:15:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":140,\"close\":145,\"high\":146,\"low\":139,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:15:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:20:00.000Z\",\"observedEndAt\":\"2026-10-08T14:20:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":145,\"close\":150,\"high\":151,\"low\":144,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:20:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:25:00.000Z\",\"observedEndAt\":\"2026-10-08T14:25:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":150,\"close\":155,\"high\":156,\"low\":149,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:25:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:30:00.000Z\",\"observedEndAt\":\"2026-10-08T14:30:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":155,\"close\":160,\"high\":161,\"low\":154,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:35:00.000Z\",\"observedEndAt\":\"2026-10-08T14:35:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":160,\"close\":165,\"high\":166,\"low\":159,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:35:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:40:00.000Z\",\"observedEndAt\":\"2026-10-08T14:40:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":165,\"close\":170,\"high\":171,\"low\":164,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:40:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:45:00.000Z\",\"observedEndAt\":\"2026-10-08T14:45:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":170,\"close\":175,\"high\":176,\"low\":169,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:50:00.000Z\",\"observedEndAt\":\"2026-10-08T14:50:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":175,\"close\":180,\"high\":181,\"low\":174,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:50:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:55:00.000Z\",\"observedEndAt\":\"2026-10-08T14:55:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":180,\"close\":185,\"high\":186,\"low\":179,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:55:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:00:00.000Z\",\"observedEndAt\":\"2026-10-08T15:00:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":185,\"close\":190,\"high\":191,\"low\":184,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:05:00.000Z\",\"observedEndAt\":\"2026-10-08T15:05:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":190,\"close\":195,\"high\":196,\"low\":189,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:05:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:10:00.000Z\",\"observedEndAt\":\"2026-10-08T15:10:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":195,\"close\":200,\"high\":201,\"low\":194,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:10:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:15:00.000Z\",\"observedEndAt\":\"2026-10-08T15:15:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":200,\"close\":205,\"high\":206,\"low\":199,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:15:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:20:00.000Z\",\"observedEndAt\":\"2026-10-08T15:20:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":205,\"close\":210,\"high\":211,\"low\":204,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:20:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:25:00.000Z\",\"observedEndAt\":\"2026-10-08T15:25:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":210,\"close\":215,\"high\":216,\"low\":209,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:25:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:30:00.000Z\",\"observedEndAt\":\"2026-10-08T15:30:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":215,\"close\":220,\"high\":221,\"low\":214,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:35:00.000Z\",\"observedEndAt\":\"2026-10-08T15:35:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":220,\"close\":225,\"high\":226,\"low\":219,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:35:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:40:00.000Z\",\"observedEndAt\":\"2026-10-08T15:40:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":225,\"close\":230,\"high\":231,\"low\":224,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:40:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:45:00.000Z\",\"observedEndAt\":\"2026-10-08T15:45:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":230,\"close\":235,\"high\":236,\"low\":229,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:50:00.000Z\",\"observedEndAt\":\"2026-10-08T15:50:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":235,\"close\":240,\"high\":241,\"low\":234,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:50:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:55:00.000Z\",\"observedEndAt\":\"2026-10-08T15:55:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":240,\"close\":245,\"high\":246,\"low\":239,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:55:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:00:00.000Z\",\"observedEndAt\":\"2026-10-08T16:00:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":245,\"close\":250,\"high\":251,\"low\":244,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:05:00.000Z\",\"observedEndAt\":\"2026-10-08T16:05:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":250,\"close\":255,\"high\":256,\"low\":249,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:05:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:10:00.000Z\",\"observedEndAt\":\"2026-10-08T16:10:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":255,\"close\":260,\"high\":261,\"low\":254,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:10:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:15:00.000Z\",\"observedEndAt\":\"2026-10-08T16:15:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":260,\"close\":265,\"high\":266,\"low\":259,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:15:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:20:00.000Z\",\"observedEndAt\":\"2026-10-08T16:20:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":265,\"close\":270,\"high\":271,\"low\":264,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:20:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:25:00.000Z\",\"observedEndAt\":\"2026-10-08T16:25:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":270,\"close\":275,\"high\":276,\"low\":269,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:25:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:30:00.000Z\",\"observedEndAt\":\"2026-10-08T16:30:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":275,\"close\":280,\"high\":281,\"low\":274,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:35:00.000Z\",\"observedEndAt\":\"2026-10-08T16:35:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":280,\"close\":285,\"high\":286,\"low\":279,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:35:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:40:00.000Z\",\"observedEndAt\":\"2026-10-08T16:40:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":285,\"close\":290,\"high\":291,\"low\":284,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:40:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:45:00.000Z\",\"observedEndAt\":\"2026-10-08T16:45:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":290,\"close\":295,\"high\":296,\"low\":289,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:50:00.000Z\",\"observedEndAt\":\"2026-10-08T16:50:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":295,\"close\":300,\"high\":301,\"low\":294,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:50:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:55:00.000Z\",\"observedEndAt\":\"2026-10-08T16:55:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":300,\"close\":305,\"high\":306,\"low\":299,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:55:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:00:00.000Z\",\"observedEndAt\":\"2026-10-08T17:00:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":305,\"close\":310,\"high\":311,\"low\":304,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:05:00.000Z\",\"observedEndAt\":\"2026-10-08T17:05:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":310,\"close\":315,\"high\":316,\"low\":309,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:05:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:10:00.000Z\",\"observedEndAt\":\"2026-10-08T17:10:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":315,\"close\":320,\"high\":321,\"low\":314,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:10:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:15:00.000Z\",\"observedEndAt\":\"2026-10-08T17:15:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":320,\"close\":325,\"high\":326,\"low\":319,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:15:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:20:00.000Z\",\"observedEndAt\":\"2026-10-08T17:20:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":325,\"close\":330,\"high\":331,\"low\":324,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:20:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:25:00.000Z\",\"observedEndAt\":\"2026-10-08T17:25:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":330,\"close\":335,\"high\":336,\"low\":329,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:25:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:30:00.000Z\",\"observedEndAt\":\"2026-10-08T17:30:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":335,\"close\":340,\"high\":341,\"low\":334,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:35:00.000Z\",\"observedEndAt\":\"2026-10-08T17:35:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":340,\"close\":345,\"high\":346,\"low\":339,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:35:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:40:00.000Z\",\"observedEndAt\":\"2026-10-08T17:40:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":345,\"close\":350,\"high\":351,\"low\":344,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:40:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:45:00.000Z\",\"observedEndAt\":\"2026-10-08T17:45:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":350,\"close\":355,\"high\":356,\"low\":349,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:50:00.000Z\",\"observedEndAt\":\"2026-10-08T17:50:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":355,\"close\":360,\"high\":361,\"low\":354,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:50:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:55:00.000Z\",\"observedEndAt\":\"2026-10-08T17:55:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":360,\"close\":365,\"high\":366,\"low\":359,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:55:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:00:00.000Z\",\"observedEndAt\":\"2026-10-08T18:00:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":365,\"close\":370,\"high\":371,\"low\":364,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:05:00.000Z\",\"observedEndAt\":\"2026-10-08T18:05:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":370,\"close\":375,\"high\":376,\"low\":369,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:05:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:10:00.000Z\",\"observedEndAt\":\"2026-10-08T18:10:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":375,\"close\":380,\"high\":381,\"low\":374,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:10:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:15:00.000Z\",\"observedEndAt\":\"2026-10-08T18:15:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":380,\"close\":385,\"high\":386,\"low\":379,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:15:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:20:00.000Z\",\"observedEndAt\":\"2026-10-08T18:20:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":385,\"close\":390,\"high\":391,\"low\":384,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:20:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:25:00.000Z\",\"observedEndAt\":\"2026-10-08T18:25:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":390,\"close\":395,\"high\":396,\"low\":389,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:25:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:30:00.000Z\",\"observedEndAt\":\"2026-10-08T18:30:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":395,\"close\":400,\"high\":401,\"low\":394,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:35:00.000Z\",\"observedEndAt\":\"2026-10-08T18:35:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":400,\"close\":405,\"high\":406,\"low\":399,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:35:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:40:00.000Z\",\"observedEndAt\":\"2026-10-08T18:40:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":405,\"close\":410,\"high\":411,\"low\":404,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:40:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:45:00.000Z\",\"observedEndAt\":\"2026-10-08T18:45:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":410,\"close\":415,\"high\":416,\"low\":409,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:50:00.000Z\",\"observedEndAt\":\"2026-10-08T18:50:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":415,\"close\":420,\"high\":421,\"low\":414,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:50:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:55:00.000Z\",\"observedEndAt\":\"2026-10-08T18:55:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":420,\"close\":425,\"high\":426,\"low\":419,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:55:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:00:00.000Z\",\"observedEndAt\":\"2026-10-08T19:00:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":425,\"close\":430,\"high\":431,\"low\":424,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:05:00.000Z\",\"observedEndAt\":\"2026-10-08T19:05:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":430,\"close\":435,\"high\":436,\"low\":429,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:05:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:10:00.000Z\",\"observedEndAt\":\"2026-10-08T19:10:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":435,\"close\":440,\"high\":441,\"low\":434,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:10:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:15:00.000Z\",\"observedEndAt\":\"2026-10-08T19:15:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":440,\"close\":445,\"high\":446,\"low\":439,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:15:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:20:00.000Z\",\"observedEndAt\":\"2026-10-08T19:20:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":445,\"close\":450,\"high\":451,\"low\":444,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:20:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:25:00.000Z\",\"observedEndAt\":\"2026-10-08T19:25:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":450,\"close\":455,\"high\":456,\"low\":449,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:25:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:30:00.000Z\",\"observedEndAt\":\"2026-10-08T19:30:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":455,\"close\":460,\"high\":461,\"low\":454,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:35:00.000Z\",\"observedEndAt\":\"2026-10-08T19:35:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":460,\"close\":465,\"high\":466,\"low\":459,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:35:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:40:00.000Z\",\"observedEndAt\":\"2026-10-08T19:40:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":465,\"close\":470,\"high\":471,\"low\":464,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:40:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:45:00.000Z\",\"observedEndAt\":\"2026-10-08T19:45:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":470,\"close\":475,\"high\":476,\"low\":469,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:50:00.000Z\",\"observedEndAt\":\"2026-10-08T19:50:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":475,\"close\":480,\"high\":481,\"low\":474,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:50:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:55:00.000Z\",\"observedEndAt\":\"2026-10-08T19:55:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":480,\"close\":485,\"high\":486,\"low\":479,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:55:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T20:00:00.000Z\",\"observedEndAt\":\"2026-10-08T20:00:00.000Z\",\"expectedMinutes\":5,\"observedMinutes\":5,\"openingBoundaryPoints\":0,\"open\":485,\"close\":490,\"high\":491,\"low\":484,\"volume\":5000,\"amount\":500000,\"completionStatus\":\"complete\"}]]",
+      "payload": {
+        "contractVersion": 3,
+        "identity": {
+          "symbol": "SPY.US",
+          "assetType": "ETF",
+          "timeframe": "5m",
+          "adjustment": "none"
+        },
+        "inputFingerprint": "b64fbacad69be0977cd15fcfd048327dc02dc660867c14ce6df0e517df6711e4",
+        "points": [
+          {
+            "timestamp": "2026-10-08T13:30:00.000Z",
+            "open": 100,
+            "high": 106,
+            "low": 99,
+            "close": 105,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T13:35:00.000Z",
+            "open": 105,
+            "high": 111,
+            "low": 104,
+            "close": 110,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T13:40:00.000Z",
+            "open": 110,
+            "high": 116,
+            "low": 109,
+            "close": 115,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T13:45:00.000Z",
+            "open": 115,
+            "high": 121,
+            "low": 114,
+            "close": 120,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T13:50:00.000Z",
+            "open": 120,
+            "high": 126,
+            "low": 119,
+            "close": 125,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T13:55:00.000Z",
+            "open": 125,
+            "high": 131,
+            "low": 124,
+            "close": 130,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:00:00.000Z",
+            "open": 130,
+            "high": 136,
+            "low": 129,
+            "close": 135,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:05:00.000Z",
+            "open": 135,
+            "high": 141,
+            "low": 134,
+            "close": 140,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:10:00.000Z",
+            "open": 140,
+            "high": 146,
+            "low": 139,
+            "close": 145,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:15:00.000Z",
+            "open": 145,
+            "high": 151,
+            "low": 144,
+            "close": 150,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:20:00.000Z",
+            "open": 150,
+            "high": 156,
+            "low": 149,
+            "close": 155,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:25:00.000Z",
+            "open": 155,
+            "high": 161,
+            "low": 154,
+            "close": 160,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:30:00.000Z",
+            "open": 160,
+            "high": 166,
+            "low": 159,
+            "close": 165,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:35:00.000Z",
+            "open": 165,
+            "high": 171,
+            "low": 164,
+            "close": 170,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:40:00.000Z",
+            "open": 170,
+            "high": 176,
+            "low": 169,
+            "close": 175,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:45:00.000Z",
+            "open": 175,
+            "high": 181,
+            "low": 174,
+            "close": 180,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:50:00.000Z",
+            "open": 180,
+            "high": 186,
+            "low": 179,
+            "close": 185,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:55:00.000Z",
+            "open": 185,
+            "high": 191,
+            "low": 184,
+            "close": 190,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:00:00.000Z",
+            "open": 190,
+            "high": 196,
+            "low": 189,
+            "close": 195,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:05:00.000Z",
+            "open": 195,
+            "high": 201,
+            "low": 194,
+            "close": 200,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:10:00.000Z",
+            "open": 200,
+            "high": 206,
+            "low": 199,
+            "close": 205,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:15:00.000Z",
+            "open": 205,
+            "high": 211,
+            "low": 204,
+            "close": 210,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:20:00.000Z",
+            "open": 210,
+            "high": 216,
+            "low": 209,
+            "close": 215,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:25:00.000Z",
+            "open": 215,
+            "high": 221,
+            "low": 214,
+            "close": 220,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:30:00.000Z",
+            "open": 220,
+            "high": 226,
+            "low": 219,
+            "close": 225,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:35:00.000Z",
+            "open": 225,
+            "high": 231,
+            "low": 224,
+            "close": 230,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:40:00.000Z",
+            "open": 230,
+            "high": 236,
+            "low": 229,
+            "close": 235,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:45:00.000Z",
+            "open": 235,
+            "high": 241,
+            "low": 234,
+            "close": 240,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:50:00.000Z",
+            "open": 240,
+            "high": 246,
+            "low": 239,
+            "close": 245,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:55:00.000Z",
+            "open": 245,
+            "high": 251,
+            "low": 244,
+            "close": 250,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:00:00.000Z",
+            "open": 250,
+            "high": 256,
+            "low": 249,
+            "close": 255,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:05:00.000Z",
+            "open": 255,
+            "high": 261,
+            "low": 254,
+            "close": 260,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:10:00.000Z",
+            "open": 260,
+            "high": 266,
+            "low": 259,
+            "close": 265,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:15:00.000Z",
+            "open": 265,
+            "high": 271,
+            "low": 264,
+            "close": 270,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:20:00.000Z",
+            "open": 270,
+            "high": 276,
+            "low": 269,
+            "close": 275,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:25:00.000Z",
+            "open": 275,
+            "high": 281,
+            "low": 274,
+            "close": 280,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:30:00.000Z",
+            "open": 280,
+            "high": 286,
+            "low": 279,
+            "close": 285,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:35:00.000Z",
+            "open": 285,
+            "high": 291,
+            "low": 284,
+            "close": 290,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:40:00.000Z",
+            "open": 290,
+            "high": 296,
+            "low": 289,
+            "close": 295,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:45:00.000Z",
+            "open": 295,
+            "high": 301,
+            "low": 294,
+            "close": 300,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:50:00.000Z",
+            "open": 300,
+            "high": 306,
+            "low": 299,
+            "close": 305,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:55:00.000Z",
+            "open": 305,
+            "high": 311,
+            "low": 304,
+            "close": 310,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:00:00.000Z",
+            "open": 310,
+            "high": 316,
+            "low": 309,
+            "close": 315,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:05:00.000Z",
+            "open": 315,
+            "high": 321,
+            "low": 314,
+            "close": 320,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:10:00.000Z",
+            "open": 320,
+            "high": 326,
+            "low": 319,
+            "close": 325,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:15:00.000Z",
+            "open": 325,
+            "high": 331,
+            "low": 324,
+            "close": 330,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:20:00.000Z",
+            "open": 330,
+            "high": 336,
+            "low": 329,
+            "close": 335,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:25:00.000Z",
+            "open": 335,
+            "high": 341,
+            "low": 334,
+            "close": 340,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:30:00.000Z",
+            "open": 340,
+            "high": 346,
+            "low": 339,
+            "close": 345,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:35:00.000Z",
+            "open": 345,
+            "high": 351,
+            "low": 344,
+            "close": 350,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:40:00.000Z",
+            "open": 350,
+            "high": 356,
+            "low": 349,
+            "close": 355,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:45:00.000Z",
+            "open": 355,
+            "high": 361,
+            "low": 354,
+            "close": 360,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:50:00.000Z",
+            "open": 360,
+            "high": 366,
+            "low": 359,
+            "close": 365,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:55:00.000Z",
+            "open": 365,
+            "high": 371,
+            "low": 364,
+            "close": 370,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:00:00.000Z",
+            "open": 370,
+            "high": 376,
+            "low": 369,
+            "close": 375,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:05:00.000Z",
+            "open": 375,
+            "high": 381,
+            "low": 374,
+            "close": 380,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:10:00.000Z",
+            "open": 380,
+            "high": 386,
+            "low": 379,
+            "close": 385,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:15:00.000Z",
+            "open": 385,
+            "high": 391,
+            "low": 384,
+            "close": 390,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:20:00.000Z",
+            "open": 390,
+            "high": 396,
+            "low": 389,
+            "close": 395,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:25:00.000Z",
+            "open": 395,
+            "high": 401,
+            "low": 394,
+            "close": 400,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:30:00.000Z",
+            "open": 400,
+            "high": 406,
+            "low": 399,
+            "close": 405,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:35:00.000Z",
+            "open": 405,
+            "high": 411,
+            "low": 404,
+            "close": 410,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:40:00.000Z",
+            "open": 410,
+            "high": 416,
+            "low": 409,
+            "close": 415,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:45:00.000Z",
+            "open": 415,
+            "high": 421,
+            "low": 414,
+            "close": 420,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:50:00.000Z",
+            "open": 420,
+            "high": 426,
+            "low": 419,
+            "close": 425,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:55:00.000Z",
+            "open": 425,
+            "high": 431,
+            "low": 424,
+            "close": 430,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:00:00.000Z",
+            "open": 430,
+            "high": 436,
+            "low": 429,
+            "close": 435,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:05:00.000Z",
+            "open": 435,
+            "high": 441,
+            "low": 434,
+            "close": 440,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:10:00.000Z",
+            "open": 440,
+            "high": 446,
+            "low": 439,
+            "close": 445,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:15:00.000Z",
+            "open": 445,
+            "high": 451,
+            "low": 444,
+            "close": 450,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:20:00.000Z",
+            "open": 450,
+            "high": 456,
+            "low": 449,
+            "close": 455,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:25:00.000Z",
+            "open": 455,
+            "high": 461,
+            "low": 454,
+            "close": 460,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:30:00.000Z",
+            "open": 460,
+            "high": 466,
+            "low": 459,
+            "close": 465,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:35:00.000Z",
+            "open": 465,
+            "high": 471,
+            "low": 464,
+            "close": 470,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:40:00.000Z",
+            "open": 470,
+            "high": 476,
+            "low": 469,
+            "close": 475,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:45:00.000Z",
+            "open": 475,
+            "high": 481,
+            "low": 474,
+            "close": 480,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:50:00.000Z",
+            "open": 480,
+            "high": 486,
+            "low": 479,
+            "close": 485,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:55:00.000Z",
+            "open": 485,
+            "high": 491,
+            "low": 484,
+            "close": 490,
+            "volume": 5000,
+            "amount": 500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          }
+        ],
+        "requests": [
+          {
+            "name": "MA",
+            "parameters": {
+              "period": 5
+            }
+          },
+          {
+            "name": "MACD",
+            "parameters": {
+              "fast": 3,
+              "slow": 6,
+              "signal": 3
+            }
+          },
+          {
+            "name": "RSI",
+            "parameters": {
+              "short": 3,
+              "mid": 5,
+              "long": 8
+            }
+          }
+        ],
+        "periodContext": {
+          "protocol": "market-period-indicator-v1",
+          "aggregationFingerprint": "8b8ce87b434941ecb073aafa7c0cccc57a794f2ceaf0e51dd56e05d949a16587",
+          "pointFingerprint": "d54e81323ed49c44c92f020264d79e46f33b0fe4ee480c06a6182b5d1a96f86d"
+        }
+      }
+    },
+    {
+      "timeframe": "15m",
+      "aggregationEncoding": "[{\"market\":\"US\",\"timezone\":\"America/New_York\",\"revision\":\"controlled-session-v1\",\"availableAt\":\"2026-10-01T00:00:00Z\",\"coverageStart\":\"2026-10-08\",\"coverageEnd\":\"2026-10-08\",\"sessions\":[{\"tradingDate\":\"2026-10-08\",\"startAt\":\"2026-10-08T13:30:00Z\",\"endAt\":\"2026-10-08T20:00:00Z\"}]},\"15m\",\"2026-10-08T21:00:00Z\",\"bb11a7606a50c93af30ca28682514c855b50cc6f0bb6d8c25c1d077ca28ebd06\",[{\"timestamp\":\"2026-10-08T13:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T13:45:00.000Z\",\"observedEndAt\":\"2026-10-08T13:45:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":100,\"close\":115,\"high\":116,\"low\":99,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T13:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:00:00.000Z\",\"observedEndAt\":\"2026-10-08T14:00:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":115,\"close\":130,\"high\":131,\"low\":114,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:15:00.000Z\",\"observedEndAt\":\"2026-10-08T14:15:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":130,\"close\":145,\"high\":146,\"low\":129,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:15:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:30:00.000Z\",\"observedEndAt\":\"2026-10-08T14:30:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":145,\"close\":160,\"high\":161,\"low\":144,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:45:00.000Z\",\"observedEndAt\":\"2026-10-08T14:45:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":160,\"close\":175,\"high\":176,\"low\":159,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:00:00.000Z\",\"observedEndAt\":\"2026-10-08T15:00:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":175,\"close\":190,\"high\":191,\"low\":174,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:15:00.000Z\",\"observedEndAt\":\"2026-10-08T15:15:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":190,\"close\":205,\"high\":206,\"low\":189,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:15:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:30:00.000Z\",\"observedEndAt\":\"2026-10-08T15:30:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":205,\"close\":220,\"high\":221,\"low\":204,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:45:00.000Z\",\"observedEndAt\":\"2026-10-08T15:45:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":220,\"close\":235,\"high\":236,\"low\":219,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:00:00.000Z\",\"observedEndAt\":\"2026-10-08T16:00:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":235,\"close\":250,\"high\":251,\"low\":234,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:15:00.000Z\",\"observedEndAt\":\"2026-10-08T16:15:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":250,\"close\":265,\"high\":266,\"low\":249,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:15:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:30:00.000Z\",\"observedEndAt\":\"2026-10-08T16:30:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":265,\"close\":280,\"high\":281,\"low\":264,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:45:00.000Z\",\"observedEndAt\":\"2026-10-08T16:45:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":280,\"close\":295,\"high\":296,\"low\":279,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:00:00.000Z\",\"observedEndAt\":\"2026-10-08T17:00:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":295,\"close\":310,\"high\":311,\"low\":294,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:15:00.000Z\",\"observedEndAt\":\"2026-10-08T17:15:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":310,\"close\":325,\"high\":326,\"low\":309,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:15:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:30:00.000Z\",\"observedEndAt\":\"2026-10-08T17:30:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":325,\"close\":340,\"high\":341,\"low\":324,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:45:00.000Z\",\"observedEndAt\":\"2026-10-08T17:45:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":340,\"close\":355,\"high\":356,\"low\":339,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:00:00.000Z\",\"observedEndAt\":\"2026-10-08T18:00:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":355,\"close\":370,\"high\":371,\"low\":354,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:15:00.000Z\",\"observedEndAt\":\"2026-10-08T18:15:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":370,\"close\":385,\"high\":386,\"low\":369,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:15:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:30:00.000Z\",\"observedEndAt\":\"2026-10-08T18:30:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":385,\"close\":400,\"high\":401,\"low\":384,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:45:00.000Z\",\"observedEndAt\":\"2026-10-08T18:45:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":400,\"close\":415,\"high\":416,\"low\":399,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:00:00.000Z\",\"observedEndAt\":\"2026-10-08T19:00:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":415,\"close\":430,\"high\":431,\"low\":414,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:15:00.000Z\",\"observedEndAt\":\"2026-10-08T19:15:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":430,\"close\":445,\"high\":446,\"low\":429,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:15:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:30:00.000Z\",\"observedEndAt\":\"2026-10-08T19:30:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":445,\"close\":460,\"high\":461,\"low\":444,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:45:00.000Z\",\"observedEndAt\":\"2026-10-08T19:45:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":460,\"close\":475,\"high\":476,\"low\":459,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:45:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T20:00:00.000Z\",\"observedEndAt\":\"2026-10-08T20:00:00.000Z\",\"expectedMinutes\":15,\"observedMinutes\":15,\"openingBoundaryPoints\":0,\"open\":475,\"close\":490,\"high\":491,\"low\":474,\"volume\":15000,\"amount\":1500000,\"completionStatus\":\"complete\"}]]",
+      "payload": {
+        "contractVersion": 3,
+        "identity": {
+          "symbol": "SPY.US",
+          "assetType": "ETF",
+          "timeframe": "15m",
+          "adjustment": "none"
+        },
+        "inputFingerprint": "cb7d90f9bfd947a3d6c99dd1ad228efdf377fc5f8e5cafb616f9c099ec18e6c3",
+        "points": [
+          {
+            "timestamp": "2026-10-08T13:30:00.000Z",
+            "open": 100,
+            "high": 116,
+            "low": 99,
+            "close": 115,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T13:45:00.000Z",
+            "open": 115,
+            "high": 131,
+            "low": 114,
+            "close": 130,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:00:00.000Z",
+            "open": 130,
+            "high": 146,
+            "low": 129,
+            "close": 145,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:15:00.000Z",
+            "open": 145,
+            "high": 161,
+            "low": 144,
+            "close": 160,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:30:00.000Z",
+            "open": 160,
+            "high": 176,
+            "low": 159,
+            "close": 175,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:45:00.000Z",
+            "open": 175,
+            "high": 191,
+            "low": 174,
+            "close": 190,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:00:00.000Z",
+            "open": 190,
+            "high": 206,
+            "low": 189,
+            "close": 205,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:15:00.000Z",
+            "open": 205,
+            "high": 221,
+            "low": 204,
+            "close": 220,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:30:00.000Z",
+            "open": 220,
+            "high": 236,
+            "low": 219,
+            "close": 235,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:45:00.000Z",
+            "open": 235,
+            "high": 251,
+            "low": 234,
+            "close": 250,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:00:00.000Z",
+            "open": 250,
+            "high": 266,
+            "low": 249,
+            "close": 265,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:15:00.000Z",
+            "open": 265,
+            "high": 281,
+            "low": 264,
+            "close": 280,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:30:00.000Z",
+            "open": 280,
+            "high": 296,
+            "low": 279,
+            "close": 295,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:45:00.000Z",
+            "open": 295,
+            "high": 311,
+            "low": 294,
+            "close": 310,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:00:00.000Z",
+            "open": 310,
+            "high": 326,
+            "low": 309,
+            "close": 325,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:15:00.000Z",
+            "open": 325,
+            "high": 341,
+            "low": 324,
+            "close": 340,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:30:00.000Z",
+            "open": 340,
+            "high": 356,
+            "low": 339,
+            "close": 355,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:45:00.000Z",
+            "open": 355,
+            "high": 371,
+            "low": 354,
+            "close": 370,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:00:00.000Z",
+            "open": 370,
+            "high": 386,
+            "low": 369,
+            "close": 385,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:15:00.000Z",
+            "open": 385,
+            "high": 401,
+            "low": 384,
+            "close": 400,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:30:00.000Z",
+            "open": 400,
+            "high": 416,
+            "low": 399,
+            "close": 415,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:45:00.000Z",
+            "open": 415,
+            "high": 431,
+            "low": 414,
+            "close": 430,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:00:00.000Z",
+            "open": 430,
+            "high": 446,
+            "low": 429,
+            "close": 445,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:15:00.000Z",
+            "open": 445,
+            "high": 461,
+            "low": 444,
+            "close": 460,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:30:00.000Z",
+            "open": 460,
+            "high": 476,
+            "low": 459,
+            "close": 475,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:45:00.000Z",
+            "open": 475,
+            "high": 491,
+            "low": 474,
+            "close": 490,
+            "volume": 15000,
+            "amount": 1500000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          }
+        ],
+        "requests": [
+          {
+            "name": "MA",
+            "parameters": {
+              "period": 5
+            }
+          },
+          {
+            "name": "MACD",
+            "parameters": {
+              "fast": 3,
+              "slow": 6,
+              "signal": 3
+            }
+          },
+          {
+            "name": "RSI",
+            "parameters": {
+              "short": 3,
+              "mid": 5,
+              "long": 8
+            }
+          }
+        ],
+        "periodContext": {
+          "protocol": "market-period-indicator-v1",
+          "aggregationFingerprint": "3256403fd86ac1b4353e8a41110d929e750414cdfd0b61de11683c92e5e85230",
+          "pointFingerprint": "6c0ca68f98760fda45b1bb3a8a2b218fca9cae36d7f5a4320d278ba665604c16"
+        }
+      }
+    },
+    {
+      "timeframe": "30m",
+      "aggregationEncoding": "[{\"market\":\"US\",\"timezone\":\"America/New_York\",\"revision\":\"controlled-session-v1\",\"availableAt\":\"2026-10-01T00:00:00Z\",\"coverageStart\":\"2026-10-08\",\"coverageEnd\":\"2026-10-08\",\"sessions\":[{\"tradingDate\":\"2026-10-08\",\"startAt\":\"2026-10-08T13:30:00Z\",\"endAt\":\"2026-10-08T20:00:00Z\"}]},\"30m\",\"2026-10-08T21:00:00Z\",\"bb11a7606a50c93af30ca28682514c855b50cc6f0bb6d8c25c1d077ca28ebd06\",[{\"timestamp\":\"2026-10-08T13:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:00:00.000Z\",\"observedEndAt\":\"2026-10-08T14:00:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":100,\"close\":130,\"high\":131,\"low\":99,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:30:00.000Z\",\"observedEndAt\":\"2026-10-08T14:30:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":130,\"close\":160,\"high\":161,\"low\":129,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:00:00.000Z\",\"observedEndAt\":\"2026-10-08T15:00:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":160,\"close\":190,\"high\":191,\"low\":159,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:30:00.000Z\",\"observedEndAt\":\"2026-10-08T15:30:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":190,\"close\":220,\"high\":221,\"low\":189,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:00:00.000Z\",\"observedEndAt\":\"2026-10-08T16:00:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":220,\"close\":250,\"high\":251,\"low\":219,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:30:00.000Z\",\"observedEndAt\":\"2026-10-08T16:30:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":250,\"close\":280,\"high\":281,\"low\":249,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:00:00.000Z\",\"observedEndAt\":\"2026-10-08T17:00:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":280,\"close\":310,\"high\":311,\"low\":279,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:30:00.000Z\",\"observedEndAt\":\"2026-10-08T17:30:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":310,\"close\":340,\"high\":341,\"low\":309,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:00:00.000Z\",\"observedEndAt\":\"2026-10-08T18:00:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":340,\"close\":370,\"high\":371,\"low\":339,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:30:00.000Z\",\"observedEndAt\":\"2026-10-08T18:30:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":370,\"close\":400,\"high\":401,\"low\":369,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:00:00.000Z\",\"observedEndAt\":\"2026-10-08T19:00:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":400,\"close\":430,\"high\":431,\"low\":399,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:00:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:30:00.000Z\",\"observedEndAt\":\"2026-10-08T19:30:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":430,\"close\":460,\"high\":461,\"low\":429,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T20:00:00.000Z\",\"observedEndAt\":\"2026-10-08T20:00:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":460,\"close\":490,\"high\":491,\"low\":459,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"}]]",
+      "payload": {
+        "contractVersion": 3,
+        "identity": {
+          "symbol": "SPY.US",
+          "assetType": "ETF",
+          "timeframe": "30m",
+          "adjustment": "none"
+        },
+        "inputFingerprint": "409388e8fea5e9e182d52cddb652f767d7e4ccaf28c1afa2cec14d8bb4991c35",
+        "points": [
+          {
+            "timestamp": "2026-10-08T13:30:00.000Z",
+            "open": 100,
+            "high": 131,
+            "low": 99,
+            "close": 130,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:00:00.000Z",
+            "open": 130,
+            "high": 161,
+            "low": 129,
+            "close": 160,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:30:00.000Z",
+            "open": 160,
+            "high": 191,
+            "low": 159,
+            "close": 190,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:00:00.000Z",
+            "open": 190,
+            "high": 221,
+            "low": 189,
+            "close": 220,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:30:00.000Z",
+            "open": 220,
+            "high": 251,
+            "low": 219,
+            "close": 250,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:00:00.000Z",
+            "open": 250,
+            "high": 281,
+            "low": 249,
+            "close": 280,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:30:00.000Z",
+            "open": 280,
+            "high": 311,
+            "low": 279,
+            "close": 310,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:00:00.000Z",
+            "open": 310,
+            "high": 341,
+            "low": 309,
+            "close": 340,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:30:00.000Z",
+            "open": 340,
+            "high": 371,
+            "low": 339,
+            "close": 370,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:00:00.000Z",
+            "open": 370,
+            "high": 401,
+            "low": 369,
+            "close": 400,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:30:00.000Z",
+            "open": 400,
+            "high": 431,
+            "low": 399,
+            "close": 430,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:00:00.000Z",
+            "open": 430,
+            "high": 461,
+            "low": 429,
+            "close": 460,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:30:00.000Z",
+            "open": 460,
+            "high": 491,
+            "low": 459,
+            "close": 490,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          }
+        ],
+        "requests": [
+          {
+            "name": "MA",
+            "parameters": {
+              "period": 5
+            }
+          },
+          {
+            "name": "MACD",
+            "parameters": {
+              "fast": 3,
+              "slow": 6,
+              "signal": 3
+            }
+          },
+          {
+            "name": "RSI",
+            "parameters": {
+              "short": 3,
+              "mid": 5,
+              "long": 8
+            }
+          }
+        ],
+        "periodContext": {
+          "protocol": "market-period-indicator-v1",
+          "aggregationFingerprint": "0aeb3871a15f8c41fee7adb5fff926a1bc1fbb30b34a2bbee5ae7d0e0a862ecc",
+          "pointFingerprint": "2f4414a9d74d653a6a3c04670ff86f3fb2f1b89e5724cac84613791f981a8d67"
+        }
+      }
+    },
+    {
+      "timeframe": "60m",
+      "aggregationEncoding": "[{\"market\":\"US\",\"timezone\":\"America/New_York\",\"revision\":\"controlled-session-v1\",\"availableAt\":\"2026-10-01T00:00:00Z\",\"coverageStart\":\"2026-10-08\",\"coverageEnd\":\"2026-10-08\",\"sessions\":[{\"tradingDate\":\"2026-10-08\",\"startAt\":\"2026-10-08T13:30:00Z\",\"endAt\":\"2026-10-08T20:00:00Z\"}]},\"60m\",\"2026-10-08T21:00:00Z\",\"bb11a7606a50c93af30ca28682514c855b50cc6f0bb6d8c25c1d077ca28ebd06\",[{\"timestamp\":\"2026-10-08T13:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T14:30:00.000Z\",\"observedEndAt\":\"2026-10-08T14:30:00.000Z\",\"expectedMinutes\":60,\"observedMinutes\":60,\"openingBoundaryPoints\":0,\"open\":100,\"close\":160,\"high\":161,\"low\":99,\"volume\":60000,\"amount\":6000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T14:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T15:30:00.000Z\",\"observedEndAt\":\"2026-10-08T15:30:00.000Z\",\"expectedMinutes\":60,\"observedMinutes\":60,\"openingBoundaryPoints\":0,\"open\":160,\"close\":220,\"high\":221,\"low\":159,\"volume\":60000,\"amount\":6000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T15:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T16:30:00.000Z\",\"observedEndAt\":\"2026-10-08T16:30:00.000Z\",\"expectedMinutes\":60,\"observedMinutes\":60,\"openingBoundaryPoints\":0,\"open\":220,\"close\":280,\"high\":281,\"low\":219,\"volume\":60000,\"amount\":6000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T16:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T17:30:00.000Z\",\"observedEndAt\":\"2026-10-08T17:30:00.000Z\",\"expectedMinutes\":60,\"observedMinutes\":60,\"openingBoundaryPoints\":0,\"open\":280,\"close\":340,\"high\":341,\"low\":279,\"volume\":60000,\"amount\":6000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T17:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T18:30:00.000Z\",\"observedEndAt\":\"2026-10-08T18:30:00.000Z\",\"expectedMinutes\":60,\"observedMinutes\":60,\"openingBoundaryPoints\":0,\"open\":340,\"close\":400,\"high\":401,\"low\":339,\"volume\":60000,\"amount\":6000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T18:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T19:30:00.000Z\",\"observedEndAt\":\"2026-10-08T19:30:00.000Z\",\"expectedMinutes\":60,\"observedMinutes\":60,\"openingBoundaryPoints\":0,\"open\":400,\"close\":460,\"high\":461,\"low\":399,\"volume\":60000,\"amount\":6000000,\"completionStatus\":\"complete\"},{\"timestamp\":\"2026-10-08T19:30:00.000Z\",\"availableAt\":\"2026-10-08T21:00:00.000Z\",\"tradingDate\":\"2026-10-08\",\"bucketEndAt\":\"2026-10-08T20:00:00.000Z\",\"observedEndAt\":\"2026-10-08T20:00:00.000Z\",\"expectedMinutes\":30,\"observedMinutes\":30,\"openingBoundaryPoints\":0,\"open\":460,\"close\":490,\"high\":491,\"low\":459,\"volume\":30000,\"amount\":3000000,\"completionStatus\":\"complete\"}]]",
+      "payload": {
+        "contractVersion": 3,
+        "identity": {
+          "symbol": "SPY.US",
+          "assetType": "ETF",
+          "timeframe": "60m",
+          "adjustment": "none"
+        },
+        "inputFingerprint": "cc7d5257f0f64081547d038e8191a980b9c356c712a6661c90f2fe2964f62932",
+        "points": [
+          {
+            "timestamp": "2026-10-08T13:30:00.000Z",
+            "open": 100,
+            "high": 161,
+            "low": 99,
+            "close": 160,
+            "volume": 60000,
+            "amount": 6000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T14:30:00.000Z",
+            "open": 160,
+            "high": 221,
+            "low": 159,
+            "close": 220,
+            "volume": 60000,
+            "amount": 6000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T15:30:00.000Z",
+            "open": 220,
+            "high": 281,
+            "low": 219,
+            "close": 280,
+            "volume": 60000,
+            "amount": 6000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T16:30:00.000Z",
+            "open": 280,
+            "high": 341,
+            "low": 279,
+            "close": 340,
+            "volume": 60000,
+            "amount": 6000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T17:30:00.000Z",
+            "open": 340,
+            "high": 401,
+            "low": 339,
+            "close": 400,
+            "volume": 60000,
+            "amount": 6000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T18:30:00.000Z",
+            "open": 400,
+            "high": 461,
+            "low": 399,
+            "close": 460,
+            "volume": 60000,
+            "amount": 6000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          },
+          {
+            "timestamp": "2026-10-08T19:30:00.000Z",
+            "open": 460,
+            "high": 491,
+            "low": 459,
+            "close": 490,
+            "volume": 30000,
+            "amount": 3000000,
+            "completionStatus": "complete",
+            "availableAt": "2026-10-08T21:00:00.000Z"
+          }
+        ],
+        "requests": [
+          {
+            "name": "MA",
+            "parameters": {
+              "period": 5
+            }
+          },
+          {
+            "name": "MACD",
+            "parameters": {
+              "fast": 3,
+              "slow": 6,
+              "signal": 3
+            }
+          },
+          {
+            "name": "RSI",
+            "parameters": {
+              "short": 3,
+              "mid": 5,
+              "long": 8
+            }
+          }
+        ],
+        "periodContext": {
+          "protocol": "market-period-indicator-v1",
+          "aggregationFingerprint": "7c1b9820d70aaa2289e6295fb22805f4759a45c5763f3396610d6d1d72385308",
+          "pointFingerprint": "6619d7a0ae5947c984ff166473a24f45cc44a5c4fd42bb9cade8e03c6435b8ea"
+        }
+      }
+    }
+  ]
+}

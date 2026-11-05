@@ -63,7 +63,7 @@ def test_http_daily_is_source_pinned_and_never_estimates_amount(monkeypatch, sto
             payload = {"s": "ok", "t": [int(datetime(2026, 5, 18, tzinfo=ZoneInfo("America/New_York")).timestamp())],
                        "o": [1.], "h": [1.2], "l": [.9], "c": [1.1], "v": [100.]}
         else:
-            payload = {"Time Series (Daily)": {"2026-05-18": {"1. open": "1", "2. high": "1.2", "3. low": ".9", "4. close": "1.1", "5. volume": "100"}}}
+            payload = {"Meta Data": {"2. Symbol": "AAPL"}, "Time Series (Daily)": {"2026-05-18": {"1. open": "1", "2. high": "1.2", "3. low": ".9", "4. close": "1.1", "5. volume": "100"}}}
         return SimpleNamespace(raise_for_status=lambda: None, json=lambda: payload)
     monkeypatch.setattr(native.requests, "get", get)
     store.save_provider_config(provider, {"requestId": "synthetic", "credentials": {"method": "api_key", "values": {"apiKey": "synthetic"}}})
@@ -74,15 +74,15 @@ def test_http_daily_is_source_pinned_and_never_estimates_amount(monkeypatch, sto
     result = ThesisLedgerProviderRuntime(store, adapters={provider: SimpleNamespace(_api_key="synthetic")}).execute_market_bars_v3(request, key)
     assert result.value.iloc[0]["amount"] is None
     assert calls[0][1]["symbol"] == "AAPL"
-    if provider == "alphavantage": assert calls[0][1]["outputsize"] == "full"
+    if provider == "alphavantage": assert calls[0][1]["outputsize"] == "compact"
     assert calls[0][2] == 4.5 and result.value.iloc[0]["volume"] == 100
     if provider == "alphavantage":
         assert calls == [("https://www.alphavantage.co/query", {'function': 'TIME_SERIES_DAILY',
-            'symbol': 'AAPL', 'outputsize': 'full', 'apikey': 'synthetic'}, 4.5)]
+            'symbol': 'AAPL', 'outputsize': 'compact', 'apikey': 'synthetic'}, 4.5)]
     no_admissions(store)
 
 
-def test_full_history_permission_message_is_explicit(monkeypatch):
+def test_information_message_keeps_existing_error_classification(monkeypatch):
     import data_provider.multimarket_exact_daily as native
     from data_provider.exact_daily_contract import ExactDailyError
     monkeypatch.setattr(native.requests, "get", lambda *args, **kwargs: SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"Information": "premium required"}))
@@ -98,7 +98,7 @@ def test_distinct_http_payloads_project_to_same_daily_contract(monkeypatch):
     from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
     from src.services.thesis_ledger_capability_contracts import ReadContext
     timestamp = int(datetime(2026, 5, 18, tzinfo=ZoneInfo('America/New_York')).timestamp())
-    payloads = {'https://www.alphavantage.co/query': {'Time Series (Daily)': {'2026-05-18': {
+    payloads = {'https://www.alphavantage.co/query': {'Meta Data': {'2. Symbol': 'AAPL'}, 'Time Series (Daily)': {'2026-05-18': {
         '1. open': '1', '2. high': '1.2', '3. low': '.9', '4. close': '1.1', '5. volume': '100'}}},
         'https://finnhub.io/api/v1/stock/candle': {'s': 'ok', 't': [timestamp], 'o': [1.], 'h': [1.2],
             'l': [.9], 'c': [1.1], 'v': [100.]}}

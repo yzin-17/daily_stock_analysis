@@ -150,24 +150,11 @@ jobs:
             type=sha,format=long
 
       - name: Pre-publish docker smoke
-        run: |
-          docker build \
-            --build-arg DSA_WEB_VERSION="${{ steps.release_ref.outputs.version }}" \
-            --build-arg DSA_WEB_REVISION="${{ steps.release_ref.outputs.revision }}" \
-            --build-arg DSA_VERSION="${{ steps.release_ref.outputs.version }}" \
-            --build-arg DSA_FORK_COMMIT="${{ steps.release_ref.outputs.revision }}" \
-            --build-arg DSA_UPSTREAM_COMMIT="${{ vars.DSA_UPSTREAM_COMMIT || 'unknown' }}" \
-            -t stock-analysis:release \
-            -f docker/Dockerfile .
-          docker run --rm stock-analysis:release python -c "
-          from src.config import get_config; print('ok-config')
-          from src.storage import DatabaseManager; print('ok-storage')
-          from src.notification import NotificationService; print('ok-notification')
-          from data_provider import DataFetcherManager; print('ok-data-provider')
-          from src.analyzer import GeminiAnalyzer; print('ok-analyzer')
-          import futu; print('ok-futu')
-          print('release-smoke-ok')
-          "
+        env:
+          DSA_VERSION: ${{ steps.release_ref.outputs.version }}
+          DSA_FORK_COMMIT: ${{ steps.release_ref.outputs.revision }}
+          DSA_UPSTREAM_COMMIT: ${{ vars.DSA_UPSTREAM_COMMIT || 'unknown' }}
+        run: bash scripts/verify_data_image.sh --build stock-analysis:release
 
       - name: Build and push release images
         uses: docker/build-push-action@v5
@@ -181,8 +168,6 @@ jobs:
             ${{ steps.meta-dockerhub.outputs.tags }}
           labels: ${{ steps.meta-ghcr.outputs.labels }}
           build-args: |
-            DSA_WEB_VERSION=${{ steps.release_ref.outputs.version }}
-            DSA_WEB_REVISION=${{ steps.release_ref.outputs.revision }}
             DSA_VERSION=${{ steps.release_ref.outputs.version }}
             DSA_FORK_COMMIT=${{ steps.release_ref.outputs.revision }}
             DSA_UPSTREAM_COMMIT=${{ vars.DSA_UPSTREAM_COMMIT || 'unknown' }}

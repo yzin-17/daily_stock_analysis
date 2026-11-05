@@ -67,7 +67,7 @@ class TestTwInstitutionReportWiring(unittest.TestCase):
             kwargs["side_effect"] = institutional_side_effect
         else:
             kwargs["return_value"] = institutional_return
-        with patch("src.config.get_config", return_value=_OFFSHORE_CFG), \
+        with patch("src.data_config.get_data_config", return_value=_OFFSHORE_CFG), \
                 patch.object(manager, "get_realtime_quote", return_value=None), \
                 patch(
                     "data_provider.yfinance_fundamental_adapter.YfinanceFundamentalAdapter.get_fundamental_bundle",
@@ -138,7 +138,7 @@ class TestTwInstitutionReportWiring(unittest.TestCase):
     # ---- fail-open on a fetcher WIRING/init failure (not just a fetch failure) ------
     def test_tw_institution_fail_open_when_fetcher_init_raises(self):
         manager = DataFetcherManager(fetchers=[])
-        with patch("src.config.get_config", return_value=_OFFSHORE_CFG), \
+        with patch("src.data_config.get_data_config", return_value=_OFFSHORE_CFG), \
                 patch.object(manager, "get_realtime_quote", return_value=None), \
                 patch(
                     "data_provider.yfinance_fundamental_adapter.YfinanceFundamentalAdapter.get_fundamental_bundle",
@@ -176,7 +176,7 @@ class TestTwInstitutionReportWiring(unittest.TestCase):
             return dict(_FAKE_REC)
 
         start = time.time()
-        with patch("src.config.get_config", return_value=slow_cfg), \
+        with patch("src.data_config.get_data_config", return_value=slow_cfg), \
                 patch.object(manager, "get_realtime_quote", return_value=None), \
                 patch(
                     "data_provider.yfinance_fundamental_adapter.YfinanceFundamentalAdapter.get_fundamental_bundle",
@@ -221,7 +221,7 @@ class TestTwInstitutionReportWiring(unittest.TestCase):
             time.sleep(1.0)  # > fetch_timeout(0.3) but << stage budget(8) -> must complete
             return dict(_FAKE_REC)
 
-        with patch("src.config.get_config", return_value=cfg), \
+        with patch("src.data_config.get_data_config", return_value=cfg), \
                 patch.object(manager, "get_realtime_quote", return_value=None), \
                 patch(
                     "data_provider.yfinance_fundamental_adapter.YfinanceFundamentalAdapter.get_fundamental_bundle",
@@ -245,7 +245,7 @@ class TestTwInstitutionReportWiring(unittest.TestCase):
             fundamental_retry_max=1,
         )
         manager = DataFetcherManager(fetchers=[])
-        with patch("src.config.get_config", return_value=cfg), \
+        with patch("src.data_config.get_data_config", return_value=cfg), \
                 patch.object(manager, "get_realtime_quote", return_value=None), \
                 patch(
                     "data_provider.yfinance_fundamental_adapter.YfinanceFundamentalAdapter.get_fundamental_bundle",

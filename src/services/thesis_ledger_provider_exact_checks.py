@@ -11,6 +11,8 @@ from src.services.thesis_ledger_provider_dependencies import provider_dependency
 from src.services.thesis_ledger_provider_runtime import classify_provider_exception
 from src.services.thesis_ledger_exact_probe_read import read_exact_probe
 from src.services.thesis_ledger_probe_execution import run_probe
+from src.services.thesis_ledger_account_access_store import configured_level
+from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 
 
 def _check_baseline(runtime, baseline, catalog):
@@ -38,7 +40,7 @@ def _snapshot(store, provider, value):
 
 
 def check_provider(runtime, provider_id, value, *, fixture=False):
-    unknown = set(value) - {"contractVersion", "consumer", "requestId", "credentials", "route", "purpose"}
+    unknown = set(value) - {"contractVersion", "consumer", "requestId", "credentials", "route", "purpose", "accountLevel"}
     if unknown or value.get("purpose", "capability_read") not in {"account_access", "capability_read"}:
         raise ControlContractError("INVALID_PROVIDER_TEST", "来源检查请求包含未知字段", request_id=value["requestId"])
     provider = next((p for p in runtime.store.provider_registry() if p["providerId"] == provider_id.strip().lower()), None)
@@ -50,6 +52,8 @@ def check_provider(runtime, provider_id, value, *, fixture=False):
     if value.get("purpose") == "account_access":
         from src.services.thesis_ledger_account_access import check_account_access
         return check_account_access(runtime, provider, value, catalog, fixture=fixture)
+    if "accountLevel" in value:
+        raise ControlContractError("INVALID_PROVIDER_TEST", "账号等级只用于权限检查")
     entries = [deepcopy(e) for e in catalog["entries"] if e["target"]["providerId"] == provider["providerId"]]
     selected = value.get("route")
     if selected is not None:
@@ -66,11 +70,16 @@ def check_provider(runtime, provider_id, value, *, fixture=False):
     baseline, snapshot = _snapshot(runtime.store, provider, value)
     credential_ready = not provider["requiresCredential"] or basic_price_credential_ready(snapshot)
     routes, capabilities = [], {}
+    source = CAPABILITY_SOURCES.source(provider_id)
+    level = configured_level(runtime.store, provider_id) if source and source.account_access_level else None
     for entry in entries:
         key, target = entry["key"], entry["target"]
         result = {"status": "unavailable", "readOnly": True, "attempted": False, "errorCode": "not_tested"}
         if entry in chosen:
-            if not credential_ready:
+            excluded = source.account_access_level.excluded(key, level) if source and source.account_access_level else None
+            if excluded:
+                result["errorCode"] = excluded["errorCode"]
+            elif not credential_ready:
                 result.update(status="unconfigured", errorCode="credential_missing")
             elif not provider_dependency_ready(provider["providerId"], key, target):
                 result["errorCode"] = "dependency_missing"

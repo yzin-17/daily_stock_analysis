@@ -23,7 +23,7 @@ from tests.test_tushare_fund_identity_evidence import NOW, admission, bundle, en
 @pytest.fixture
 def inputs(monkeypatch, tmp_path):
     config = SimpleNamespace(tushare_token="synthetic-token")
-    monkeypatch.setattr("src.config.get_config", lambda: config)
+    monkeypatch.setattr("src.data_config.get_data_config", lambda: config)
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "synthetic-mapped-master")
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY_VERSION", "synthetic-v1")
     monkeypatch.setenv("TUSHARE_HTTP_URL", "https://synthetic.example.test/api")

@@ -18,6 +18,7 @@ from src.services.thesis_ledger_period_indicator_contract import period_indicato
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _CASES = json.loads((_FIXTURES / "thesis_ledger_period_indicator_v1.shared.json").read_text())["cases"]
+_MINUTE_CASES = json.loads((_FIXTURES / "thesis_ledger_minute_indicator_v1.shared.json").read_text())["cases"]
 
 
 def _client(monkeypatch):
@@ -28,7 +29,7 @@ def _client(monkeypatch):
     return TestClient(app)
 
 
-@pytest.mark.parametrize("case", _CASES, ids=lambda case: case["timeframe"])
+@pytest.mark.parametrize("case", _CASES + _MINUTE_CASES, ids=lambda case: case["timeframe"])
 def test_shared_payload_calculates_actual_period_points(case):
     assert hashlib.sha256(case["aggregationEncoding"].encode()).hexdigest() == case["payload"]["periodContext"]["aggregationFingerprint"]
     result = calculate_indicators(copy.deepcopy(case["payload"]))
@@ -90,7 +91,7 @@ def test_period_http_rejects_invalid_binding_and_input(monkeypatch, kind):
     assert response.status_code == 422
 
 
-@pytest.mark.parametrize("case", _CASES, ids=lambda case: case["timeframe"])
+@pytest.mark.parametrize("case", _CASES + _MINUTE_CASES, ids=lambda case: case["timeframe"])
 def test_shared_period_payload_http_success(monkeypatch, case):
     response = _client(monkeypatch).post(
         "/api/v3/thesis-ledger/market/indicators/calculate",
@@ -114,3 +115,14 @@ def test_changed_aggregation_context_uses_a_new_calculation_identity():
     result = calculate_indicators(payload)
     assert result["inputFingerprint"] != _CASES[0]["payload"]["inputFingerprint"]
     assert result["inputFingerprint"] == payload["inputFingerprint"]
+
+
+@pytest.mark.parametrize("field,value", [("symbol", "510300.SH"), ("adjustment", "qfq")])
+def test_minute_period_rejects_non_comparable_identity(monkeypatch, field, value):
+    payload = copy.deepcopy(_MINUTE_CASES[0]["payload"])
+    payload["identity"][field] = value
+    response = _client(monkeypatch).post(
+        "/api/v3/thesis-ledger/market/indicators/calculate",
+        headers={"Authorization": "Bearer period-test-token"}, json=payload,
+    )
+    assert response.status_code == 422

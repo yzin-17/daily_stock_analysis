@@ -16,6 +16,8 @@ def build_akshare_manifest(*, sina_daily_assets: tuple[str, ...]) -> dict[str, A
             "FUND_NAV_HISTORY": ("MUTUAL_FUND",),
             "FUND_HOLDINGS": ("MUTUAL_FUND",),
             "CHIP_SUMMARY": ("STOCK",),
+            "NEWS_SEARCH": ("STOCK",),
+            "RESEARCH_REPORT_METADATA": ("STOCK",),
         },
         upstream_sources=(
             ("akshare", "AKShare"),
@@ -24,7 +26,7 @@ def build_akshare_manifest(*, sina_daily_assets: tuple[str, ...]) -> dict[str, A
             ("tencent", "腾讯财经"),
         ),
     )
-    manifest["version"] = 4
+    manifest["version"] = 7
     for source in manifest["upstreamSources"]:
         if source["sourceId"] == "eastmoney":
             source["capabilities"].update({
@@ -33,9 +35,15 @@ def build_akshare_manifest(*, sina_daily_assets: tuple[str, ...]) -> dict[str, A
                 "FUND_NAV_HISTORY": ["MUTUAL_FUND"],
                 "FUND_HOLDINGS": ["MUTUAL_FUND"],
                 "CHIP_SUMMARY": ["STOCK"],
+                "NEWS_SEARCH": ["STOCK"],
+                "RESEARCH_REPORT_METADATA": ["STOCK"],
             })
         elif source["sourceId"] in {"sina", "tencent"}:
             source["capabilities"]["REALTIME_QUOTE"] = ["STOCK"]
         if source['sourceId'] == 'sina':
             source['capabilities']['DAILY_BAR'] = list(sina_daily_assets)
+        if source['sourceId'] != 'eastmoney':
+            source['capabilities'].pop('RESEARCH_REPORT_METADATA', None)
+        if source['sourceId'] == 'akshare':
+            source['capabilities'].pop('NEWS_SEARCH', None)
     return manifest

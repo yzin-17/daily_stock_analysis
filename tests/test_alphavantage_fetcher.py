@@ -175,7 +175,7 @@ class TestAlphaVantageFetcherStockName(unittest.TestCase):
 class TestAlphaVantageFetcherInit(unittest.TestCase):
     """Test constructor / key handling."""
 
-    @patch('src.config.get_config')
+    @patch('src.data_config.get_data_config')
     def test_init_with_key(self, mock_config):
         mock_config.return_value = MagicMock(alphavantage_api_key='AVTEST123')
         from data_provider.alphavantage_fetcher import AlphaVantageFetcher
@@ -184,7 +184,7 @@ class TestAlphaVantageFetcherInit(unittest.TestCase):
 
     @patch.dict(os.environ, {}, clear=False)
     @patch('data_provider.alphavantage_fetcher.requests.get')
-    @patch('src.config.get_config')
+    @patch('src.data_config.get_data_config')
     def test_init_without_key(self, mock_config, mock_get):
         os.environ.pop('ALPHAVANTAGE_API_KEY', None)
         mock_config.return_value = MagicMock(alphavantage_api_key=None)

@@ -1,15 +1,15 @@
-"""完整 DSA 应用含前端回退时，旧 ThesisLedger 合同仍逐方法返回 404。"""
+"""正式数据入口中，旧 ThesisLedger 合同逐方法返回 404。"""
 
 from fastapi.testclient import TestClient
 
-from api.app import create_app
+from api.data_app import create_app
 
 
 def test_removed_thesis_ledger_post_does_not_fall_into_spa_method_gate(monkeypatch, tmp_path):
     monkeypatch.setenv("ADMIN_AUTH_ENABLED", "false")
     monkeypatch.setenv("THESIS_LEDGER_CONTROL_TOKEN", "control-token")
     (tmp_path / "index.html").write_text("<html><body>fixture</body></html>", encoding="utf-8")
-    client = TestClient(create_app(static_dir=tmp_path))
+    client = TestClient(create_app())
     headers = {"authorization": "Bearer control-token"}
 
     for prefix in ("/api/v1/thesis-ledger", "/api/v2/thesis-ledger"):
@@ -29,7 +29,7 @@ def test_all_removed_data_families_reject_before_producer_with_spa(monkeypatch, 
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "data-token")
     monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "true")
     (tmp_path / "index.html").write_text("<html>fixture</html>", encoding="utf-8")
-    client = TestClient(create_app(static_dir=tmp_path))
+    client = TestClient(create_app())
     headers = {"authorization": "Bearer data-token"}
     paths = [
         "/capabilities", "/market/quote", "/market/chip", "/market/fund-nav",

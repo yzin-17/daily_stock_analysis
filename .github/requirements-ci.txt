@@ -1,7 +1,8 @@
-# Backend CI dependencies.
+# 后端工程校验依赖；独立于数据运行镜像。
 -r ../requirements.txt
 
-# Test and lint tooling used by backend-gate.
+# 测试、静态检查和工作流 YAML 校验。
 flake8
 pytest
 pytest-timeout>=2.3.0
+PyYAML>=6.0

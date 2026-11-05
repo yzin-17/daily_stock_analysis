@@ -281,6 +281,9 @@ def test_v3_policy_apply_matches_wire_and_is_default_read(monkeypatch, tmp_path)
 
 def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatch, tmp_path):
     monkeypatch.setenv("HITHINK_API_KEY", "synthetic-catalog-readiness-only")
+    monkeypatch.setenv("TICKFLOW_API_KEY", "synthetic-catalog-readiness-only")
+    monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "synthetic-catalog-readiness-only")
+    monkeypatch.setenv("FINNHUB_API_KEY", "synthetic-catalog-readiness-only")
     client = _client(monkeypatch, tmp_path)
     headers = {"authorization": "Bearer control-token"}
     assert client.get(
@@ -335,9 +338,19 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
             assert entry["key"]["kind"] == "data" and support.capability == entry["key"]["capability"]
             binding = CAPABILITY_SOURCES.resolve(entry["key"], entry["target"])
             assert binding.query_support.model_dump() == entry["querySupport"]
+        if "accountAccess" in entry:
+            from src.services.thesis_ledger_account_access_contract import AccountAccessResult
+            fields.add("accountAccess")
+            access = AccountAccessResult.model_validate(entry["accountAccess"])
+            assert entry["target"]["providerId"] == "tushare"
+            assert access.attempted is False and access.state in {"unknown", "credential_missing"}
         assert set(entry) == fields
     assert any("barQuery" in entry for entry in catalog["entries"])
-    bars = [entry for entry in catalog["entries"] if entry["key"]["kind"] == "bar"]
+    bars = [entry for entry in catalog["entries"] if entry["key"]["capability"] == "DAILY_BAR"]
+    minutes = [entry for entry in catalog["entries"] if entry["key"]["capability"] == "MINUTE_BAR"]
+    assert {(e["key"]["market"], e["key"]["assetType"], e["key"]["timeframe"], e["key"]["adjustment"],
+             e["target"]["providerId"]) for e in minutes} == {
+        (market, asset, "1m", "none", "futu") for market in ("HK", "US") for asset in ("STOCK", "ETF")}
     events = [
         entry for entry in catalog["entries"]
         if entry["key"]["kind"] == "data"
@@ -360,7 +373,7 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
         ("ETF", "tencent", "tencent"),
     }
     for entry in quote_targets:
-        if entry["target"]["providerId"] in {"akshare", "efinance", "pytdx", "yfinance", "tencent", "hithink"}:
+        if entry["target"]["providerId"] in {"akshare", "efinance", "pytdx", "yfinance", "tencent", "hithink", "tickflow", "alphavantage", "finnhub"}:
             assert entry["state"] == "ready"
         else:
             assert entry["state"] in {"credential_missing", "not_admitted"}
@@ -380,6 +393,7 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     }, {
         "key": {"kind": "data", "market": "CN", "assetType": "ETF", "capability": "CASH_DISTRIBUTION"},
         "target": {"providerId": "tushare", "upstreamSource": "tushare"}, "state": "credential_missing",
+        "accountAccess": {"state": "credential_missing", "attempted": False, "errorCode": "credential_missing"},
     }, {
         "key": {"kind": "data", "market": "CN", "assetType": "ETF", "capability": "CASH_DISTRIBUTION"},
         "target": {"providerId": "hithink", "upstreamSource": "fund-corporate-actions-dividends"},
@@ -430,10 +444,11 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     }
     expected |= {(asset, adjustment, "efinance", "eastmoney") for asset in ("STOCK", "ETF") for adjustment in ("none", "qfq", "hfq")}
     expected |= {("STOCK", adjustment, provider, provider) for provider in ("baostock", "tickflow") for adjustment in ("none", "qfq", "hfq")}
+    expected |= {("STOCK", adjustment, "tickflow-free", "tickflow-free-history") for adjustment in ("none", "qfq", "hfq")}
     expected |= {("STOCK", "none", provider, provider) for provider in ("pytdx", "tushare")}
     expected |= {(asset, "qfq", "yfinance", "yfinance") for asset in ("STOCK", "ETF")}
     assert set(rows) == expected
-    assert len(rows) == 38
+    assert len(rows) == 41
     foreign_rows = {
         (entry["key"]["market"], entry["key"]["assetType"], entry["key"]["adjustment"],
          entry["target"]["providerId"], entry["target"]["upstreamSource"])
@@ -456,12 +471,13 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
         ("US", "STOCK", "none", "alphavantage", "alphavantage"),
     }
     assert foreign_rows == foreign_expected
-    assert len(bars) == 68
+    assert len(bars) == 71
     assert [entry["key"] for entry in bars if entry["target"]["upstreamSource"] == "yahoo-gme-share-window"] == [{
         "kind": "bar", "market": "US", "assetType": "STOCK", "capability": "DAILY_BAR", "timeframe": "1d", "adjustment": "none",
     }]
     assert len(catalog["entries"]) > len(bars) + len(events)
-    basic_ready = {key for key in expected if key[2] not in {"tushare", "tickflow"}}
+    # 本例显式提供 TickFlow 合成凭据，日线就绪预期与报价采用同一配置。
+    basic_ready = {key for key in expected if key[2] != "tushare"}
     assert {key for key, state in rows.items() if state == "ready"} == basic_ready
     assert all(state in {"credential_missing", "not_admitted"} for key, state in rows.items() if key not in basic_ready)
     assert {entry["key"]["market"] for entry in catalog["entries"]} == {"CN", "HK", "US"}

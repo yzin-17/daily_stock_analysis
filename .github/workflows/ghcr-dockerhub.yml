@@ -88,17 +88,7 @@ jobs:
             latest=false
 
       - name: Pre-publish docker smoke
-        run: |
-          docker build -t stock-analysis:manual -f docker/Dockerfile .
-          docker run --rm stock-analysis:manual python -c "
-          from src.config import get_config; print('ok-config')
-          from src.storage import DatabaseManager; print('ok-storage')
-          from src.notification import NotificationService; print('ok-notification')
-          from data_provider import DataFetcherManager; print('ok-data-provider')
-          from src.analyzer import GeminiAnalyzer; print('ok-analyzer')
-          import futu; print('ok-futu')
-          print('manual-smoke-ok')
-          "
+        run: bash scripts/verify_data_image.sh --build stock-analysis:manual
 
       - name: Build and push multi-arch images
         uses: docker/build-push-action@v5

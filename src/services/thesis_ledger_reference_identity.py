@@ -6,8 +6,7 @@ import json
 from pathlib import Path
 
 from src.services.thesis_ledger_dependency_facts import DependencyFactError, validate_cn_stock
-from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
-from src.services.thesis_ledger_capability_registry import DailyBinding
+from src.services.thesis_ledger_research_instrument_reader import source_research_binding
 
 DATA_PATH = Path(__file__).resolve().parents[2] / "data_provider/market_reference/p6-identities.json"
 
@@ -36,14 +35,15 @@ def validate_instrument_request(symbol, market, instrument_type, canonicalize, i
                                 bar_provider_id=None, bar_upstream_source=None):
     if market == "CN":
         return validate_cn_stock(symbol, market, instrument_type, canonicalize)
-    if instrument_type == 'STOCK' and identity_only and adjustment == 'none':
-        binding = CAPABILITY_SOURCES.resolve(
+    if instrument_type == 'STOCK' and identity_only and adjustment in ('none', 'qfq'):
+        binding = source_research_binding(
             {'kind': 'bar', 'market': market, 'assetType': instrument_type, 'capability': 'DAILY_BAR', 'timeframe': '1d', 'adjustment': adjustment},
             {'providerId': bar_provider_id, 'upstreamSource': bar_upstream_source},
         )
-        if (isinstance(binding, DailyBinding) and binding.research_instrument_policy is not None
-                and binding.research_instrument_policy.supports_symbol(symbol) is True):
-            return symbol
+        if binding is not None:
+            if binding.research_instrument_policy.supports_symbol(symbol) is True:
+                return symbol
+            raise DependencyFactError('not_covered', '该价格来源的研究身份未覆盖请求证券或市场')
     if not identity_only or instrument_type != "STOCK" or adjustment != "qfq" or reference_identity(symbol, market) is None:
         raise DependencyFactError("unsupported_capability", "港美股首批仅支持已核验身份的归一化观察；原价或市场单位未核实")
     return symbol

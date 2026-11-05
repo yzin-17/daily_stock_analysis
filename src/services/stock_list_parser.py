@@ -245,7 +245,7 @@ class IndexRegistry:
     that already exist as hard-coded white-lists across
     ``data_provider/*_fetcher.py``. PR1 deliberately keeps the registry
     in-memory and immutable — later phases of issue #2063 will load the
-    ``asset_type=index`` rows from ``apps/dsa-web/public/stocks.index.json``
+    ``asset_type=index`` rows from ``src/data/assets/stocks.index.json``
     once that file carries index rows; the parser contract won't change.
     """
 
@@ -306,7 +306,7 @@ class IndexRegistry:
 # present in ``data_provider/{efinance,akshare,yfinance,tickflow}_fetcher.py``.
 # Keeping this list in one place + giving it a public ``IndexRegistry`` type
 # is the whole point of PR1; later phases may move the data into
-# ``apps/dsa-web/public/stocks.index.json`` and load it, but the parser
+# ``src/data/assets/stocks.index.json`` and load it, but the parser
 # contract stays stable.
 _DEFAULT_INDEX_ENTRIES: Tuple[IndexEntry, ...] = (
     IndexEntry(

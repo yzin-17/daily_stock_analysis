@@ -66,7 +66,8 @@ def test_catalog_and_saved_policy_can_read_real_pack_without_admission(configure
     source = next(item for item in providers if item["providerId"] == PROVIDER_ID)
     assert source["configurationMode"] == "built_in"
     assert source["requiresCredential"] is False
-    assert source["upstreamSources"][0]["capabilities"][CAPABILITY] == ["STOCK"]
+    stock_source = next(item for item in source["upstreamSources"] if item["sourceId"] == UPSTREAM_SOURCE)
+    assert stock_source["capabilities"][CAPABILITY] == ["STOCK"]
     saved = client.post("/api/v3/thesis-ledger/control/policies/apply", json=policy(), headers=CONTROL_HEADERS)
     assert saved.status_code == 200
     assert saved.json()["effective"]["routes"][0]["targets"][0]["eligible"] is True

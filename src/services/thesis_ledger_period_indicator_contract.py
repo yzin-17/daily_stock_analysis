@@ -10,7 +10,8 @@ from datetime import datetime
 from typing import Any, Callable
 
 PERIOD_PROTOCOL = "market-period-indicator-v1"
-PERIOD_TIMEFRAMES = ("5d", "1w", "1mo", "1y")
+MINUTE_PERIOD_TIMEFRAMES = ("5m", "15m", "30m", "60m")
+PERIOD_TIMEFRAMES = ("5d", "1w", "1mo", "1y", *MINUTE_PERIOD_TIMEFRAMES)
 MAX_PERIOD_POINTS = 3650
 _FINGERPRINT = re.compile(r"^[a-f0-9]{64}$")
 
@@ -108,6 +109,10 @@ def validate_indicator_fingerprint(
         or identity["adjustment"] not in ("none", "qfq", "hfq")
     ):
         raise ValueError("派生指标只支持有效股票/ETF 口径")
+    if timeframe in MINUTE_PERIOD_TIMEFRAMES and (
+        not identity["symbol"].endswith((".HK", ".US")) or identity["adjustment"] != "none"
+    ):
+        raise ValueError("分钟派生指标只支持港美股票/ETF不复权口径")
     if (
         not isinstance(context, dict)
         or set(context) != {"protocol", "aggregationFingerprint", "pointFingerprint"}

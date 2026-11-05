@@ -171,7 +171,7 @@ class TestFinnhubFetcherStockName(unittest.TestCase):
 class TestFinnhubFetcherInit(unittest.TestCase):
     """Test constructor / key handling."""
 
-    @patch('src.config.get_config')
+    @patch('src.data_config.get_data_config')
     def test_init_with_key(self, mock_config):
         mock_config.return_value = MagicMock(finnhub_api_key='sk-test-123')
         from data_provider.finnhub_fetcher import FinnhubFetcher
@@ -180,7 +180,7 @@ class TestFinnhubFetcherInit(unittest.TestCase):
 
     @patch.dict(os.environ, {}, clear=False)
     @patch('data_provider.finnhub_fetcher.requests.get')
-    @patch('src.config.get_config')
+    @patch('src.data_config.get_data_config')
     def test_init_without_key(self, mock_config, mock_get):
         os.environ.pop('FINNHUB_API_KEY', None)
         mock_config.return_value = MagicMock(finnhub_api_key=None)
@@ -196,7 +196,7 @@ class TestFinnhubFetcherInit(unittest.TestCase):
 class TestFinnhubFetcherRegistration(unittest.TestCase):
     """Test that FinnhubFetcher is registered in DataFetcherManager when key is present."""
 
-    @patch('src.config.get_config')
+    @patch('src.data_config.get_data_config')
     def test_registered_with_key(self, mock_config):
         mock_config.return_value = MagicMock(
             finnhub_api_key='sk-test',
@@ -212,7 +212,7 @@ class TestFinnhubFetcherRegistration(unittest.TestCase):
         names = [f.name for f in mgr._get_fetchers_snapshot()]
         self.assertIn('FinnhubFetcher', names)
 
-    @patch('src.config.get_config')
+    @patch('src.data_config.get_data_config')
     def test_not_registered_without_key(self, mock_config):
         mock_config.return_value = MagicMock(
             finnhub_api_key=None,
@@ -232,7 +232,7 @@ class TestFinnhubFetcherRegistration(unittest.TestCase):
 class TestUSDailyRoutingFallback(unittest.TestCase):
     """Verify US daily routing includes Finnhub/AlphaVantage in the failover chain."""
 
-    @patch('src.config.get_config')
+    @patch('src.data_config.get_data_config')
     def test_us_routing_includes_new_fetchers(self, mock_config):
         """US stock get_daily_data source_order must contain Finnhub and AlphaVantage."""
         mock_config.return_value = MagicMock(

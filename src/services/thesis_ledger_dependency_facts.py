@@ -12,8 +12,6 @@ from src.services.thesis_ledger_tradability_provider import real_cn_tradability
 from src.services.thesis_ledger_calendar_release import (
     RELEASE_ADAPTER_REVISION, verified_calendar_available_at,
 )
-from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
-from src.services.thesis_ledger_capability_registry import DailyBinding
 
 logger = logging.getLogger(__name__)
 
@@ -234,26 +232,16 @@ def instrument_facts_response(
     if market != "CN":
         from src.services.thesis_ledger_reference_identity import reference_instrument_fact
 
-        if market in {"HK", "US"} and instrument_type == "STOCK" and identity_only and route_key and route_key.get("adjustment") == "none":
+        if market in {"HK", "US"} and instrument_type == "STOCK" and identity_only and route_key:
             from src.services.thesis_ledger_capability_contracts import CapabilityContractError
-            from src.services.thesis_ledger_research_instrument_contract import ResearchInstrumentRequest, correlate_research_instrument
-            binding = CAPABILITY_SOURCES.resolve(route_key, route_target) if route_target else None
-            if not isinstance(binding, DailyBinding) or binding.research_instrument_policy is None:
-                raise DependencyFactError("unsupported_capability", "按股事实需要相同已核对价格来源")
-            policy = binding.research_instrument_policy
-            if binding.key.market != market:
-                raise DependencyFactError('unsupported_capability', '按股事实需要同一已核对证券身份')
-            if policy.supports_symbol(symbol) is not True:
-                raise DependencyFactError('not_covered', '按股事实未覆盖该证券身份')
+            from src.services.thesis_ledger_research_instrument_reader import read_source_research_instrument
             try:
-                request = ResearchInstrumentRequest(symbol=symbol, market=market, start=start, end=end, data_as_of=data_as_of)
-                fact = correlate_research_instrument(request, policy.read(request), binding.upstream_source).model_dump()
+                fact = read_source_research_instrument(symbol, market, start, end, data_as_of, route_key, route_target)
             except CapabilityContractError as error:
                 raise DependencyFactError(error.code, str(error)) from None
-            except ValueError:
-                raise DependencyFactError('invalid_response', '研究身份事实与标准合同不符') from None
-            return response(status="supported", provider=binding.upstream_source, provider_revision=fact["providerRevision"],
-                            coverage={"start": start, "end": end, "complete": True}, facts=[fact])
+            if fact is not None:
+                return response(status="supported", provider=fact['provider'], provider_revision=fact["providerRevision"],
+                                coverage={"start": start, "end": end, "complete": True}, facts=[fact])
         if not identity_only or instrument_type != "STOCK":
             raise DependencyFactError("unsupported_capability", "港美股市场单位未核实，不能作为原价执行事实")
         fact = reference_instrument_fact(symbol, market, data_as_of)

@@ -32,7 +32,8 @@ def test_every_source_capability_and_upstream_is_projected_from_exact_inventory(
 @pytest.fixture
 def oauth_environment(monkeypatch, tmp_path):
     from data_provider import longbridge_fetcher
-    monkeypatch.setattr("src.config.get_config", lambda: SimpleNamespace(longbridge_oauth_client_id="synthetic-client"))
+    from src.data_config import DataServiceConfig
+    monkeypatch.setattr("src.data_config.get_data_config", lambda: DataServiceConfig(longbridge_oauth_client_id="synthetic-client"))
     for name in ["LONGBRIDGE_APP_KEY", "LONGBRIDGE_APP_SECRET", "LONGBRIDGE_ACCESS_TOKEN", "LONGBRIDGE_OAUTH_TOKEN_CACHE_B64", "LONGBRIDGE_OAUTH_CLIENT_ID"]:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(longbridge_fetcher, "_oauth_token_cache_path", lambda _: tmp_path / "missing-token")

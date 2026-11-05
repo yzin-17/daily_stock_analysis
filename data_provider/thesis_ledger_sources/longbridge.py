@@ -15,12 +15,9 @@ PROTOCOL = "dsa-longbridge-exact-daily-single-response-v1"
 
 
 def environment_credentials():
-    try:
-        from src.config import get_config
-        from src.services.thesis_ledger_longbridge_environment import longbridge_environment_values
-        return longbridge_environment_values(get_config())
-    except Exception:
-        return {}
+    from src.data_config import get_data_config
+    from src.services.thesis_ledger_longbridge_environment import longbridge_environment_values
+    return longbridge_environment_values(get_data_config())
 
 
 def environment_method(values):

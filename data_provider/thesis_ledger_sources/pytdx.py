@@ -3,15 +3,18 @@
 from data_provider.exact_daily_contract import ExactDailyError, normalize_exact_daily
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError, DailyRead, provider_symbol_for_contract
 from src.services.thesis_ledger_capability_registry import DailyBinding, QuoteBinding, ExactKey, SourceDefinition
+from data_provider.market_reference_bindings import reference_bindings, reference_manifest
+
+REFERENCE_BINDINGS = reference_bindings('pytdx')
 
 PROTOCOL = "dsa-pytdx-exact-daily-single-response-v1"
 
 
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
-    return build_provider_manifest("pytdx", "通达信（pytdx）", {
+    return reference_manifest(build_provider_manifest("pytdx", "通达信（pytdx）", {
         "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK",),
-    }, markets=("CN",), configuration_mode="built_in")
+    }, markets=("CN",), configuration_mode="built_in"), REFERENCE_BINDINGS)
 
 
 def factory(context):
@@ -70,4 +73,4 @@ SOURCE = SourceDefinition("pytdx", manifest, factory, (
                  None, daily, gated=True),
     QuoteBinding(ExactKey("CN", "STOCK", "REALTIME_QUOTE"), "pytdx",
         "pytdx-stock-quote-v2", "pytdx-direct-v1", quote),
-), ("data_provider.pytdx_fetcher", "PytdxFetcher"), dependency_modules=("pytdx",))
+) + REFERENCE_BINDINGS, ("data_provider.pytdx_fetcher", "PytdxFetcher"), dependency_modules=("pytdx",))

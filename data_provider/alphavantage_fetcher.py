@@ -63,7 +63,7 @@ class AlphaVantageFetcher(BaseFetcher):
 
     def __init__(self, api_key: Optional[str] = None, *, strict_errors: bool = False):
         if api_key is None:
-            from src.config import get_config
+            from src.data_config import get_data_config as get_config
 
             config = get_config()
             api_key = getattr(config, "alphavantage_api_key", None) or os.getenv(

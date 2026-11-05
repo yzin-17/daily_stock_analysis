@@ -1,5 +1,7 @@
 <div align="center">
 
+> 历史首页：保留上游产品版本的原语言资料与引用，当前 Fork 的数据服务定位、入口和验收以 [README](../README.md) 及[实施任务](archive/tasks/2026-10-18-data-only-service.md)为准。本页不再作为当前构建或运行指南。
+
 # 股票智能分析系統
 
 [![GitHub stars](https://img.shields.io/github/stars/ZhuLinsen/daily_stock_analysis?style=social)](https://github.com/ZhuLinsen/daily_stock_analysis/stargazers)

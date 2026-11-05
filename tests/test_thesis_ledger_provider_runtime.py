@@ -127,6 +127,7 @@ def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
         "tencent",
         "tushare",
         "tickflow",
+        "tickflow-free",
         "pytdx",
         "baostock",
         "yfinance",
@@ -136,9 +137,16 @@ def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
         "alphavantage",
         "hithink",
         "rqdata",
+        "tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng",
     }
     assert all("routeEligible" not in manifest for manifest in registry.values())
-    assert set(_PROVIDER_ADAPTER_IMPORTS) == set(registry) - {"hithink", "rqdata"}
+    news = {"tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng"}
+    assert set(_PROVIDER_ADAPTER_IMPORTS) == set(registry) - {"hithink", "rqdata", "tickflow-free"} - news
+    assert all(registry[provider]["enabled"] is False for provider in news)
+    from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+    free = CAPABILITY_SOURCES.source("tickflow-free")
+    assert free.adapter_import is None and callable(free.factory)
+    assert registry["tickflow-free"]["capabilities"] == {"DAILY_BAR": ["STOCK"]}
     assert registry["hithink"]["capabilities"] == {
         "DAILY_BAR": ["ETF", "STOCK"],
         "REALTIME_QUOTE": ["ETF", "STOCK"],

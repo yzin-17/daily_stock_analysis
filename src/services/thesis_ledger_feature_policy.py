@@ -9,7 +9,7 @@ def validate_feature_route_shape(route, fail, request_id):
     if "enabled" in route and type(route["enabled"]) is not bool:
         fail("INVALID_POLICY_SCHEMA", "功能 enabled 必须是布尔值", request_id)
     key = route.get("key")
-    if isinstance(key, dict) and key.get("capability") in NAMES and "enabled" not in route:
+    if isinstance(key, dict) and key.get("capability") in {*NAMES, "NEWS_SEARCH", "NEWS_FEED"} and "enabled" not in route:
         fail("INVALID_POLICY_SCHEMA", "新增独立功能须明确启停状态", request_id)
 
 
@@ -38,3 +38,11 @@ def feature_provider_epoch(store, provider_ids):
         from .thesis_ledger_current_data_route import CurrentDataRouteError
         raise CurrentDataRouteError("not_admitted", "来源控制版本缺失")
     return {provider: (row["configVersion"], row["enabled"]) for provider, row in rows.items()}
+
+
+def provider_enabled(provider_id, config):
+    if config is not None:
+        return bool(config["enabled"])
+    from .thesis_ledger_capability_sources import CAPABILITY_SOURCES
+    source = CAPABILITY_SOURCES.source(provider_id)
+    return source.default_enabled if source is not None else True

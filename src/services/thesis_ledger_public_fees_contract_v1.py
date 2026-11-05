@@ -48,7 +48,7 @@ class Model(BaseModel):
 class FeeKey(Model):
     kind: Literal['data']
     market: Literal['CN', 'HK', 'US']
-    assetType: Literal['STOCK']
+    assetType: Literal['STOCK', 'ETF']
     capability: Literal['HISTORICAL_PUBLIC_FEES']
 
 
@@ -80,9 +80,11 @@ class FeeRequest(Model):
 
     @classmethod
     def from_request(cls, request):
-        if request.instrument_type != 'STOCK' or any(getattr(request, field) is not None for field in ('limit', 'timeframe', 'adjustment')):
-            raise ValueError('公共费用仅接受股票日期窗口')
+        if request.instrument_type not in ('STOCK', 'ETF') or any(getattr(request, field) is not None for field in ('limit', 'timeframe', 'adjustment')):
+            raise ValueError('公共费用仅接受股票或ETF日期窗口')
         query = cls.model_validate({**dict(request.parameters or {}), 'symbol':request.symbol})
+        if query.routeKey.assetType != request.instrument_type:
+            raise ValueError('公共费用资产类型与外层请求不一致')
         if query.requestId != request.request_id or query.range.start != request.start or query.range.end != request.end:
             raise ValueError('公共费用参数与外层请求不一致')
         return query

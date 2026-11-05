@@ -1,0 +1,423 @@
+{
+  "version": "dsa-dg2a-target-v1",
+  "startedAt": "2026-10-19T16:37:45.668Z",
+  "name": "dsa-dg2a-3200b307-9b0d-43f0-b2bf-133f3c5afca7",
+  "sdkConsumers": [
+    {
+      "scenario": "basics",
+      "results": [
+        {
+          "client": "marketCalendar",
+          "expectedHttpStatus": 200,
+          "passed": true
+        },
+        {
+          "client": "backtestCalendar",
+          "expectedHttpStatus": 200,
+          "passed": true
+        },
+        {
+          "client": "fxRates",
+          "expectedHttpStatus": 200,
+          "passed": true
+        },
+        {
+          "client": "calculateIndicators",
+          "expectedHttpStatus": 200,
+          "passed": true
+        },
+        {
+          "client": "calculateIndicators",
+          "expectedHttpStatus": 200,
+          "passed": true
+        },
+        {
+          "client": "calculateIndicators",
+          "expectedHttpStatus": 422,
+          "passed": true
+        }
+      ],
+      "cleanShutdown": true
+    },
+    {
+      "scenario": "bars",
+      "results": [
+        {
+          "client": "marketBarsV3",
+          "expectedHttpStatus": 200,
+          "passed": true
+        },
+        {
+          "client": "marketChartBarsV3",
+          "expectedHttpStatus": 200,
+          "passed": true
+        },
+        {
+          "client": "marketBarsV3",
+          "expectedHttpStatus": 422,
+          "passed": true
+        }
+      ],
+      "cleanShutdown": true
+    },
+    {
+      "scenario": "events",
+      "results": [
+        {
+          "client": "marketEventsV3",
+          "expectedHttpStatus": 200,
+          "passed": true
+        },
+        {
+          "client": "marketEventsV3",
+          "expectedHttpStatus": 422,
+          "passed": true
+        }
+      ],
+      "cleanShutdown": true
+    },
+    {
+      "scenario": "nav",
+      "results": [
+        {
+          "client": "marketNavInputsV3",
+          "expectedHttpStatus": 200,
+          "passed": true
+        },
+        {
+          "client": "marketNavInputsV3",
+          "expectedHttpStatus": 422,
+          "passed": true
+        }
+      ],
+      "cleanShutdown": true
+    },
+    {
+      "scenario": "rules",
+      "results": [
+        {
+          "client": "marketPublicFeesV3",
+          "expectedHttpStatus": 200,
+          "passed": true
+        },
+        {
+          "client": "marketPublicFeesV3",
+          "expectedHttpStatus": 503,
+          "passed": true
+        }
+      ],
+      "cleanShutdown": true
+    },
+    {
+      "scenario": "reference",
+      "results": [
+        {
+          "client": "securityLotSize",
+          "expectedHttpStatus": 200,
+          "passed": true
+        },
+        {
+          "client": "securityLotSize",
+          "expectedHttpStatus": 422,
+          "passed": true
+        }
+      ],
+      "cleanShutdown": true
+    }
+  ],
+  "trace": [
+    {
+      "scenario": "basics",
+      "path": "/api/v3/thesis-ledger/market/calendar?market=CN&start=2026-09-01&end=2026-09-04&dataAsOf=2026-10-16T12%3A00%3A00Z",
+      "method": "GET",
+      "status": 200,
+      "bodySha256": "990584fe032452699dcf30a528df2f08b12df615d4af6d40dd9688f59e5f4830"
+    },
+    {
+      "scenario": "basics",
+      "path": "/api/v3/thesis-ledger/backtest/calendar?market=CN&start=2026-09-01&end=2026-09-04&dataAsOf=2026-10-16T12%3A00%3A00Z",
+      "method": "GET",
+      "status": 200,
+      "bodySha256": "990584fe032452699dcf30a528df2f08b12df615d4af6d40dd9688f59e5f4830"
+    },
+    {
+      "scenario": "basics",
+      "path": "/api/v3/thesis-ledger/market/fx-rates?baseCurrency=CNY&currencies=USD%2CCNY&asOf=2026-10-16",
+      "method": "GET",
+      "status": 200,
+      "bodySha256": "c2d5a6b311fc8032ae81a32944351c24135fed817a2ab02318e3f4c94bfe974b"
+    },
+    {
+      "scenario": "basics",
+      "path": "/api/v3/thesis-ledger/market/indicators/calculate",
+      "method": "POST",
+      "status": 200,
+      "bodySha256": "56e324386b85eb7164e6d0389a9328b4811481ea0afc587d646df42cfb6e377a"
+    },
+    {
+      "scenario": "basics",
+      "path": "/api/v3/thesis-ledger/market/indicators/calculate",
+      "method": "POST",
+      "status": 200,
+      "bodySha256": "9215ca14a2497db1212db7b805a9d4002c2f3c7ce197a67e8f27ffa6056c594c"
+    },
+    {
+      "scenario": "basics",
+      "path": "/api/v3/thesis-ledger/market/indicators/calculate",
+      "method": "POST",
+      "status": 422,
+      "bodySha256": "8eb614bbc4a23331ff7ee8552e0c59a5ac932a0d28b8c899604887b004e88f90"
+    },
+    {
+      "scenario": "bars",
+      "path": "/api/v3/thesis-ledger/market/bars",
+      "method": "POST",
+      "status": 200,
+      "bodySha256": "ad4b20dc7b219fb1bb7f9ae093a6a4f5e6c32315b785c354b897e22ec8b0cd31"
+    },
+    {
+      "scenario": "bars",
+      "path": "/api/v3/thesis-ledger/market/chart-bars",
+      "method": "POST",
+      "status": 200,
+      "bodySha256": "9b3f14337b578682a210caafe0a700b083bd127d5b6b82aa3061771af0e811c9"
+    },
+    {
+      "scenario": "bars",
+      "path": "/api/v3/thesis-ledger/market/bars",
+      "method": "POST",
+      "status": 422,
+      "bodySha256": "0bc134ea42bb8ec212ca58ef12865e197435039c237f9bc000bc3ffebef443e8"
+    },
+    {
+      "scenario": "events",
+      "path": "/api/v3/thesis-ledger/market/events",
+      "method": "POST",
+      "status": 200,
+      "bodySha256": "c91c0533d58717fd8710644417cf636bb8fe456cb273cdf9743e67738106d2c9"
+    },
+    {
+      "scenario": "events",
+      "path": "/api/v3/thesis-ledger/market/events",
+      "method": "POST",
+      "status": 422,
+      "bodySha256": "10139a44cb520052210cc5a49c78791bb9ecc2fa8f409ac56c3682d1cd63e56a"
+    },
+    {
+      "scenario": "nav",
+      "path": "/api/v3/thesis-ledger/backtest/nav-inputs",
+      "method": "POST",
+      "status": 200,
+      "bodySha256": "1c3078e7652a97d16c1e224a0eae20232959a5bd973a0557b570d7f590500ef5"
+    },
+    {
+      "scenario": "nav",
+      "path": "/api/v3/thesis-ledger/backtest/nav-inputs",
+      "method": "POST",
+      "status": 422,
+      "bodySha256": "004ab38c4cb7385bcce42d8c901da78b6a661f5f85b83b64d3544e43a3aab408"
+    },
+    {
+      "scenario": "rules",
+      "path": "/api/v3/thesis-ledger/market/public-fees",
+      "method": "POST",
+      "status": 200,
+      "bodySha256": "ef41073c30d72b5b3dfe2393c4788f61dae51d19ce5f0e41196ca64b9c4005c6"
+    },
+    {
+      "scenario": "rules",
+      "path": "/api/v3/thesis-ledger/market/public-fees",
+      "method": "POST",
+      "status": 503,
+      "bodySha256": "37167bd7f44dcf164c50d70980de9b8d394cb080a521747e76d2d5ea8298cb56"
+    },
+    {
+      "scenario": "reference",
+      "path": "/api/v3/thesis-ledger/market/security-lot-size",
+      "method": "POST",
+      "status": 200,
+      "bodySha256": "d9b4b5218bdd5a7566dd3450aa9a0fc1a564630dd20fc3ec80d96b31fe741069"
+    },
+    {
+      "scenario": "reference",
+      "path": "/api/v3/thesis-ledger/market/security-lot-size",
+      "method": "POST",
+      "status": 422,
+      "bodySha256": "f89c845e7b123c31be1fc7fcdfb6e3c8305d6be3528e46c0d299eedd1dd32df9"
+    }
+  ],
+  "backup": {
+    "path": "/Users/yzin/code/thesis-ledger-workspace/thesis-ledger-infra/.maintenance-backups/dg2a-20261019-1",
+    "createdAt": "2026-10-19T15:25:48.692Z",
+    "files": [
+      {
+        "name": "postgres.dump",
+        "bytes": 3862283,
+        "sha256": "f2766c51619f97f888b1c309b27c3327e5591b9243183b6b004d5ca5c683990f"
+      },
+      {
+        "name": "dsa.sqlite",
+        "bytes": 27070464,
+        "sha256": "40de7183b1d0c1f774407ce12d8cb8770bae2a2893f5c428bfab45becba75e04"
+      },
+      {
+        "name": "dsa-data.tar",
+        "bytes": 9676800,
+        "sha256": "e37cd13ab90164397f4c4383b5e8fdfc5099df40274edf310688baf82d54bb09"
+      },
+      {
+        "name": "backtest.tar",
+        "bytes": 4939776,
+        "sha256": "e0928461e9642b1b09d97cb14c69622760f4fc6fb850c6faabc7fb2b991b7348"
+      }
+    ],
+    "images": {
+      "postgres": "sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "dsa": "sha256:ffba40664b7f59baab8c575ffef7f14c3a899ed49672156e692aac7c39385477",
+      "worker": "sha256:c1f3c9d890e17f6ffa827aae9c80a8b21fd53e4d37d08ed4a51a3f3de8187eac",
+      "server": "sha256:c1f3c9d890e17f6ffa827aae9c80a8b21fd53e4d37d08ed4a51a3f3de8187eac"
+    }
+  },
+  "target": {
+    "id": "6534d71d612a635547f62c13bd78e336af8c97930da106ccef78bc03a3d24a1c",
+    "image": "sha256:06b6054ba433de813e1bfc407872b4068ed9d9650946143c19dd5d3147c6f389",
+    "startedAt": "2026-10-19T16:14:39.649584096Z",
+    "command": [
+      "python",
+      "-m",
+      "uvicorn",
+      "server:app",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "8000"
+    ],
+    "mounts": [
+      {
+        "type": "volume",
+        "source": "thesis-ledger-dsa-data",
+        "target": "/app/data",
+        "readOnly": false,
+        "propagation": null
+      },
+      {
+        "type": "volume",
+        "source": "599903abb5be8079f8d4279528f106b20ccbd5e1cf0678ae47e3230335ccfcd4",
+        "target": "/app/logs",
+        "readOnly": false,
+        "propagation": null
+      },
+      {
+        "type": "volume",
+        "source": "32477b9586909ccdd76546d18db79872e3f49ee7d3c37db6df78131be426a7d0",
+        "target": "/app/reports",
+        "readOnly": false,
+        "propagation": null
+      }
+    ]
+  },
+  "rollback": {
+    "checkpoint": "/Users/yzin/code/thesis-ledger-workspace/thesis-ledger-infra/.maintenance-backups/dsa-runtime/1792425319093-ffba40664b7f.json",
+    "oldImageAvailable": true
+  },
+  "runtime": {
+    "healthStatus": 200,
+    "dataContractVersions": [
+      3
+    ],
+    "controlContractVersion": 3,
+    "providerRegistryCount": 27,
+    "openApiPaths": 45,
+    "unauthorizedStatus": 401,
+    "retiredAnalysisStatus": 404
+  },
+  "candidate": {
+    "files": 407,
+    "sha256": "c22cff82827114b35c4d4aafa08c7dd58380e06c13bef7bb73cb420f1ae42e6b",
+    "image": "sha256:06b6054ba433de813e1bfc407872b4068ed9d9650946143c19dd5d3147c6f389",
+    "longbridge": "4.5.0+thesisledger.1",
+    "storageVersion": 1,
+    "models": {
+      "openai": false,
+      "anthropic": false,
+      "litellm": false,
+      "google.genai": false,
+      "google.generativeai": false,
+      "langchain": false,
+      "llama_index": false
+    },
+    "bytecodeFiles": 271,
+    "invalidBytecode": [],
+    "emptyRetiredDirectories": [],
+    "compatibility": {
+      "contractVersion": "dsa-data-runtime-v1",
+      "files": {
+        ".dockerignore": "88e0faa38557b04e030afab5273d5e0b53cf419e838f66aae257f91a1493f8ca",
+        "docker/Dockerfile": "58ba6d6c5bc981e94d2b2b5232d33f2d1fdce93b3f26e8701ea7ca0fa9918d64",
+        "docker/entrypoint.sh": "effa5bcf1fff188d22204b7167c7c8ba8354ba4725830a39dddb5bea92c014e5",
+        "patches/longbridge-sdk/Cargo.lock": "5bbbe4447dd4a259d0f72eb80a6ca1d7454c07d468ff6abd97a06559ffd4d77f",
+        "patches/longbridge-sdk/README.md": "54d919fb62981c6c1f164f87541c722e9602da44e534fca71d0dbecdb21d7263",
+        "patches/longbridge-sdk/oauth-storage.patch": "c5475412c23fc1f282035fbdfb37cca17f35b0ee3eecf10448fd6f8710acd861",
+        "requirements.txt": "e7722e76ac730fa6a4715344ba4d25054422b853fd056ec20e1af6beea6ee2d9",
+        "scripts/build_thesis_ledger_longbridge_sdk.py": "fba278c2a407724522acc1c4b0d92bb937b0fa2e7ee7fb6c37ceda55875f1e9c",
+        "scripts/verify_longbridge_native_storage.py": "ca0a8a472c756a4b20ffe20295ced06e4c51fe384662b707f6f19a2688281db2",
+        "src/data/fx_rate_repository.py": "cd5cfe786d128b2ddc59cf57afb774e03b48d411e969b96cfc4bc8103bbba887",
+        "src/services/provider_oauth_store.py": "453a4169f57e826425542fc231e6faf4fcc0015c90d2d40fb757f947b0b88b8c",
+        "src/services/thesis_ledger_control.py": "82dec12fdbfd2061d74a252b4067adf721157da1462397a0c6ca72f1029ddd7e"
+      },
+      "schemaVersion": "dsa-runtime-compatibility-v1"
+    }
+  },
+  "consumerRuntime": {
+    "image": "sha256:c1f3c9d890e17f6ffa827aae9c80a8b21fd53e4d37d08ed4a51a3f3de8187eac",
+    "files": 26,
+    "sha256": "650e8ae38340279f4ca33d4ea04b74105d4e1a17ef101276d7dc45d9dccbad49"
+  },
+  "verificationInputs": {
+    "helper": "d6bdf5ef7d1e1b03177759b3d6716d0a2231430a74def0571b97b84c531bbcd0",
+    "consumer": "83b70fc1b68f79663bd8e04dfeae622862d9c8d4d57c65b0eb837974674c1012",
+    "qaSourcesSha256": "fa43c0ca7d0d2be01572e007cd7d07f673edd7c8f3b0a82aed8bdbdfef5c249c",
+    "mainFixturesSha256": "78ea1601a4fd1f42d6b4b97546022730ec6bd3542dc6e8c54c68d29df53df7ce",
+    "toolBundleSha256": "75f12ba4185a11e6f9541bdf304091fe5fc692db92dedc05ccab72637af89c5e"
+  },
+  "tools": {
+    "directory": "/tmp/dsa-dg2a-tools-r1g090dj",
+    "python": "/tmp/dsa-dg2a-tools-r1g090dj/python",
+    "toolBytes": 6069374,
+    "uid": 1000,
+    "fileUid": 1000,
+    "mode": "0o700",
+    "noexec": false
+  },
+  "matrix": {
+    "exitCode": 0,
+    "files": 210,
+    "cases": 3565,
+    "failed": 0,
+    "errors": 0,
+    "skipped": [],
+    "nativeStoragePassed": true,
+    "realModelCalls": 0,
+    "network": "none",
+    "junit": "/tmp/dsa-dg2a-tools-r1g090dj/result.xml",
+    "separateNodeSchemaCase": "tests/test_thesis_ledger_tushare_events_v3.py::test_http_success_consumes_actual_built_schema_exchange_without_rebuild",
+    "toolVersions": {
+      "pytest": "9.1.1",
+      "pluggy": "1.6.0",
+      "iniconfig": "2.3.0",
+      "pygments": "2.21.0"
+    },
+    "testInputsSha256": "a9ab72a9b3384f8bbc02770211c614e7a8c04e0080cb28fa4f8dbbb0647ba2e5",
+    "junitSha256": "b0efcc1e13a4e6a4e28e6f2fd01fbee2d1da9c7fc56f40f13dbd62deb89dc6d6"
+  },
+  "nodeSchema": {
+    "parsed": true,
+    "facts": 1,
+    "wireSha256": "8d34034cd8849ea7a9a4b257e173c00a22e12006ec7185d67c990396624e6cbd",
+    "source": "candidate-image-actual-http",
+    "selector": "tests/test_thesis_ledger_tushare_events_v3.py::test_http_success_consumes_actual_built_schema_exchange_without_rebuild"
+  },
+  "completedAt": "2026-10-19T16:39:51.617Z",
+  "realSourcesRequested": false,
+  "cleaned": true
+}

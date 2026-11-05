@@ -7,7 +7,6 @@ import json
 import os
 import sys
 import unittest
-from concurrent.futures import Future
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -22,9 +21,9 @@ from src.services.run_diagnostics import (
     activate_run_diagnostic_context,
     current_diagnostic_snapshot,
     record_provider_run,
+    record_provider_run_started,
     reset_run_diagnostic_context,
 )
-from src.services.task_queue import AnalysisTaskQueue, TaskInfo, TaskStatus
 
 
 class _FailingDailyFetcher(BaseFetcher):
@@ -98,52 +97,56 @@ class _EfinanceRealtimeFetcher(BaseFetcher):
         return _Quote()
 
 
-class _SyncExecutor:
-    def submit(self, fn, *args, **kwargs):
-        future = Future()
-        try:
-            future.set_result(fn(*args, **kwargs))
-        except Exception as exc:  # pragma: no cover - exercised by queue behavior
-            future.set_exception(exc)
-        return future
-
-    def shutdown(self, wait=True):
-        return None
-
-
 class RunDiagnosticsP1TestCase(unittest.TestCase):
-    def setUp(self) -> None:
-        self._original_queue = AnalysisTaskQueue._instance
-        AnalysisTaskQueue._instance = None
-
-    def tearDown(self) -> None:
-        queue = AnalysisTaskQueue._instance
-        if queue is not None and queue is not self._original_queue:
-            executor = getattr(queue, "_executor", None)
-            if executor is not None and hasattr(executor, "shutdown"):
-                executor.shutdown(wait=False)
-        AnalysisTaskQueue._instance = self._original_queue
-
-    def test_task_info_exposes_trace_id_for_sse_and_status_payloads(self) -> None:
-        task = TaskInfo(task_id="task-1", stock_code="600519")
-
-        self.assertEqual(task.to_dict()["trace_id"], "task-1")
-        self.assertEqual(task.copy().trace_id, "task-1")
-
-    def test_background_task_reuses_task_id_as_trace_id(self) -> None:
-        queue = AnalysisTaskQueue(max_workers=1)
-        queue._executor = _SyncExecutor()
-
-        task = queue.submit_background_task(
-            lambda: {"ok": True},
-            stock_code="market_review",
-            task_id="market-task-1",
+    def test_provider_start_and_result_share_attempt_with_data_only_snapshot(self) -> None:
+        events = []
+        token = activate_run_diagnostic_context(
+            trace_id="trace-provider-pairing",
+            event_sink=events.append,
         )
-        stored = queue.get_task(task.task_id)
+        try:
+            record_provider_run_started(
+                data_type="daily_data", provider="Primary", operation="fetch",
+            )
+            record_provider_run(
+                data_type="daily_data", provider="Primary", operation="fetch",
+                success=False, error_message="token=private-test-token", latency_ms=12,
+            )
+            record_provider_run_started(
+                data_type="daily_data", provider="Backup", operation="fetch",
+            )
+            record_provider_run(
+                data_type="daily_data", provider="Backup", operation="fetch",
+                success=True, latency_ms=8,
+            )
+            snapshot = current_diagnostic_snapshot()
+        finally:
+            reset_run_diagnostic_context(token)
 
-        self.assertIsNotNone(stored)
-        self.assertEqual(stored.trace_id, "market-task-1")
-        self.assertEqual(stored.status, TaskStatus.COMPLETED)
+        self.assertEqual(
+            [event["node_id"] for event in events],
+            ["provider_daily_data_primary_1"] * 2 + ["provider_daily_data_backup_2"] * 2,
+        )
+        self.assertEqual([run["success"] for run in snapshot["provider_runs"]], [False, True])
+        self.assertEqual(
+            set(snapshot),
+            {"trace_id", "task_id", "query_id", "stock_code", "trigger_source", "scope", "provider_runs"},
+        )
+        self.assertNotIn("private-test-token", json.dumps([snapshot, events]))
+
+    def test_provider_event_keeps_source_lane_and_measured_timing(self):
+        events = []
+        token = activate_run_diagnostic_context(trace_id="data-flow", event_sink=events.append)
+        try:
+            record_provider_run(data_type="daily_data", provider="UnitFetcher", operation="get_daily_data",
+                                success=True, latency_ms=12, record_count=3)
+        finally:
+            reset_run_diagnostic_context(token)
+        self.assertEqual([event["type"] for event in events], ["provider_run"])
+        node = events[0]["metadata"]["node"]
+        self.assertEqual(node["lane"], "data_source")
+        elapsed = datetime.fromisoformat(node["ended_at"]) - datetime.fromisoformat(node["started_at"])
+        self.assertEqual(int(elapsed.total_seconds() * 1000), 12)
 
     def test_daily_data_provider_runs_record_failure_then_success(self) -> None:
         manager = DataFetcherManager(
@@ -184,7 +187,7 @@ class RunDiagnosticsP1TestCase(unittest.TestCase):
             trigger_source="api",
         )
         try:
-            with patch("src.config.get_config", return_value=config):
+            with patch("src.data_config.get_data_config", return_value=config):
                 quote = manager.get_realtime_quote("600519")
             snapshot = current_diagnostic_snapshot()
         finally:
@@ -215,47 +218,6 @@ class RunDiagnosticsP1TestCase(unittest.TestCase):
         message = snapshot["provider_runs"][0]["error_message_sanitized"]
         self.assertNotIn("secret", message)
         self.assertNotIn("example.com/webhook", message)
-
-    def test_diagnostic_event_sink_receives_provider_llm_history_and_notification_events(self) -> None:
-        events = []
-        token = activate_run_diagnostic_context(
-            trace_id="trace-flow",
-            task_id="task-flow",
-            query_id="task-flow",
-            stock_code="600519",
-            event_sink=events.append,
-        )
-        try:
-            record_provider_run(
-                data_type="daily_data",
-                provider="UnitFetcher",
-                operation="get_daily_data",
-                success=True,
-                latency_ms=12,
-                record_count=3,
-            )
-            from src.services.run_diagnostics import record_history_run, record_llm_run, record_notification_run
-
-            record_llm_run(success=True, model="deepseek-chat", duration_ms=34)
-            record_history_run(report_saved=True, metadata_saved=True, analysis_history_id=7)
-            record_notification_run(channel="report", status="success", success=True)
-        finally:
-            reset_run_diagnostic_context(token)
-
-        self.assertEqual(
-            [event["type"] for event in events],
-            ["provider_run", "llm_run", "history_run", "notification_run"],
-        )
-        self.assertEqual(events[0]["metadata"]["node"]["lane"], "data_source")
-        provider_node = events[0]["metadata"]["node"]
-        provider_started = datetime.fromisoformat(provider_node["started_at"])
-        provider_ended = datetime.fromisoformat(provider_node["ended_at"])
-        self.assertEqual(int((provider_ended - provider_started).total_seconds() * 1000), 12)
-        self.assertEqual(events[1]["metadata"]["node"]["kind"], "model")
-        llm_node = events[1]["metadata"]["node"]
-        llm_started = datetime.fromisoformat(llm_node["started_at"])
-        llm_ended = datetime.fromisoformat(llm_node["ended_at"])
-        self.assertEqual(int((llm_ended - llm_started).total_seconds() * 1000), 34)
 
     def test_provider_flow_event_attempt_index_is_scoped_by_data_type(self) -> None:
         events = []

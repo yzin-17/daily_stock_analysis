@@ -2,6 +2,10 @@
 
 > 盘点日期：2026-09-25。输入基线：DSA `f497b6da`（盘点时工作区干净）、主仓 `fe0e871e`。本目录是代码、manifest 与现有文档的静态盘点，不代表账号已经授权、接口已经探测或目标运行态已经通过。
 
+## 2026-10-22 市场快讯增量
+
+新增 `CN/STOCK/NEWS_FEED` 两个独立精确绑定：`cls/cls-roll`（全市场电报）与 `wallstreetcn/wallstreetcn-a-stock`（A 股频道）。当前目标目录为 complete、30 来源/195 目标，政策/DSA 172、19 路线；两家 DSA、Server、Web 与保全通过，见[详细证据](tasks/evidence/2026-10-22-market-flash-news-dg3.md)。它们使用独立 `news-feed-v1`，不推断证券关联，保持首屏有限覆盖、未知首次可用时间及范围/有效期准入；旧个股新闻和下文历史盘点不因此扩大资格。
+
 ## 2026-10-03 当前基础能力
 
 | 精确来源 | 资产 / 周期 | 可用价格口径 | 启用条件 |
@@ -11,7 +15,7 @@
 
 上述四个条目取消人工窗口准入前置，日级状态从实际行情自动整理。HiThink qfq、腾讯 qfq/hfq 的真实普通回测和重放已验证，同口径整窗备用用于图表和固定快照归一化价格研究。原生量额语义未知时保持未知，只限制使用相应字段的规则。股票、公司行动、严格 PIT 及下文其他能力分别按实际状态开放；历史静态清单不能覆盖本节当前结论。证据见[主仓当前验收](../../thesis-ledger/docs/tasks/evidence/2026-10-03-common-price-baseline.md)。HiThink 页面 API Key 与环境备用的当前规则见[凭证与连接测试](thesis-ledger-hithink-credentials.md)。
 
-2026-10-06 续接：`tencent/tencent` 已实现 CN ETF 单标 REALTIME_QUOTE 基础路径，复用精确响应身份与原上游时间，量额返回 null/unknown；目录按配置显示 ready，保留策略前后复核。预研中 510300.SH/159516.SZ 的实际报价原文已通过新解析器重验。目标部署与路由启用结果由[主仓当前 Task](../../thesis-ledger/docs/tasks/2026-10-03-multi-source-remaining-acceptance.md)的 PR06～PR08 记录；本条不授予股票 Quote 或完整专业行情资格。其他来源的现行准入条件保持，专题见[基础 Quote](thesis-ledger-basic-quote.md)。
+2026-10-06 续接：`tencent/tencent` 已实现 CN ETF 单标 REALTIME_QUOTE 基础路径，复用精确响应身份与原上游时间，量额返回 null/unknown；目录按配置显示 ready，保留策略前后复核。预研中 510300.SH/159516.SZ 的实际报价原文已通过新解析器重验。目标部署与路由启用结果由[主仓当前 Task](../../thesis-ledger/docs/archive/tasks/2026-10-03-multi-source-remaining-acceptance.md)的 PR06～PR08 记录；本条不授予股票 Quote 或完整专业行情资格。其他来源的现行准入条件保持，专题见[基础 Quote](thesis-ledger-basic-quote.md)。
 
 ## 1. 判定口径
 
@@ -208,7 +212,7 @@ Spec §4.2 的五类能力范围（行情、基金、事件、基础、研究）
 
 本节把原 29 条建议展开为 **117 个编号条目**：116 个固定编号叶子，以及按每个显式 RSS/Atom 配置 URL 展开的 R07.8/{sourceId} 模板叶子。编号仅在本目录内稳定。每个叶子只涵盖一个来源（或一个待选择来源）、一个资产类型、一个能力/周期口径和一个最近端 Consumer；多个 SDK 包装同一上游时保留同源关系。这里保留 P02-c 的任务分解及历史候选基线，后续实现状态按对应叶子的证据更新；待选择、本地实现、目标拒绝验证和真实正向准入须分别判断，目录登记不代表真实来源可用。
 
-2026-09-28 当前状态摘要（仅核对以下已有证据，不是全部叶子的完成审计）：R01.5 安全解析器及有界分页读取器已完成本地验证，基金分类、Catalog 消费接线及真实完整成功仍开放，见 [目录来源证据](thesis-ledger-catalog-source-evidence.md)。R01.10 已完成日历专项及目标 HTTP→Client→完整冻结→离线重放，范围及容器可写层限制见 [主仓日历发布 Task](../../thesis-ledger/docs/tasks/2026-09-27-calendar-release-availability.md)。R07.25/R07.26 的 RQData 身份/币种原文合同、生产事件接线与目标拒绝验证已完成；真实身份/币种审核、逐接口权限、完整历史及目标正向请求仍开放，见 [主仓 RQData 生产接线证据](../../thesis-ledger/docs/tasks/evidence/2026-09-27-rqdata-event-runtime.md)。其他未选 endpoint、Consumer 和逐单元准入仍依各自任务推进；AC20 与 F02 父项不据此关闭。
+2026-09-28 当前状态摘要（仅核对以下已有证据，不是全部叶子的完成审计）：R01.5 安全解析器及有界分页读取器已完成本地验证，基金分类、Catalog 消费接线及真实完整成功仍开放，见 [目录来源证据](thesis-ledger-catalog-source-evidence.md)。R01.10 已完成日历专项及目标 HTTP→Client→完整冻结→离线重放，范围及容器可写层限制见 [主仓日历发布 Task](../../thesis-ledger/docs/archive/tasks/2026-09-27-calendar-release-availability.md)。R07.25/R07.26 的 RQData 身份/币种原文合同、生产事件接线与目标拒绝验证已完成；真实身份/币种审核、逐接口权限、完整历史及目标正向请求仍开放，见 [主仓 RQData 生产接线证据](../../thesis-ledger/docs/tasks/evidence/2026-09-27-rqdata-event-runtime.md)。其他未选 endpoint、Consumer 和逐单元准入仍依各自任务推进；AC20 与 F02 父项不据此关闭。
 
 **Owner 与输出约定：**“选择”叶由 DSA 来源目录责任人只读核实现有源码/配置并只写本目录；输出一个确定的 Provider、实际上游/endpoint、资产、能力/口径、现有 Consumer、许可与阻塞结论，无法确认时明确 blocked 并回填 Spec 问题。“适配”叶由表中 DSA 路径所有者负责单来源适配、定向测试及本目录事实更新；跨仓 Consumer 只读，不把 Server、Desktop、部署工作塞入 DSA 叶。选择叶完成不等于适配完成。
 
@@ -231,7 +235,7 @@ Data V3 时间说明：原生历史行情的 `timestamp` 保留原始日期，`c
 | R01.7 | BaoStock × CN STOCK × CODE_NAME → DataFetcherManager.get_stock_name；Owner：data_provider/baostock_fetcher.py 与对应测试 | 唯一响应、代码一致、非空名称、最终状态及 Manager 别名缓存回归共 25 项通过；目标源码一致，BaoStock 0.9.4 Fetcher 与受控 Manager 真实探针均首次成功，别名请求只调用一次来源 | 单标的 Manager 链路已验证；默认多源优先级及完整支持范围门禁仍开放，不证明历史名称或挂牌状态；详见来源验收证据 |
 | R01.8 | 选择：BaoStock × CN STOCK × SECURITY_LIST → 一个目录 Reader；Owner：DSA 来源目录责任人 | 已找到 DataFetcherManager.prefetch_stock_names(use_bulk=True)，但它只消费 code/name；当前 get_stock_list 丢弃 ipoDate/outDate/type/status，无上市状态消费者 | 范围缺口仍开放：不能把名称预取当作历史证券列表 Reader，R01.9 暂不宣称已接入；需明确上市状态消费契约 |
 | R01.9 | 继承 R01.8 唯一选择：BaoStock × CN STOCK × SECURITY_LIST → 指定 Reader；Owner：data_provider/baostock_fetcher.py 与对应测试 | R01.8 选择记录 → 单字段适配、Reader 接入和定向测试 | 依赖 R01.8、P02、G0-M；as-of 未确认则保持 unavailable |
-| R01.10 | exchange-calendars × XSHG × TRADING_CALENDAR → calendar_fact()/回测依赖 Consumer；src/services/thesis_ledger_v2_dependencies.py | 已完成：固定 4.13.2，93 文件源码树绑定公开制品时间，特殊休市/边界/发布前拒绝回归通过；官方完整更新及后续代码同步完成，目标实际 HTTP→Client→完整快照→离线重放通过 | 发布前当前版本不可用，不声称各公告最早可见性；仅日历能力验收，合成行情不计真实回测。新语义在容器可写层，重建需官方部署；证据见 [主仓日历发布 Task](../../thesis-ledger/docs/tasks/2026-09-27-calendar-release-availability.md) |
+| R01.10 | exchange-calendars × XSHG × TRADING_CALENDAR → calendar_fact()/回测依赖 Consumer；src/services/thesis_ledger_v2_dependencies.py | 已完成：固定 4.13.2，93 文件源码树绑定公开制品时间，特殊休市/边界/发布前拒绝回归通过；官方完整更新及后续代码同步完成，目标实际 HTTP→Client→完整快照→离线重放通过 | 发布前当前版本不可用，不声称各公告最早可见性；仅日历能力验收，合成行情不计真实回测。新语义在容器可写层，重建需官方部署；证据见 [主仓日历发布 Task](../../thesis-ledger/docs/archive/tasks/2026-09-27-calendar-release-availability.md) |
 | R01.11 | 来源待选 × CN STOCK × HISTORICAL_LISTING_STATUS → 一个现存历史状态 Reader；Owner：DSA 来源目录责任人 | §2/§4 无已确认历史状态来源/Consumer → 只选择一个合规 Provider、endpoint、as-of 字段和 Reader；无 Consumer 则回填 Spec 并 blocked | P02、G0-M；能区分挂牌/停牌状态与缺失 Bar，并证明日期有效性 |
 | R01.12 | 继承 R01.11 唯一选择 × CN STOCK × HISTORICAL_LISTING_STATUS → R01.11 指定 Reader；Owner：选择结论确定的单一 DSA adapter 路径 | R01.11 的选择记录 → 单来源适配、Reader 单测和一组有据样本 | 依赖 R01.11、P02、G0-M；未选来源或未确认 Consumer 前不得派发实现 |
 

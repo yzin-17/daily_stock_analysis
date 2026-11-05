@@ -7,6 +7,7 @@ from src.services.thesis_ledger_multimarket_rules import SOURCES, MultimarketRul
 from src.services.thesis_ledger_public_fees_contract_v1 import CONTRACT
 from src.services.thesis_ledger_capability_registry import ExactKey, QueryBinding, SourceDefinition
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError
+from src.services.thesis_ledger_etf_fee_sources import bindings
 import json
 
 
@@ -43,4 +44,4 @@ SOURCE = SourceDefinition('official-hk-rules', manifest, factory, tuple(
         'bounded-multimarket-rules-adapter-v1', filename + ':v1', read_fees if capability == 'HISTORICAL_PUBLIC_FEES' else read_status, admission_required=False)
     for (market, capability, provider, source), filename in SOURCES.items()
     if provider == 'official-hk-rules'
-), ('src.services.thesis_ledger_multimarket_rules', 'MultimarketRuleProvider'), factory_scope='provider', exact_probe_read=exact_probe, catalog_readiness=catalog_readiness)
+) + bindings('official-hk-rules'), ('src.services.thesis_ledger_multimarket_rules', 'MultimarketRuleProvider'), factory_scope='provider', exact_probe_read=exact_probe, catalog_readiness=catalog_readiness)

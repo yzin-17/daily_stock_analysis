@@ -33,6 +33,8 @@ from typing import Optional, Dict, Any
 
 import pandas as pd
 
+from src.data_config import DataConfigurationError
+
 from .longbridge_credentials import _longbridge_credentials, _has_legacy_credentials, _has_oauth_credentials
 from .base import BaseFetcher, STANDARD_COLUMNS
 from .realtime_types import UnifiedRealtimeQuote, RealtimeSource, safe_float
@@ -143,6 +145,16 @@ def _sanitize_longbridge_env() -> None:
                              region, env_name, default_url)
 
 
+def _longbridge_language_code(value: Optional[str]) -> str:
+    """保留 SDK 现有语言别名和默认值，不加载报告/决策模块。"""
+    candidate = (value or "zh").strip().lower().replace(" ", "_")
+    if candidate in {"en", "english", "en-us", "en_us", "en-gb", "en_gb"}:
+        return "en"
+    if candidate in {"ko", "korean", "kr", "ko-kr", "ko_kr"}:
+        return "ko"
+    return "zh"
+
+
 def _longbridge_config_kwargs() -> Dict[str, Any]:
     """Optional kwargs for ``Config.from_apikey`` (Longbridge OpenAPI SDK)."""
     try:
@@ -179,9 +191,7 @@ def _longbridge_config_kwargs() -> Dict[str, Any]:
 
     if "language" in params:
         try:
-            from src.report_language import normalize_report_language
-
-            rl = normalize_report_language(os.getenv("REPORT_LANGUAGE"), default="zh")
+            rl = _longbridge_language_code(os.getenv("REPORT_LANGUAGE"))
             if rl == "zh":
                 kw["language"] = Language.ZH_CN
             elif rl == "en":
@@ -478,11 +488,8 @@ class LongbridgeFetcher(BaseFetcher):
                 }
             )
             return self._available
-        try:
-            from src.config import get_config
-            creds = _longbridge_credentials(get_config())
-        except Exception:
-            creds = _longbridge_credentials()
+        from src.data_config import get_data_config
+        creds = _longbridge_credentials(get_data_config())
         self._available = _has_legacy_credentials(creds) or _has_oauth_credentials(creds)
         return self._available
 
@@ -525,13 +532,8 @@ class LongbridgeFetcher(BaseFetcher):
                         "oauth_client_id": None,
                     }
                 else:
-                    try:
-                        from src.config import get_config
-
-                        app_config = get_config()
-                    except Exception:
-                        app_config = None
-                    creds = _longbridge_credentials(app_config)
+                    from src.data_config import get_data_config
+                    creds = _longbridge_credentials(get_data_config())
                 app_key = creds["app_key"]
                 app_secret = creds["app_secret"]
                 access_token = creds["access_token"]
@@ -643,6 +645,8 @@ class LongbridgeFetcher(BaseFetcher):
                 self._ctx = QuoteContext(lb_config)
                 logger.info("[Longbridge] QuoteContext 初始化成功")
                 return self._ctx
+            except DataConfigurationError:
+                raise
             except Exception as e:
                 detail = (
                     "页面凭证初始化失败"

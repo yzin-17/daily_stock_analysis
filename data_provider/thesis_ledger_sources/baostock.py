@@ -3,6 +3,9 @@
 from datetime import date, datetime, timezone
 import re
 import pandas as pd
+from data_provider.market_reference_bindings import reference_bindings, reference_manifest
+
+REFERENCE_BINDINGS = reference_bindings('baostock')
 
 from data_provider.exact_daily_contract import ExactDailyError, normalize_exact_daily
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError, DailyRead
@@ -28,7 +31,7 @@ def manifest():
     from src.services.provider_manifest import build_provider_manifest
     capabilities = {"DAILY_BAR": ("STOCK",), "HISTORICAL_TRADING_STATUS": ("STOCK",)}
     capabilities.update({binding.key.capability: ("STOCK",) for binding in BINDINGS})
-    return build_provider_manifest("baostock", "BaoStock", capabilities, markets=("CN",), configuration_mode="built_in")
+    return reference_manifest(build_provider_manifest("baostock", "BaoStock", capabilities, markets=("CN",), configuration_mode="built_in"), REFERENCE_BINDINGS)
 
 
 def factory(context):
@@ -180,6 +183,7 @@ from src.services.thesis_ledger_legacy_status_contract_v1 import CONTRACT as LEG
 from data_provider.baostock_legacy_status import read_status as read_legacy_status
 
 SOURCE = SourceDefinition("baostock", manifest, factory, (
+    *REFERENCE_BINDINGS,
     QueryBinding(LEGACY_CONTRACT, ExactKey('CN','STOCK','HISTORICAL_TRADING_STATUS'), 'baostock',
         'baostock-daily-flags-v1', 'baostock-query-history-status-v1', read_legacy_status, admission_required=False),
     *BINDINGS,

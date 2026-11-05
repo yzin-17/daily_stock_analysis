@@ -1,11 +1,7 @@
 # ===================================
-# A股自选股智能分析系统 - Docker Compose
+# DSA 数据服务 - Docker Compose
 # ===================================
-# 
-# 使用方式:
-#   定时模式: docker-compose -f ./docker/docker-compose.yml up -d
-#   FastAPI模式: docker-compose -f ./docker/docker-compose.yml up -d server
-#   同时启动: docker-compose -f ./docker/docker-compose.yml up -d analyzer server
+# 本文件保留独立部署合同；工作区目标更新仍走 thesis-ledger-infra 的正式脚本。
 
 name: daily-stock-analysis
 version: '3.8'
@@ -25,19 +21,13 @@ x-common: &common
     - ../data:/app/data
     - ../logs:/app/logs
     - ../reports:/app/reports
-    - ../strategies:/app/strategies:ro
     # Longbridge OAuth token cache persistence; entrypoint repairs container-side ownership for dsa user.
     # Create ../longbridge_tokens on the host before copying an authorized token cache into it.
     - ../longbridge_tokens:/home/dsa/.longbridge
-    # 如需覆盖前端静态资源，可挂载本地 static 目录
-    # - ../static:/app/static:ro
 
   environment:
     - TZ=Asia/Shanghai
 
-    # Web/API service bind address (must be 0.0.0.0 inside container)
-    - WEBUI_HOST=0.0.0.0
-    # API_PORT 从 .env 文件读取，无需在此硬编码
 
     # 代理设置（如果需要）
     # - http_proxy=http://host.docker.internal:10809
@@ -47,8 +37,7 @@ x-common: &common
     options:
       max-size: "10m"
       max-file: "3"
-  # 资源限制：完整分析建议 1G+；512M 仅适合轻量 Web/API、单股、低并发场景，
-  # 且建议设置 MAX_WORKERS=1 并避免同时启动 analyzer 和 server。
+  # 保留现有资源上限与 512M 预留，按数据量和来源并发单独评估。
   deploy:
     resources:
       limits:
@@ -57,16 +46,11 @@ x-common: &common
         memory: 512M
 
 services:
-  # 定时任务模式
-  analyzer:
-    <<: *common
-    container_name: stock-analyzer
-
-  # FastAPI 模式
+  # 数据 API 模式
   server:
     <<: *common
     container_name: stock-server
-    command: ["python", "main.py", "--serve-only", "--host", "0.0.0.0", "--port", "${API_PORT:-8000}"]
+    command: ["python", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
     # 若使用 network_mode: host，则以下 ports 映射无效，端口由 command 中的 --port 指定
     ports:
-      - "${API_PORT:-8000}:${API_PORT:-8000}"
+      - "${API_PORT:-8000}:8000"

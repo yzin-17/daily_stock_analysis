@@ -1,12 +1,12 @@
 """Tushare 环境凭据与服务地址的准入指纹及执行快照。"""
 
 import json as json_module
-from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
 
 from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
+from src.data_config import DataServiceConfig
 from src.services.thesis_ledger_control import ThesisLedgerControlStore, _provider_credential_revision_from_snapshot
 from src.services.thesis_ledger_provider_runtime import ThesisLedgerProviderRuntime
 
@@ -55,7 +55,7 @@ def test_missing_master_fails_closed(monkeypatch):
 
 def test_store_snapshot_freezes_default_endpoint_and_redacts_registry(monkeypatch, tmp_path):
     monkeypatch.delenv("TUSHARE_HTTP_URL", raising=False)
-    with patch("src.config.get_config", return_value=SimpleNamespace(tushare_token="fixture-token")):
+    with patch("src.data_config.get_data_config", return_value=DataServiceConfig(tushare_token="fixture-token")):
         store = ThesisLedgerControlStore(str(tmp_path / "tushare.sqlite"))
         frozen = store.provider_credential_snapshot("tushare")
         public = json_module.dumps(store.provider_registry())

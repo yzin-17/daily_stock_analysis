@@ -11,18 +11,20 @@ import subprocess
 import sys
 from typing import Mapping, Sequence
 
+if __package__:
+    from .data_test_scope import load_scope
+else:
+    from data_test_scope import load_scope
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DURATIONS_PATH = REPO_ROOT / ".github" / "ci-test-durations.json"
 
 
 def discover_test_files(repo_root: Path = REPO_ROOT) -> list[str]:
-    """Return every pytest file covered by the repository's setup.cfg contract."""
-    return sorted(
-        path.relative_to(repo_root).as_posix()
-        for path in (repo_root / "tests").rglob("test_*.py")
-        if path.is_file()
-    )
+    """只按已验证的数据清单分片；混合文件由默认收集门禁精确选择断言。"""
+    scope, _ = load_scope(repo_root)
+    return sorted(scope["dataFiles"] + list(scope["partialFiles"]))
 
 
 def load_durations(path: Path = DEFAULT_DURATIONS_PATH) -> dict[str, float]:

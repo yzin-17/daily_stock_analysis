@@ -6,12 +6,12 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import threading
-import time
 from numbers import Integral
 from typing import Any, Callable, Iterable
 
 from data_provider.eastmoney_fund_catalog_reader import read_fund_catalog
 from data_provider.sina_etf_catalog_reader import read_sina_etf_catalog
+from src.services.thesis_ledger_catalog_execution import catalog_backoff, catalog_checkpoint, poll_catalog_result
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,7 @@ def _run_catalog_provider_once(
     *,
     timeout_seconds: float,
 ) -> Any:
+    catalog_checkpoint()
     wait_seconds = max(0.01, float(timeout_seconds))
     if not _CATALOG_PROVIDER_WORKER_SLOTS.acquire(blocking=False):
         raise CatalogBuildError(
@@ -104,7 +105,7 @@ def _run_catalog_provider_once(
         child_connection.close()
         child_connection = None
 
-        if not parent_connection.poll(wait_seconds):
+        if not poll_catalog_result(parent_connection, wait_seconds):
             if process.is_alive():
                 raise CatalogBuildError(
                     "Provider 目录请求超时，已终止隔离进程",
@@ -168,7 +169,7 @@ def _bounded_call(
             last_error = exc
             if not exc.retryable or attempt >= attempts - 1:
                 raise
-            time.sleep(min(max(0.0, float(backoff_seconds)) * (2**attempt), 2.0))
+            catalog_backoff(min(max(0.0, float(backoff_seconds)) * (2**attempt), 2.0))
     assert last_error is not None
     raise last_error
 
@@ -350,6 +351,7 @@ def build_catalog(
     merged: dict[tuple[str, str, str], dict[str, str]] = {}
     failures: dict[str, str] = {}
     for provider_id, loader in (loaders or PROVIDER_CATALOG_LOADERS).items():
+        catalog_checkpoint()
         try:
             provider_items = _bounded_call(
                 loader,
@@ -378,6 +380,7 @@ def build_catalog(
                     )
                 provider_snapshot[key] = item
             # 整个来源校验完成后才合并，冲突不能留下部分目录。
+            catalog_checkpoint()
             for key, item in provider_snapshot.items():
                 merged.setdefault(key, item)
         except Exception as exc:  # Provider 原始错误只写日志和稳定诊断。

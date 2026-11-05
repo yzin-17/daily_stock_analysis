@@ -39,7 +39,7 @@ from .tushare_endpoint import _resolve_tushare_http_url
 from .tushare_http_client import _TushareHttpClient
 from .tushare_fund_adj import TushareFundFactorsMixin
 from .tushare_fund_dividend_reader import TushareFundDividendsMixin
-from src.config import get_config
+from src.data_config import get_data_config as get_config
 import os
 from zoneinfo import ZoneInfo
 
