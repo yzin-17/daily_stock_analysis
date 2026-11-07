@@ -71,6 +71,29 @@ def test_invalid_latest_date_falls_back_before_api_serialization(tmp_path):
     assert fallback is True
 
 
+def test_public_nav_comparison_never_calls_backup(tmp_path):
+    store = ThesisLedgerControlStore(str(tmp_path / 'public-nav.sqlite'))
+    apply_data_policy(store, {'FUND_NAV': {'MUTUAL_FUND': ['akshare', 'efinance']}})
+    calls = []
+
+    def invalid(symbol):
+        calls.append(('primary', symbol))
+        return pd.DataFrame({'日期': ['2026-02-30'], '单位净值': [1.1]})
+
+    def backup(symbol):
+        calls.append(('backup', symbol))
+        raise AssertionError('备用来源不允许执行')
+
+    runtime = ThesisLedgerProviderRuntime(store, adapters={
+        'akshare': SimpleNamespace(get_fund_nav_history=invalid),
+        'efinance': SimpleNamespace(get_fund_nav_history=backup),
+    })
+    from src.services.thesis_ledger_provider_runtime import ThesisLedgerGatewayError
+    with pytest.raises(ThesisLedgerGatewayError):
+        runtime.execute_request(ThesisLedgerDataRequest('FUND_NAV', '000001.OF', public_nav_only=True))
+    assert [role for role, _ in calls] == ['primary']
+
+
 def test_history_preserves_validated_time_order(monkeypatch):
     from api.thesis_ledger import _real_fund_nav_history
 

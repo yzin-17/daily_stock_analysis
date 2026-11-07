@@ -37,6 +37,12 @@ def execute_current_data_request(
             effective, capability=capability, instrument_type=instrument_type,
             symbol=request.symbol,
         )
+        from .thesis_ledger_background_quote import constrain_background_quote
+        targets = constrain_background_quote(runtime, request, targets)
+        if request.public_nav_only:
+            if capability != 'FUND_NAV' or not targets or targets[0] != ('akshare', 'eastmoney', 0):
+                raise CurrentDataRouteError('not_admitted', '同日比较只允许已选的东方财富公开净值主来源')
+            targets = targets[:1]
         route_key = current_data_route_key(capability, instrument_type, request.symbol)
         if capability == "NEWS_FEED" and (request.parameters or {}).get("providerId") is not None:
             targets = [item for item in targets if item[0] == request.parameters["providerId"]]
@@ -137,6 +143,7 @@ def execute_current_data_request(
         snapshot = credential_snapshots.get(result.provider)
         if snapshot is not None and runtime.store.provider_credential_snapshot(result.provider) != snapshot:
             raise CurrentDataRouteError("credential_missing", "数据返回前来源凭证已变更")
+        constrain_background_quote(runtime, request, current_targets)
         return result
     except ThesisLedgerGatewayError:
         raise

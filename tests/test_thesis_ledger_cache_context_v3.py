@@ -196,3 +196,153 @@ def test_http_malformed_control_is_response_error_not_request_error(store, monke
     assert value.status_code == 502
     assert value.json() == {'contractVersion': 3, 'requestId': 'cache-control',
                             'error': {'code': 'invalid_response', 'message': '行情上游响应格式无效'}}
+
+
+# Background monitoring is a distinct caller contract, not a policy/permission toggle.
+def background_request(**changes):
+    return {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'background-fixture',
+            'symbol': '510300.SH', 'assetType': 'ETF', **changes}
+
+
+def test_background_quote_plan_is_source_specific_and_never_reads_provider(store):
+    from src.services.thesis_ledger_background_quote import background_quote_plan
+    apply(store, KEY, TARGET)
+    runtime = ThesisLedgerProviderRuntime(store)
+    runtime.execute_request = Mock(side_effect=AssertionError('plan must not read data'))
+    value = background_quote_plan(runtime, background_request())
+    assert value['acquisition'] == 'public-snapshot'
+    assert value['target'] == {**TARGET, 'routeIndex': 0}
+    assert value['minIntervalSeconds'] == 600 and value['sourceUpdateIntervalSeconds'] is None
+    assert background_quote_plan(runtime, background_request(symbol='600519.SH', assetType='STOCK'))['reason'] == 'not_selected'
+    runtime.execute_request.assert_not_called()
+
+
+def test_background_quote_rejects_control_changes_before_any_execution(store):
+    from src.services.thesis_ledger_background_quote import background_quote_plan, constrain_background_quote
+    from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest, ProviderCallError
+    apply(store, KEY, TARGET)
+    runtime = ThesisLedgerProviderRuntime(store)
+    plan = background_quote_plan(runtime, background_request())
+    req = ThesisLedgerDataRequest('REALTIME_QUOTE', '510300.SH', instrument_type='ETF',
+        request_id='background-fixture', parameters={'backgroundQuote': {'generation': plan['generation']}})
+    assert constrain_background_quote(runtime, req, [('tencent', 'tencent', 0)]) == [('tencent', 'tencent', 0)]
+    with pytest.raises(ProviderCallError, match='不能跳过'):
+        constrain_background_quote(runtime, req, [('hithink', 'fund-market-snapshot', 0), ('tencent', 'tencent', 1)])
+    store.save_provider_config('tencent', {'requestId': 'stop', 'enabled': False})
+    with pytest.raises(ProviderCallError, match='已变化'):
+        constrain_background_quote(runtime, req, [('tencent', 'tencent', 0)])
+
+
+def test_background_quote_never_admits_paid_primary_or_changes_selected_route(store, monkeypatch):
+    from src.services.thesis_ledger_background_quote import background_quote_plan
+    monkeypatch.setenv('HITHINK_API_KEY', 'synthetic-only-no-network')
+    target = next(target for key, target, _ in CAPABILITY_SOURCES.routes('REALTIME_QUOTE')
+                  if key == KEY and target['providerId'] == 'hithink')
+    apply(store, KEY, target)
+    runtime = ThesisLedgerProviderRuntime(store)
+    runtime.execute_request = Mock(side_effect=AssertionError('paid request must not execute'))
+    before = deepcopy(store.effective_policy_v3())
+    plan = background_quote_plan(runtime, background_request())
+    assert plan['acquisition'] == 'blocked' and plan['reason'] == 'background_budget_unverified'
+    assert plan['target']['providerId'] == 'hithink'
+    assert store.effective_policy_v3()['routes'] == before['routes']
+    assert store.effective_policy_v3()['revision'] == before['revision']
+    runtime.execute_request.assert_not_called()
+
+
+def test_background_pin_runs_inside_actual_runtime_before_provider_and_budget(store):
+    from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest, ThesisLedgerGatewayError
+    apply(store, KEY, TARGET)
+    runtime = ThesisLedgerProviderRuntime(store)
+    runtime._execute_with_metadata = Mock(side_effect=AssertionError('bad pin must not reserve budget/call adapter'))
+    request = ThesisLedgerDataRequest('REALTIME_QUOTE', '510300.SH', instrument_type='ETF',
+        request_id='background-fixture', parameters={'backgroundQuote': {'generation': '0' * 64}})
+    with pytest.raises(ThesisLedgerGatewayError) as error:
+        runtime.execute_request(request)
+    assert error.value.code == 'not_admitted'
+    runtime._execute_with_metadata.assert_not_called()
+
+
+def test_background_http_auth_identity_and_success(store, monkeypatch):
+    from api.thesis_ledger_background_quote import build_background_quote_router
+    from src.services.thesis_ledger_background_quote import background_quote_plan
+    apply(store, KEY, TARGET)
+    runtime = ThesisLedgerProviderRuntime(store)
+    monkeypatch.setenv('THESIS_LEDGER_DSA_TOKEN', 'synthetic-background-token')
+    fake_quote = Mock(return_value={'provider': 'tencent', 'symbol': '510300.SH', 'price': 4.0})
+    monkeypatch.setattr('api.thesis_ledger._real_quote', fake_quote)
+    app = FastAPI(); app.include_router(build_background_quote_router(lambda: runtime), prefix='/api/v3/thesis-ledger')
+    client = TestClient(app); url = '/api/v3/thesis-ledger/market/background-quote'
+    headers = {'Authorization': 'Bearer synthetic-background-token'}
+    assert client.post(url + '/plan', json=background_request()).status_code == 401
+    assert client.post(url + '/plan', json=background_request(probe=True), headers=headers).status_code == 422
+    plan = client.post(url + '/plan', json=background_request(), headers=headers).json()
+    assert plan == background_quote_plan(runtime, background_request())
+    assert client.post(url, json={**background_request(), 'generation': '0' * 64}, headers=headers).status_code == 503
+    fake_quote.assert_not_called()
+    response = client.post(url, json={**background_request(), 'generation': plan['generation']}, headers=headers)
+    assert response.status_code == 200 and response.json()['quote']['provider'] == 'tencent'
+    fake_quote.assert_called_once_with('510300.SH', request_id='background-fixture', asset_type='ETF',
+                                      background={'generation': plan['generation']})
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_background_actual_execution_shares_persistent_budget_across_restart(store, fail):
+    from types import SimpleNamespace
+    from src.services.thesis_ledger_background_quote import background_quote_plan
+    from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest, ThesisLedgerGatewayError
+    apply(store, KEY, TARGET)
+    calls = []
+
+    def read(symbol):
+        calls.append(symbol)
+        if fail:
+            raise RuntimeError('synthetic-provider-failure')
+        return {'price': 4.0, 'open_price': 4.0, 'high': 4.0, 'low': 4.0, 'pre_close': 4.0,
+                'source': 'tencent', 'provider_timestamp': '2026-11-06T02:00:00Z',
+                'fetched_at': '2026-11-06T02:00:01Z',
+                'units': {'price_currency': 'CNY', 'volume': 'unknown', 'turnover_currency': 'unknown'}}
+
+    adapter = SimpleNamespace(get_realtime_quote_single_symbol=read)
+    runtime = ThesisLedgerProviderRuntime(store, adapters={'tencent': adapter})
+    plan = background_quote_plan(runtime, background_request())
+    req = ThesisLedgerDataRequest('REALTIME_QUOTE', '510300.SH', instrument_type='ETF',
+        request_id='background-budget', parameters={'backgroundQuote': {'generation': plan['generation']}})
+    if fail:
+        with pytest.raises(ThesisLedgerGatewayError):
+            runtime.execute_request(req)
+    else:
+        result = runtime.execute_request(req)
+        assert result.provider == 'tencent' and result.upstream_source == 'tencent'
+    restarted = ThesisLedgerProviderRuntime(store, adapters={'tencent': adapter})
+    new_plan = background_quote_plan(restarted, background_request())
+    req = ThesisLedgerDataRequest('REALTIME_QUOTE', '510300.SH', instrument_type='ETF',
+        request_id='background-budget-restart', parameters={'backgroundQuote': {'generation': new_plan['generation']}})
+    with pytest.raises(ThesisLedgerGatewayError):
+        restarted.execute_request(req)
+    assert calls == ['510300.SH']
+
+
+def test_background_preserves_selected_fallback_identity_without_trying_restricted_primary(store):
+    from types import SimpleNamespace
+    from src.services.thesis_ledger_background_quote import background_quote_plan
+    from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest
+    paid = {'providerId': 'hithink', 'upstreamSource': 'fund-market-snapshot'}
+    store.apply_policy_v3({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'fallback',
+        'revision': 1, 'enabled': True, 'routes': [{'key': KEY, 'targets': [paid, TARGET]}]})
+    value = {'price': 4.0, 'open_price': 4.0, 'high': 4.0, 'low': 4.0, 'pre_close': 4.0,
+             'source': 'tencent', 'provider_timestamp': '2026-11-06T02:00:00Z',
+             'fetched_at': '2026-11-06T02:00:01Z',
+             'units': {'price_currency': 'CNY', 'volume': 'unknown', 'turnover_currency': 'unknown'}}
+    public = Mock(return_value=value)
+    restricted = Mock(side_effect=AssertionError('restricted source must not run'))
+    runtime = ThesisLedgerProviderRuntime(store, adapters={
+        'tencent': SimpleNamespace(get_realtime_quote_single_symbol=public),
+        'hithink': SimpleNamespace(fetch_quote=restricted)})
+    plan = background_quote_plan(runtime, background_request())
+    assert plan['acquisition'] == 'public-snapshot' and plan['target']['routeIndex'] == 1
+    req = ThesisLedgerDataRequest('REALTIME_QUOTE', '510300.SH', instrument_type='ETF', request_id='fallback',
+        parameters={'backgroundQuote': {'generation': plan['generation']}})
+    result = runtime.execute_request(req)
+    assert result.provider == 'tencent' and result.fallback_used is True and result.route_index == 1
+    public.assert_called_once_with('510300.SH'); restricted.assert_not_called()

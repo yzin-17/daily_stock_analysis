@@ -193,6 +193,7 @@ class ThesisLedgerDataRequest:
     adjustment: str | None = None
     parameters: Mapping[str, Any] = field(default_factory=dict)
     request_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    public_nav_only: bool = False
 
     def __post_init__(self) -> None:
         capability = str(self.capability or "").strip().upper()

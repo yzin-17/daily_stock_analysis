@@ -65,22 +65,46 @@ class AnnouncementRepository:
             temporary.unlink(missing_ok=True)
         return digest
 
-    def query(self, query="", page=1, page_size=50):
+    def query(self, query="", page=1, page_size=50, *, symbol=None, start=None, end=None):
         if page < 1 or not 1 <= page_size <= 100:
             raise ValueError("公告分页参数无效")
-        by_url = {item["url"]: item for item in seed_announcements()}
-        for item in self.records():
-            old = by_url.get(item["url"])
-            if old:
-                item = {**item, "uses": sorted(set(item["uses"] + old["uses"]))}
-            by_url[item["url"]] = item
+        if symbol and re.fullmatch(r"\d{6}\.OF", symbol):
+            items = fund_disclosures(symbol)
+        else:
+            by_url = {item["url"]: item for item in seed_announcements()}
+            for item in self.records():
+                old = by_url.get(item["url"])
+                if old:
+                    item = {**item, "uses": sorted(set(item["uses"] + old["uses"]))}
+                by_url[item["url"]] = item
+            items = by_url.values()
         keyword = query.strip().casefold()
-        items = [item for item in by_url.values() if keyword in f"{item['title']} {item['symbol']}".casefold()]
+        items = [item for item in items if keyword in f"{item['title']} {item['symbol']}".casefold()]
+        if symbol:
+            items = [item for item in items if item["symbol"] == symbol]
+        if start:
+            items = [item for item in items if item["publishedDate"] >= start]
+        if end:
+            items = [item for item in items if item["publishedDate"] <= end]
         items.sort(key=lambda item: (item["publishedDate"], item["id"]), reverse=True)
         start = (page - 1) * page_size
         fields = ("id", "symbol", "title", "url", "publishedDate", "fetchedAt", "uses", "downloadState", "parseState", "detail")
         return {"providerId": "official-states", "total": len(items), "page": page, "pageSize": page_size,
                 "items": [{key: item[key] for key in fields if key in item} for item in items[start:start + page_size]]}
+
+
+def fund_disclosures(symbol):
+    from data_provider.fund_disclosure_reference import publication_references
+
+    for reference in publication_references(symbol):
+        for source in reference.sources:
+            kind = "基金定期报告" if source.role == "report" else "基金报告披露提示"
+            yield {
+                "id": f"{symbol[:6]}-{reference.report_period}-{source.role}-{source.sha256[:16]}",
+                "symbol": symbol, "title": f"{kind}（报告期末 {reference.report_date}）",
+                "url": source.url, "publishedDate": reference.published_on, "uses": [],
+                "downloadState": "pending", "parseState": "unparsed",
+            }
 
 
 def seed_announcements():

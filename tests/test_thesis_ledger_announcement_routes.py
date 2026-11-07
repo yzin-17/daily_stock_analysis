@@ -71,3 +71,24 @@ def test_downloaded_library_does_not_depend_on_company_seed_file(configured_clie
     response = client.post(DATA_URL, json=request, headers=DATA_HEADERS)
     assert response.status_code == 200
     assert response.json()["days"][-1]["state"] == "suspended"
+
+
+def test_fund_announcements_use_only_verified_publications(configured_client):
+    client, _, _ = configured_client
+    url = "/api/v3/thesis-ledger/market/announcements"
+    params = {"symbol": "000001.OF", "start": "2026-10-27", "end": "2026-10-27", "pageSize": 1}
+    pages = []
+    for page in (1, 2):
+        response = client.get(url, headers=DATA_HEADERS, params={**params, "page": page})
+        assert response.status_code == 200
+        result = response.json()
+        assert result["total"] == 2
+        item, = result["items"]
+        assert (item["symbol"], item["publishedDate"]) == ("000001.OF", "2026-10-27")
+        assert item["url"].startswith("https://fund.chinaamc.com/")
+        pages.append(item["id"])
+    assert len(set(pages)) == 2
+    for overrides in ({"symbol": "000001.SZ"}, {"symbol": "999999.OF"}, {"start": "2026-10-28", "end": "2026-11-06"}):
+        result = client.get(url, headers=DATA_HEADERS, params={**params, **overrides})
+        assert result.status_code == 200
+        assert result.json()["total"] == 0

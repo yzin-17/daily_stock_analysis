@@ -19,3 +19,5 @@ ThesisLedger 的已保存股票策略配置准备，会在冻结新快照前调�
 原有 `POST /api/v3/thesis-ledger/control/announcements/fetch` 和 CLI 获取入口保留；公告目录由 `GET /api/v3/thesis-ledger/market/announcements` 查询。准备进度与目录内容不是同一个数量，解析不支持的原文仍可在目录查看。
 
 自动获取的产品范围与目标验收，以相邻 ThesisLedger 仓库的 `docs/specs/2026-10-08-announcement-preparation.md` 及对应实施记录为准。资料进入库存不代表已取得严格历史首次公开资格。
+
+标的详情调用 `GET /market/announcements` 时可提供 `symbol`（含交易所的 A 股代码）、`start` 和 `end`（含两端的发布日期）。过滤在分页和总数统计前完成；通用目录仍可仅按 `q` 查询。

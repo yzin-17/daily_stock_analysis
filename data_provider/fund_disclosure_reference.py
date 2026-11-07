@@ -83,6 +83,13 @@ def _reference(symbol, report_period):
     return record
 
 
+def publication_references(symbol):
+    """返回已登记并通过身份、时间和来源校验的正式披露参考。"""
+    for fund, period in REFERENCE_FILES:
+        if fund == symbol:
+            yield _reference(fund, period)
+
+
 def disclosure_for_observation(symbol, report_period, holdings, digest, provider, upstream):
     if provider not in {'efinance', 'akshare'} or upstream != 'eastmoney':
         return None

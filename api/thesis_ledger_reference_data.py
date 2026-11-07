@@ -24,6 +24,8 @@ def build_reference_data_router(get_runtime=get_thesis_ledger_runtime):
     router.include_router(build_news_router(get_runtime))
     router.include_router(build_report_metadata_router(get_runtime))
     router.include_router(build_reference_query_router(get_runtime))
+    from api.thesis_ledger_background_quote import build_background_quote_router
+    router.include_router(build_background_quote_router(get_runtime))
 
     @router.post("/market/security-lot-size", dependencies=[Depends(require_contract_token)])
     def read_lot_size(payload: dict = Body(...)):

@@ -26,3 +26,13 @@ def test_pagination_and_original_seed_deduplication(tmp_path):
     assert first["total"] == 3
     assert first["items"][0]["id"] != second["items"][0]["id"]
     assert repo.query("000995")["items"][0]["uses"] == ["suspension", "risk"]
+
+
+def test_exact_instrument_and_publication_dates_filter_before_pagination(tmp_path):
+    repo = AnnouncementRepository(tmp_path)
+    repo.save({**record("111"), "publishedDate": "2023-08-20"})
+    repo.save({**record("222", "600774.SH"), "title": "提及 000881.SZ"})
+    repo.save(record("333"))
+    result = repo.query(page_size=1, symbol="000881.SZ", start="2023-08-21", end="2023-08-21")
+    assert result["total"] == 1
+    assert result["items"][0]["id"] == "333"

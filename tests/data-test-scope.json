@@ -38,6 +38,8 @@
     "tests/test_config_manager.py": "原生登录、分析 CLI、Config 和系统配置 UI 的 .env 写入器；所有产品消费者已退役。数据加载器直接使用 dotenv，不消费写入器；控制凭据写入使用独立控制存储。 9 项断言均为旧 .env 产品写入/通知模板行为；数据配置读取的冻结解析、隔离与示例加载测试保持收集。"
   },
   "dataFiles": [
+    "tests/test_event_free_economic_price_evidence.py",
+    "tests/test_research_economic_price_source_check.py",
     "tests/test_mini_racer_runtime.py",
     "tests/test_a_share_fetcher_code_conversion.py",
     "tests/test_ai_review_github_api.py",

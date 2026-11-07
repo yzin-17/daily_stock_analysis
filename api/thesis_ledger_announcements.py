@@ -26,9 +26,15 @@ def build_announcement_router():
     router = APIRouter()
 
     @router.get("/market/announcements", dependencies=[Depends(require_contract_token)])
-    def announcements(q: str = Query("", max_length=200), page: int = Query(1, ge=1), pageSize: int = Query(50, ge=1, le=100)):
+    def announcements(q: str = Query("", max_length=200), page: int = Query(1, ge=1), pageSize: int = Query(50, ge=1, le=100),
+                      symbol: str | None = Query(None, pattern=r"^\d{6}\.(SH|SZ|BJ|OF)$"),
+                      start: date | None = None, end: date | None = None):
         try:
-            return AnnouncementRepository().query(q, page, pageSize)
+            if start and end and start > end:
+                _error("bad_request", "公告日期范围无效", 422)
+            return AnnouncementRepository().query(q, page, pageSize, symbol=symbol,
+                                                  start=start.isoformat() if start else None,
+                                                  end=end.isoformat() if end else None)
         except (ValueError, OSError) as exc:
             _error("invalid_response", f"公告库无法读取：{exc}", 503)
 

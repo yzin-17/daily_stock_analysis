@@ -414,14 +414,14 @@ def _real_fx_rates(base_currency: str, currencies: list[str], as_of: date) -> di
     return real_fx_rates(base_currency, currencies, as_of)
 
 
-def _real_fund_nav(symbol: str, request_id: str | None = None) -> dict[str, Any]:
+def _real_fund_nav(symbol: str, request_id: str | None = None, *, public_nav_only: bool = False) -> dict[str, Any]:
     from pydantic import ValidationError
     from src.services.thesis_ledger_fund_nav_contract_v1 import LatestNavResult
     canonical = _canonical_fund_symbol(symbol)
     request_id = request_id or _request_id_context.get()
     try:
         from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
-        gateway_result = get_thesis_ledger_data_gateway().fund_nav(canonical, request_id=request_id)
+        gateway_result = get_thesis_ledger_data_gateway().fund_nav(canonical, request_id=request_id, **({'public_nav_only': True} if public_nav_only else {}))
     except Exception as exc:  # noqa: BLE001 - gateway maps provider failures to diagnostics.
         _data_gateway_error(exc, "基金单位净值暂时不可用", no_eligible_message="当前策略没有可用的基金净值 Provider")
     try:
@@ -514,15 +514,11 @@ def _real_fund_nav_history(
     return result[-limit:]
 
 
-def _real_quote(symbol: str, request_id: str | None = None, asset_type: str | None = None) -> dict[str, Any]:
+def _real_quote(symbol: str, request_id: str | None = None, asset_type: str | None = None, background=None) -> dict[str, Any]:
     request_id = request_id or _request_id_context.get()
     try:
-        from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_data_gateway
-
-        gateway_result = get_thesis_ledger_data_gateway().quote(
-            symbol,
-            request_id=request_id, **({"instrument_type": asset_type} if asset_type is not None else {}),
-        )
+        from src.services.thesis_ledger_background_quote import read_quote_gateway
+        gateway_result = read_quote_gateway(symbol, request_id, asset_type, background)
         quote = gateway_result.data
         provider = gateway_result.provider
         fallback_used = gateway_result.fallback_used
@@ -1153,6 +1149,13 @@ def fund_nav(
         if _fixture_mode()
         else _real_fund_nav(symbol, request_id=request_id)
     )
+
+
+@router_v3.get("/market/fund-nav/public-comparison", dependencies=[Depends(require_contract_token)])
+def public_comparison_fund_nav(request: Request, symbol: str = Query(..., min_length=1)) -> dict[str, Any]:
+    if _fixture_mode():
+        _error("unsupported_capability", "同日净值比较要求真实公开来源", 422)
+    return _real_fund_nav(symbol, request.headers.get("x-request-id"), public_nav_only=True)
 
 
 @router_v3.get("/market/fund-nav/history", dependencies=[Depends(require_contract_token)])
