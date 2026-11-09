@@ -11,8 +11,8 @@ from .futu_market import futu_security
 def read_futu_history(sdk, host, port, request, *, timeframe):
     code, market, zone = futu_security(request.get("symbol"))
     asset, adjustment = request.get("instrumentType"), request.get("adjustment")
-    adjustments = {"none"} if timeframe == "1m" else {"none", "qfq", "hfq"}
-    if timeframe not in {"1d", "1m"} or asset not in {"STOCK", "ETF"} or adjustment not in adjustments:
+    adjustments = {"none"} if timeframe != "1d" else {"none", "qfq", "hfq"}
+    if timeframe not in {"1d", "1m", "5m", "15m", "30m", "60m"} or asset not in {"STOCK", "ETF"} or adjustment not in adjustments:
         raise ExactDailyError("invalid_request", "富途历史 K 线的周期、资产或复权参数无效")
     try:
         start, end = date.fromisoformat(request["start"]), date.fromisoformat(request["end"])
@@ -20,6 +20,8 @@ def read_futu_history(sdk, host, port, request, *, timeframe):
             raise ValueError("inverted window")
     except (KeyError, TypeError, ValueError):
         raise ExactDailyError("invalid_request", "富途历史 K 线需要有效的起止日期") from None
+    if market in {"SH", "SZ"} and timeframe == "1d":
+        raise ExactDailyError("invalid_request", "富途当前日线绑定仅支持港美市场")
     context = None
     try:
         context = sdk.OpenQuoteContext(host=host, port=port)
@@ -31,7 +33,8 @@ def read_futu_history(sdk, host, port, request, *, timeframe):
                 or static.iloc[0].get("code") != code or static.iloc[0].get("stock_type") != asset):
             raise ExactDailyError("invalid_response", "富途历史 K 线证券或资产类型不匹配")
         autype = {"none": sdk.AuType.NONE, "qfq": sdk.AuType.QFQ, "hfq": sdk.AuType.HFQ}[adjustment]
-        ktype = sdk.KLType.K_1M if timeframe == "1m" else sdk.KLType.K_DAY
+        ktype = getattr(sdk.KLType, {"1d": "K_DAY", "1m": "K_1M", "5m": "K_5M",
+                                   "15m": "K_15M", "30m": "K_30M", "60m": "K_60M"}[timeframe])
         cursor, seen, pages = None, set(), []
         for _ in range(64):
             status, frame, next_cursor = context.request_history_kline(

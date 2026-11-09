@@ -33,7 +33,7 @@ def test_valid_plan_revalidates_and_is_immutable():
     plan(('2024-01-01', '2024-01-03'), ('2024-01-03', '2024-01-04'), ('2024-01-04', '2024-01-05')),
     DailyWindowPlan.model_construct(windows=(DailyWindow.model_construct(start='bad-date', end='2024-01-05'),))])
 def test_bad_plan_is_rejected_before_any_child_request(monkeypatch, value):
-    binding = next(binding for binding in SOURCE.bindings if binding.window_planner is not None)
+    binding = next(binding for binding in SOURCE.bindings if getattr(binding, 'window_planner', None) is not None)
     registry = CapabilityRegistry((SourceDefinition('test-plan', lambda: {}, lambda _: None,
                                     (replace(binding, window_planner=lambda _: value),)),))
     monkeypatch.setattr(api, 'CAPABILITY_SOURCES', registry)

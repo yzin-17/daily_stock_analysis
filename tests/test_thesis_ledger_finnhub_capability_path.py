@@ -12,7 +12,9 @@ from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest, ThesisLedgerProviderRuntime
 from tests.test_configured_market_routes import store, apply, no_admissions
 
-KEY = SOURCE.bindings[0].key.route_key()
+DAILY = next(binding for binding in SOURCE.bindings if binding.key.capability == 'DAILY_BAR')
+QUOTE = next(binding for binding in SOURCE.bindings if binding.key.capability == 'REALTIME_QUOTE')
+KEY = DAILY.key.route_key()
 TARGET = {'providerId': 'finnhub', 'upstreamSource': 'finnhub'}
 
 
@@ -48,7 +50,7 @@ def test_actual_factory_runtime_and_new_york_window(monkeypatch, store, start, e
             'o': [1.] * count, 'h': [1.2] * count, 'l': [.9] * count, 'c': [1.1] * count, 'v': [100.] * count}
         return SimpleNamespace(raise_for_status=lambda: None, json=lambda: payload)
     monkeypatch.setattr('data_provider.multimarket_exact_daily.requests.get', get)
-    store.save_provider_config('finnhub', {'requestId': 'fixture',
+    store.save_provider_config('finnhub', {"enabled": True, 'requestId': 'fixture',
         'credentials': {'method': 'api_key', 'values': {'apiKey': 'synthetic'}}})
     assert apply(store, KEY, TARGET)['effective']['routes'][0]['targets'][0]['eligible']
     runtime = ThesisLedgerProviderRuntime(store)
@@ -64,7 +66,7 @@ def test_actual_factory_runtime_and_new_york_window(monkeypatch, store, start, e
 
 def test_provider_factory_reuse_rotation_and_probe_preserve_original_cache(monkeypatch, store):
     def configure(value):
-        store.save_provider_config('finnhub', {'requestId': 'fixture',
+        store.save_provider_config('finnhub', {"enabled": True, 'requestId': 'fixture',
             'credentials': {'method': 'api_key', 'values': {'apiKey': value}}})
         return store.provider_credential_snapshot('finnhub')
     calls = []

@@ -20,7 +20,7 @@ REVISIONS = {
 
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
-    return build_provider_manifest('rqdata', 'RQData', {}, requires_credential=True)
+    return build_provider_manifest('rqdata', 'RQData', {'MINUTE_BAR': ('STOCK', 'ETF')}, requires_credential=True, markets=('CN',))
 
 
 def factory(context):
@@ -68,10 +68,17 @@ def credential_revision_payload(snapshot: ProviderCredentialSnapshot) -> bytes |
     return payload
 
 
+from data_provider.intraday_projection import intraday_bindings
+from data_provider.rqdata_intraday import read_minute
+
+INTRADAY_BINDINGS = intraday_bindings(read_minute, 'rqdata')
+
+
 SOURCE = SourceDefinition('rqdata', manifest, factory, tuple(
     EventBinding(contract, ExactKey('CN', 'ETF', capability), 'rqdata', read_event,
                  revisions(capability), wire_project, revision_facts=REVISIONS[capability],
                  current_admission=current_admission, probe_read=probe_event)
     for capability, contract in (('CASH_DISTRIBUTION', CASH_CONTRACT), ('SPLIT_EVENT', SPLIT_CONTRACT))
-), credentials=(('username_password', ('username', 'password')),),
-    normalize_credential_value=normalize_credential_value, credential_revision_payload=credential_revision_payload)
+) + INTRADAY_BINDINGS, credentials=(('username_password', ('username', 'password')),),
+    normalize_credential_value=normalize_credential_value, credential_revision_payload=credential_revision_payload,
+    dependency_modules=('rqdatac',))

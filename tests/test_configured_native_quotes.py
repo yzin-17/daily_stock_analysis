@@ -12,7 +12,7 @@ from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest,
     ("tickflow", "api_key", {"apiKey": "synthetic"}),
 ])
 def test_exact_quote_executes_without_record_or_hidden_source(store, provider, method, values):
-    store.save_provider_config(provider, {"requestId": "synthetic", "credentials": {"method": method, "values": values}})
+    store.save_provider_config(provider, {"enabled": True, "requestId": "synthetic", "credentials": {"method": method, "values": values}})
     key = {"kind": "data", "market": "CN", "assetType": "STOCK", "capability": "REALTIME_QUOTE"}
     target = {"providerId": provider, "upstreamSource": provider}
     assert apply(store, key, target)["effective"]["routes"][0]["targets"][0]["eligible"]

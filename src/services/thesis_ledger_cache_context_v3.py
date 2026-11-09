@@ -11,6 +11,7 @@ from .thesis_ledger_current_data_route import (
 )
 from .thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from .thesis_ledger_control import _provider_credential_revision_from_snapshot
+from .thesis_ledger_cache_route_epoch import route_cache_epoch
 
 CAPABILITIES = {'REALTIME_QUOTE', 'FUND_NAV', 'FUND_NAV_HISTORY', 'FUND_HOLDINGS', 'CHIP_SUMMARY'}
 
@@ -148,10 +149,12 @@ def read_cache_context(runtime, payload):
         asset = 'STOCK'
     key = current_data_route_key(request.capability, asset, request.symbol)
     before = _sample(runtime, key, request.symbol)
+    epoch = route_cache_epoch(runtime.store, key, before['policyRevision'])
     after = _sample(runtime, key, request.symbol)
     if before != after:
         raise CacheContextError('policy_not_applied')
-    generation = sha256(json.dumps(before, ensure_ascii=True, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    scoped = {**before, 'policyRevision': epoch, 'sourceDesiredRevision': epoch}
+    generation = sha256(json.dumps(scoped, ensure_ascii=True, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     response = {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': request.requestId,
             'symbol': request.symbol, 'capability': request.capability, 'routeKey': key,
             'policyRevision': before['policyRevision'], 'generation': generation,

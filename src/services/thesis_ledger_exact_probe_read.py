@@ -53,6 +53,9 @@ def read_exact_probe(runtime, key, target, snapshot):
         from src.services.thesis_ledger_exact_evidence_probe import read_evidence_probe
         return read_evidence_probe(runtime, key, target, snapshot)
     symbol, start, end = probe_sample(key)
+    if capability == 'MINUTE_BAR':
+        from .thesis_ledger_minute_probe import read_minute_probe
+        return read_minute_probe(runtime, key, target, snapshot, symbol, end)
     if capability == 'RESEARCH_REPORT_METADATA':
         from .thesis_ledger_report_metadata_query import read_report_metadata_probe
         return read_report_metadata_probe(runtime, key, target, snapshot, symbol, end)

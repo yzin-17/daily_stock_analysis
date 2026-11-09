@@ -54,7 +54,7 @@ def probe_quote(context):
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
     return {**build_provider_manifest("tushare", "Tushare Pro", {
-        "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK", "ETF"), "CHIP_SUMMARY": ("STOCK",),
+        "MINUTE_BAR": ("STOCK", "ETF"), "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK", "ETF"), "CHIP_SUMMARY": ("STOCK",),
     }, requires_credential=True, markets=("CN", "HK"), configuration_mode="dsa_environment"), "accountAccessSupported": True}
 
 
@@ -143,12 +143,18 @@ def credential_revision_payload(snapshot: ProviderCredentialSnapshot) -> bytes |
     ).encode('utf-8')
 
 
+from data_provider.intraday_projection import intraday_bindings
+from data_provider.tushare_intraday import read_minute
+
+INTRADAY_BINDINGS = intraday_bindings(read_minute, 'tushare')
+
+
 SOURCE = SourceDefinition("tushare", manifest, factory, tuple(
     DailyBinding(ExactKey(market, "STOCK", "DAILY_BAR", "none"), "tushare",
                  f"dsa-v3-{market.lower()}-stock-tushare-none-exact-daily-v1", PROTOCOL, PROTOCOL,
                  None, daily, gated=True)
     for market in ("CN", "HK")
-) + (DailyBinding(ExactKey('CN', 'ETF', 'DAILY_BAR', 'none'), 'tushare',
+) + INTRADAY_BINDINGS + (DailyBinding(ExactKey('CN', 'ETF', 'DAILY_BAR', 'none'), 'tushare',
     'dsa-v3-etf-tushare-fund-daily-none-adapter-v1', ETF_PROTOCOL, ETF_PROTOCOL,
     None, etf_daily, gated=True, verify_transport=verify_etf_transport),
     QuoteBinding(ExactKey("CN", "STOCK", "REALTIME_QUOTE"), "tushare",

@@ -100,7 +100,7 @@ def test_actual_factory_control_runtime_http_and_single_response(monkeypatch, st
             'items': [[symbol, '20260518', 1., 1.2, .9, 1.1, 100.]],
         }}))
     monkeypatch.setattr('data_provider.tushare_fetcher.requests.post', post)
-    store.save_provider_config('tushare', {'requestId': 'fixture',
+    store.save_provider_config('tushare', {"enabled": True, 'requestId': 'fixture',
         'credentials': {'method': 'token', 'values': {'token': 'synthetic'}}})
     key = {**SOURCE.bindings[0].key.route_key(), 'market': market}
     target = {'providerId': 'tushare', 'upstreamSource': 'tushare'}

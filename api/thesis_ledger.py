@@ -643,7 +643,7 @@ def _market_data_v3_request(payload: Any, fallback_request_id: str) -> dict[str,
             "STOCK", "ETF", "MUTUAL_FUND", "LOF", "INDEX", "BOND", "CONVERTIBLE_BOND"
         }
         or route_key.get("capability") not in {"DAILY_BAR", "MINUTE_BAR"}
-        or route_key.get("timeframe") not in {"1d", "1m"}
+        or route_key.get("timeframe") not in {"1d", "1m", "5m", "15m", "30m", "60m"}
         or route_key.get("adjustment") not in {"none", "qfq", "hfq"}
         or (route_key["capability"] == "DAILY_BAR") != (route_key["timeframe"] == "1d")
     ):

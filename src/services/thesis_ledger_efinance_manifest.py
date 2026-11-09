@@ -9,6 +9,7 @@ def build_efinance_manifest() -> dict[str, Any]:
     capabilities = {
         "REALTIME_QUOTE": ("STOCK", "ETF"),
         "DAILY_BAR": ("STOCK", "ETF"),
+        "MINUTE_BAR": ("STOCK", "ETF"),
         "FUND_NAV": ("MUTUAL_FUND",),
         "FUND_NAV_HISTORY": ("MUTUAL_FUND",),
     }

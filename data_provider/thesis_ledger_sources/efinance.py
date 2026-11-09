@@ -72,13 +72,19 @@ def history_nav(query, context):
     return project(context.adapter.get_fund_nav_history(query.symbol.removesuffix('.OF')), query, 'efinance', 'eastmoney')
 
 
+from data_provider.intraday_projection import intraday_bindings
+from data_provider.eastmoney_intraday import efinance_minute as read_native_intraday
+
+INTRADAY_BINDINGS = intraday_bindings(read_native_intraday, 'eastmoney')
+
+
 SOURCE = SourceDefinition("efinance", manifest, factory, tuple(
     DailyBinding(ExactKey("CN", asset, "DAILY_BAR", adjustment), "eastmoney",
                  f"dsa-v3-cn-{asset.lower()}-efinance-{adjustment}-exact-daily-v1",
                  PROTOCOL, PROTOCOL, None, daily, gated=True)
     for asset, adjustment in (("STOCK", "none"), ("STOCK", "qfq"), ("STOCK", "hfq"),
                               ("ETF", "none"), ("ETF", "qfq"), ("ETF", "hfq"))
-) + (
+) + INTRADAY_BINDINGS + (
     QuoteBinding(ExactKey("CN", "STOCK", "REALTIME_QUOTE"), "eastmoney",
         "efinance-stock-single-em-v2", "efinance-stock-quote-em-v1", quote),
     QuoteBinding(ExactKey("CN", "ETF", "REALTIME_QUOTE"), "eastmoney",

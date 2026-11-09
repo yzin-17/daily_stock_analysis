@@ -42,7 +42,7 @@ def test_hithink_manifest_compatibility_by_exact_route(key, target, binding, cha
 
 def test_hithink_data_target_exemption_is_redundant_for_all_current_bound_routes():
     data_routes = [(key, target) for key, target, _ in HITHINK_ROUTES if key['kind'] == 'data']
-    assert len(data_routes) == 3
+    assert len(data_routes) == 7
     for key, target in data_routes:
         # Control原条件：event跳过；其余均已具备current-data修订，不靠providerId豁免。
         assert event_adapter_matches(key, target) or current_data_adapter_revisions(key, target) is not None

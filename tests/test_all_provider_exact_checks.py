@@ -116,8 +116,8 @@ def test_actual_http_reports_rqdata_exact_event_capabilities_without_credentials
     assert response.status_code == 200
     result = response.json()
     assert result["status"] == "unconfigured"
-    assert set(result["capabilityResults"]) == {"CASH_DISTRIBUTION", "SPLIT_EVENT"}
-    assert len(result["routeResults"]) == 2
+    assert set(result["capabilityResults"]) == {"CASH_DISTRIBUTION", "SPLIT_EVENT", "MINUTE_BAR"}
+    assert len(result["routeResults"]) == 12
 
 
 def test_daily_probe_uses_exact_source_and_rejects_source_mismatch(runtime, monkeypatch):

@@ -32,10 +32,10 @@ def test_inventory_is_derived_and_excludes_test_sources():
     result = run("from scripts.export_thesis_ledger_capability_inventory import inventory; import json; print(json.dumps(inventory()))")
     assert result.returncode == 0, result.stderr
     value = json.loads(result.stdout)
-    assert len(value["providers"]) == 27
+    assert len(value["providers"]) == 30
     identities = [(json.dumps(row["key"], sort_keys=True), json.dumps(row["target"], sort_keys=True)) for row in value["exactRoutes"]]
     assert len(identities) == len(set(identities))
-    assert {source["providerId"] for source in value["unifiedDefinitions"]} == {"tencent", "hithink", "baostock", "official-states", "efinance", "akshare", "pytdx", "tickflow", "tickflow-free", "alphavantage", "finnhub", "tushare", "yfinance", "longbridge", "futu", "official-rules", "official-hk-rules", "official-us-rules", "official-dividends", "rqdata", "tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng"}
+    assert {source["providerId"] for source in value["unifiedDefinitions"]} == {"tencent", "hithink", "baostock", "official-states", "efinance", "akshare", "pytdx", "tickflow", "tickflow-free", "alphavantage", "finnhub", "tushare", "yfinance", "longbridge", "futu", "official-rules", "official-hk-rules", "official-us-rules", "official-dividends", "rqdata", "tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng", "cls", "wallstreetcn", "nvidia-news"}
     assert not any(row["key"]["capability"] == "ORDER_BOOK" for row in value["exactRoutes"])
     assert not any(source["providerId"].startswith("fixture-") for source in value["providers"])
     assert value["legacyBranches"] and value["inputs"]

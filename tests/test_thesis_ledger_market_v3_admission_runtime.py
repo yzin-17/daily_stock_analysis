@@ -143,7 +143,7 @@ def test_catalog_adds_basic_tencent_prices_to_exact_reviewed_admissions():
     catalog = ThesisLedgerProviderRuntime(store).market_route_catalog_v3()
 
     ready = [entry for entry in catalog["entries"]
-             if entry["state"] == "ready" and entry["key"]["kind"] == "bar"]
+             if entry["state"] == "ready" and entry["key"]["capability"] == "DAILY_BAR"]
     assert catalog["integrity"] == "complete"
     reviewed = [entry for entry in ready if entry["target"] == TARGET]
     assert len(reviewed) == 6

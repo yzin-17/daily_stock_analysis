@@ -18,7 +18,7 @@ def manifest():
     from src.services.provider_manifest import build_provider_manifest
     value = build_provider_manifest("yfinance", "Yahoo Finance", {
         "REALTIME_QUOTE": ("STOCK", "ETF", "INDEX"), "DAILY_BAR": ("STOCK", "ETF", "INDEX"),
-        "NEWS_SEARCH": ("STOCK",),
+        "NEWS_SEARCH": ("STOCK",), "MINUTE_BAR": ("STOCK", "ETF"),
     }, upstream_sources=(("yfinance", "Yahoo Finance"), ("yahoo-gme-share-window", "Yahoo GME按股历史窗口（有界）"),
                          ("yahoo-hk-share-window", "Yahoo 00147按股历史窗口（研究整手）"),
                          (NEWS_SOURCE, "Yahoo 美股近期新闻搜索")),
@@ -125,6 +125,12 @@ def quote(query, context):
     return value
 
 
+from data_provider.intraday_projection import intraday_bindings
+from data_provider.yahoo_intraday import read_minute as read_native_intraday
+
+INTRADAY_BINDINGS = intraday_bindings(read_native_intraday, 'yfinance', markets=('CN', 'HK', 'US'))
+
+
 SOURCE = SourceDefinition("yfinance", manifest, factory, tuple(
     DailyBinding(ExactKey(market, asset, "DAILY_BAR", "qfq"), "yfinance",
                  f"dsa-v3-{market.lower()}-{asset.lower()}-yfinance-qfq-exact-daily-v1", PROTOCOL, PROTOCOL,
@@ -149,5 +155,5 @@ SOURCE = SourceDefinition("yfinance", manifest, factory, tuple(
         "yfinance-direct-quote-v2", quote)
     for market, asset in (("CN", "STOCK"), ("CN", "ETF"), ("HK", "STOCK"), ("HK", "ETF"),
                           ("US", "STOCK"), ("US", "ETF"), ("US", "INDEX"))
-) + (NEWS_BINDING,), ("data_provider.yfinance_fetcher", "YfinanceFetcher"), dependency_modules=("yfinance",),
+) + INTRADAY_BINDINGS + (NEWS_BINDING,), ("data_provider.yfinance_fetcher", "YfinanceFetcher"), dependency_modules=("yfinance",),
     factory_scope="provider", policy_admission_guard=admission_current)

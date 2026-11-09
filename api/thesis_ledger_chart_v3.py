@@ -36,7 +36,7 @@ def chart_request(payload: Any, request_id: str) -> dict[str, Any]:
     if "routeTarget" not in parsed:
         _market_data_v3_error("invalid_response", 422, parsed["requestId"])
     key = parsed["routeKey"]
-    if key["timeframe"] == "1m" and (key["market"] not in {"HK", "US"}
+    if key["timeframe"] != "1d" and (key["market"] not in {"CN", "HK", "US"}
             or key["assetType"] not in {"STOCK", "ETF"} or key["adjustment"] != "none"):
         _market_data_v3_error("unsupported_price_basis", 422, parsed["requestId"])
     return parsed
@@ -60,7 +60,7 @@ def chart_response(request: Mapping[str, Any], execution: Any) -> dict[str, Any]
     ):
         _market_data_v3_error("invalid_response", 502, request_id)
     frame = getattr(execution, "value", None)
-    minute = request["routeKey"]["timeframe"] == "1m"
+    minute = request["routeKey"]["timeframe"] != "1d"
     fetched_at = _now_iso()
     points = []
     dates: set[str] = set()
@@ -68,8 +68,8 @@ def chart_response(request: Mapping[str, Any], execution: Any) -> dict[str, Any]
         if minute:
             fetched_at = frame.attrs["observedAt"]
         for _, row in frame.iterrows():
-            project = minute_chart_point if minute else chart_bar_point
-            point = project(row, request["routeKey"]["market"], fetched_at, _number)
+            point = minute_chart_point(row, request["routeKey"]["market"], fetched_at, _number,
+                timeframe=request["routeKey"]["timeframe"], convention=frame.attrs.get("timestampConvention", "interval-start")) if minute else chart_bar_point(row, request["routeKey"]["market"], fetched_at, _number)
             trading_date = datetime.fromisoformat(point["timestamp"]).date().isoformat()
             identity = point["timestamp"] if minute else trading_date
             if identity in dates or not request["start"] <= trading_date <= request["end"]:
@@ -116,7 +116,7 @@ def chart_response(request: Mapping[str, Any], execution: Any) -> dict[str, Any]
             key["adjustment"], MARKET_DATA_V3_METHOD_VERSION, fingerprint, fetched_at, units,
         ),
         "provenance": provenance, "inputFingerprint": fingerprint,
-        **({"session": "regular"} if minute else {}),
+        **({"session": "regular", "timestampConvention": frame.attrs.get("timestampConvention", "interval-start")} if minute else {}),
     }
 
 

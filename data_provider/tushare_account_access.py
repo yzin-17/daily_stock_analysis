@@ -35,6 +35,13 @@ def failure_result(error):
 def probe_account_access(context):
     key = context.key
     sample = SAMPLES.get((key["market"], key["assetType"], key["capability"]))
+    if key["capability"] == "MINUTE_BAR":
+        from datetime import date, timedelta
+        day = date.today() - timedelta(days=1)
+        sample = ("etf_mins" if key["assetType"] == "ETF" else "stk_mins", {
+            "ts_code": "510300.SH" if key["assetType"] == "ETF" else "600519.SH",
+            "freq": key["timeframe"][:-1] + "min",
+            "start_date": day.isoformat() + " 09:30:00", "end_date": day.isoformat() + " 09:31:00"})
     if sample is None or context.target.get("upstreamSource") != "tushare":
         return {"state": "unknown", "attempted": False, "errorCode": "not_adapted"}
     api = getattr(context.adapter, "_api", None)

@@ -13,7 +13,7 @@ PROTOCOL = "dsa-pytdx-exact-daily-single-response-v1"
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
     return reference_manifest(build_provider_manifest("pytdx", "通达信（pytdx）", {
-        "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK",),
+        "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK",), "MINUTE_BAR": ("STOCK",),
     }, markets=("CN",), configuration_mode="built_in"), REFERENCE_BINDINGS)
 
 
@@ -67,7 +67,13 @@ def quote(query, context):
         provider_timestamp=None, source="pytdx")
 
 
-SOURCE = SourceDefinition("pytdx", manifest, factory, (
+from data_provider.intraday_projection import intraday_bindings
+from data_provider.pytdx_intraday import read_minute as read_native_intraday
+
+INTRADAY_BINDINGS = intraday_bindings(read_native_intraday, 'pytdx', assets=('STOCK',))
+
+
+SOURCE = SourceDefinition("pytdx", manifest, factory, (*INTRADAY_BINDINGS,
     DailyBinding(ExactKey("CN", "STOCK", "DAILY_BAR", "none"), "pytdx",
                  "dsa-v3-cn-stock-pytdx-none-exact-daily-v1", PROTOCOL, PROTOCOL,
                  None, daily, gated=True),

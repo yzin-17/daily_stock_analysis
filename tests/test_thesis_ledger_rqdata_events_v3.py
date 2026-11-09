@@ -3,6 +3,8 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+from importlib.util import find_spec
+
 import pandas as pd
 import pytest
 from fastapi import FastAPI
@@ -25,8 +27,10 @@ from tests.test_rqdata_fund_event_process import working_factory, dividend_facto
 def state(tmp_path, monkeypatch):
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "synthetic-rqdata-event-key")
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "synthetic-data-token")
+    monkeypatch.setattr("src.services.thesis_ledger_provider_dependencies.find_spec",
+                        lambda module: object() if module == "rqdatac" else find_spec(module))
     store = ThesisLedgerControlStore(str(tmp_path / "control.sqlite"))
-    store.save_provider_config("rqdata", {
+    store.save_provider_config("rqdata", {"enabled": True,
         "requestId": "synthetic-credentials",
         "credentials": {"method": "username_password",
                         "values": {"username": "synthetic-user", "password": " secret "}},
@@ -114,12 +118,12 @@ def test_reverse_split_is_an_economic_split_capability(state, monkeypatch):
 
 def test_no_admission_never_decrypts_accounts_or_calls_sdk(state, monkeypatch):
     store, runtime, _, request, *_ = state
+    payload = request(SPLIT_KEY)
     credentials = Mock(side_effect=AssertionError("unexpected credentials"))
     original = store.provider_credential_snapshot
     monkeypatch.setattr(store, "provider_credential_snapshot",
                         lambda provider: credentials() if provider == "rqdata" else original(provider))
     read = controlled_reader(monkeypatch)
-    payload = request(SPLIT_KEY)
     with pytest.raises(EventV3Error):
         execute_event_request(runtime, payload)
     credentials.assert_not_called()
@@ -136,7 +140,7 @@ def test_during_read_changes_reject_late_result_without_retry(state, monkeypatch
         if change == "revoke":
             store.revoke_route_admission_v3(key=SPLIT_KEY, target=RQDATA_TARGET, reason="synthetic-revoke")
         elif change == "credentials":
-            store.save_provider_config("rqdata", {"requestId": "synthetic-rotation", "credentials": {
+            store.save_provider_config("rqdata", {"enabled": True,"requestId": "synthetic-rotation", "credentials": {
                 "method": "username_password", "values": {"username": "new-user", "password": "new-password"}}})
         elif change == "policy":
             store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "synthetic-disable",

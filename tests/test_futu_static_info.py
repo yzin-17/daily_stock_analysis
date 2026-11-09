@@ -55,7 +55,7 @@ def test_invalid_response_closes_context(changes):
 
 
 @pytest.mark.parametrize("symbol,asset", [("AAPL", "STOCK"), ("700.HK", "STOCK"),
-    ("600519.SH", "STOCK"), ("00700.HK", "OPTION"), ("00700.HK", [])])
+    ("60051.SH", "STOCK"), ("00700.HK", "OPTION"), ("00700.HK", [])])
 def test_invalid_input_never_connects(symbol, asset):
     sdk, _ = static_sdk()
     with pytest.raises(FutuMarketError):

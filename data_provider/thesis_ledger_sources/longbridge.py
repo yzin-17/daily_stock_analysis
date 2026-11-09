@@ -28,8 +28,8 @@ LOT_SOURCE_URL = "https://open.longbridge.com/docs/quote/pull/static"
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
     return build_provider_manifest("longbridge", "Longbridge", {
-        "SECURITY_LOT_SIZE": ("STOCK",), "REALTIME_QUOTE": ("STOCK", "ETF"), "DAILY_BAR": ("STOCK", "ETF"),
-    }, requires_credential=True, markets=("HK", "US"), configuration_mode="dsa_environment")
+        "MINUTE_BAR": ("STOCK", "ETF"), "SECURITY_LOT_SIZE": ("STOCK",), "REALTIME_QUOTE": ("STOCK", "ETF"), "DAILY_BAR": ("STOCK", "ETF"),
+    }, requires_credential=True, markets=("CN", "HK", "US"), configuration_mode="dsa_environment")
 
 
 def factory(context):
@@ -108,6 +108,12 @@ def quote(query, context):
     return value
 
 
+from data_provider.intraday_projection import intraday_bindings
+from data_provider.longbridge_intraday import read_minute
+
+INTRADAY_BINDINGS = intraday_bindings(read_minute, 'longbridge', markets=('CN', 'HK', 'US'))
+
+
 SOURCE = SourceDefinition("longbridge", manifest, factory, tuple(
     DailyBinding(ExactKey(market, asset, "DAILY_BAR", adjustment), "longbridge",
         f"dsa-v3-{market.lower()}-{asset.lower()}-longbridge-{adjustment}-exact-daily-v1", PROTOCOL, PROTOCOL,
@@ -120,7 +126,7 @@ SOURCE = SourceDefinition("longbridge", manifest, factory, tuple(
     QuoteBinding(ExactKey(market, asset, "REALTIME_QUOTE"), "longbridge",
         f"longbridge-{market.lower()}-{asset.lower()}-exact-quote-v2", "longbridge-direct-quote-v2", quote)
     for market, asset in (("HK", "STOCK"), ("HK", "ETF"), ("US", "STOCK"), ("US", "ETF"))
-), ("data_provider.longbridge_fetcher", "LongbridgeFetcher"),
+) + INTRADAY_BINDINGS, ("data_provider.longbridge_fetcher", "LongbridgeFetcher"),
     credentials=(("legacy", ("appKey", "appSecret", "accessToken")), ("oauth", ("clientId", "tokenJson"))),
     dependency_modules=("longbridge",), factory_scope="provider", allow_empty_environment_credentials=True,
     environment_credential_policy=EnvironmentCredentialPolicy(environment_credentials, select_method=environment_method))

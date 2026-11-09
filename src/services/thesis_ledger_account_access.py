@@ -21,6 +21,7 @@ _CACHES = WeakKeyDictionary()
 TTL_SECONDS = 300
 REQUEST_BUDGET_SECONDS = 18
 MAX_REQUESTS = 6
+MAX_ROUTE_ENTRIES = 64
 _IDENTITY_KEY = token_bytes(32)
 
 
@@ -102,7 +103,7 @@ def check_account_access(runtime, provider, value, catalog, *, fixture=False):
     if source is None or source.account_access_probe is None or "route" in value:
         raise ControlContractError("INVALID_PROVIDER_TEST", "该来源未声明账户检查或请求指定了业务读取目标")
     entries = [e for e in catalog["entries"] if e["target"]["providerId"] == source.provider_id]
-    if not entries or len(entries) > MAX_REQUESTS:
+    if not entries or len(entries) > MAX_ROUTE_ENTRIES:
         raise ControlContractError("INVALID_PROVIDER_TEST", "账户检查库存超出有界请求数量")
     baseline, snapshot = _snapshot(runtime.store, provider, value)
     normalized_baseline, snapshot = _account_snapshot(source, baseline), _account_snapshot(source, snapshot)
@@ -127,12 +128,13 @@ def check_account_access(runtime, provider, value, catalog, *, fixture=False):
         check_current()
         adapter = runtime._adapter(source.provider_id, snapshot=snapshot, cache=False, probe=True,
                                    market_v3_route_key=entries[0]["key"])
-    routes = []
+    routes, requests = [], 0
     for entry in entries:
         check_current()
         excluded = policy.excluded(entry["key"], level) if policy else None
         access = excluded or _check_one(
-            runtime, source, entry, snapshot, adapter, deadline - runtime.clock(), fixture=fixture)
+            runtime, source, entry, snapshot, adapter, (deadline - runtime.clock()) if requests < MAX_REQUESTS else 0, fixture=fixture)
+        requests += int(access.get("attempted", False))
         if not excluded and runtime.clock() > deadline:
             access = {"state": "unknown", "attempted": access["attempted"], "errorCode": "request_budget_exceeded"}
         check_current()

@@ -47,7 +47,7 @@ def load_record(store, snapshot, level):
         report = json.loads(row[1])
         if not isinstance(report, dict) or report.get("accountLevel") != level:
             return None
-        if not isinstance(report.get("routes"), list) or not 1 <= len(report["routes"]) <= 6:
+        if not isinstance(report.get("routes"), list) or not 1 <= len(report["routes"]) <= 64:
             return None
         if report.get("credentialContext") != "current" or report.get("persisted") is not True:
             return None

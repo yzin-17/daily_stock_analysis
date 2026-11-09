@@ -8,6 +8,7 @@ from .thesis_ledger_minute_contract_v1 import CONTRACT, MinuteRequest
 from .thesis_ledger_price_route_access import basic_price_credential_ready
 from .thesis_ledger_configured_read import ConfiguredReadError, check_configured_read_current
 from .thesis_ledger_control import ControlContractError
+from .thesis_ledger_control import PROVIDER_MANIFESTS
 
 
 def execute_minute(runtime, request, key, policy, provider_id, upstream_source):
@@ -16,7 +17,7 @@ def execute_minute(runtime, request, key, policy, provider_id, upstream_source):
     try:
         query = MinuteRequest.from_request(request)
         snapshot = runtime.store.provider_credential_snapshot(provider_id)
-        if not basic_price_credential_ready(snapshot):
+        if PROVIDER_MANIFESTS[provider_id].get('requiresCredential') and not basic_price_credential_ready(snapshot):
             raise ConfiguredReadError("credential_missing", "分钟来源缺少有效连接配置")
         adapter = runtime._adapter(provider_id, snapshot=snapshot, cache=False, market_v3_route_key=key)
         value = CAPABILITY_SOURCES.query(CONTRACT, query, key, target, ReadContext(adapter, snapshot, 4.5))
@@ -32,5 +33,6 @@ def execute_minute(runtime, request, key, policy, provider_id, upstream_source):
     frame = pd.DataFrame([row.model_dump() for row in value.rows])
     frame.attrs.update({"upstream_source": value.source, "timezone": value.timezone, "session": value.session,
                         "observedAt": value.observedAt, "responseSha256": value.responseSha256,
-                        "has_more_before": False})
+                        "has_more_before": False, "timeframe": value.timeframe,
+                        "timestampConvention": value.timestampConvention, "intradayFieldUnits": value.fieldUnits})
     return frame

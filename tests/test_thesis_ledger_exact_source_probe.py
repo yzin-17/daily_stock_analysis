@@ -73,7 +73,10 @@ def test_exact_probe_declaration_and_output_contract_are_strict(monkeypatch):
 
 @pytest.mark.parametrize('binding', official_rules.SOURCE.bindings)
 def test_real_local_fee_pack_is_read_without_modification(binding):
-    path = official_rules.ARCHIVE_DATA_PATH if binding.upstream_source == official_rules.ARCHIVE_SOURCE else official_rules.DATA_PATH
+    from src.services.thesis_ledger_etf_fee_sources import etf_fee_path
+    path = etf_fee_path(binding.key.route_key(), {"providerId": "official-rules", "upstreamSource": binding.upstream_source})
+    if path is None:
+        path = official_rules.ARCHIVE_DATA_PATH if binding.upstream_source == official_rules.ARCHIVE_SOURCE else official_rules.DATA_PATH
     before = path.read_bytes()
     pack = json.loads(before)
     result = read_exact_probe(SimpleNamespace(), binding.key.route_key(),

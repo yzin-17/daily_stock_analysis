@@ -25,7 +25,7 @@ def test_every_source_capability_and_upstream_is_projected_from_exact_inventory(
         assert set(manifest["markets"]) == {row[0] for row in expected}
         assert {(cap, asset) for cap, assets in manifest["capabilities"].items() for asset in assets} == {(row[1], row[2]) for row in expected}
         assert {(source["sourceId"], cap, asset) for source in manifest["upstreamSources"] for cap, assets in source["capabilities"].items() for asset in assets} == {(row[3], row[1], row[2]) for row in expected}
-    assert actual["rqdata"]["capabilities"] == {"CASH_DISTRIBUTION": ["ETF"], "SPLIT_EVENT": ["ETF"]}
+    assert actual["rqdata"]["capabilities"] == {"CASH_DISTRIBUTION": ["ETF"], "SPLIT_EVENT": ["ETF"], "MINUTE_BAR": ["ETF", "STOCK"]}
     assert PROVIDER_MANIFESTS == original
 
 

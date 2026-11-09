@@ -10,6 +10,8 @@ from src.services.thesis_ledger_daily_units_contract import DailyFieldUnits, Dai
 def native_field_units(attrs: Mapping[str, Any], key: Mapping[str, Any],
                        provider: str, source: str,
                        request: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    if key.get('capability') == 'MINUTE_BAR' and attrs.get('intradayFieldUnits') is not None:
+        return {'fieldUnits': DailyFieldUnits.model_validate(attrs['intradayFieldUnits']).model_dump()}
     names = {name for _, _, binding in CAPABILITY_SOURCES.routes('DAILY_BAR')
              if isinstance(binding, DailyBinding) and binding.public_units_policy is not None
              for name in binding.public_units_policy.metadata_names}

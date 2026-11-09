@@ -76,7 +76,7 @@ def test_new_source_only_declares_existing_calendar_eligibility(monkeypatch, ans
         calls.append(context)
         return answer
 
-    binding = replace(SOURCE.bindings[0], research_calendar_eligible=eligible)
+    binding = replace(next(binding for binding in SOURCE.bindings if binding.key.capability == 'DAILY_BAR' and binding.key.asset_type == 'STOCK' and binding.key.adjustment == 'none'), research_calendar_eligible=eligible)
     source = replace(SOURCE, provider_id='new-calendar-source', bindings=(binding,), quote_source_aliases=())
     registry = CapabilityRegistry((source,))
     monkeypatch.setattr(research, 'CAPABILITY_SOURCES', registry)
@@ -89,7 +89,7 @@ def test_new_source_only_declares_existing_calendar_eligibility(monkeypatch, ans
 
 def test_binding_registration_rejects_non_callable_calendar_validator():
     with pytest.raises(ValueError):
-        CapabilityRegistry((replace(SOURCE, bindings=(replace(SOURCE.bindings[0], research_calendar_eligible=1),), quote_source_aliases=()),))
+        CapabilityRegistry((replace(SOURCE, bindings=(replace(next(binding for binding in SOURCE.bindings if binding.key.capability == 'DAILY_BAR' and binding.key.asset_type == 'STOCK' and binding.key.adjustment == 'none'), research_calendar_eligible=1),), quote_source_aliases=()),))
 
 
 def test_absent_protocol_never_invokes_source(monkeypatch):

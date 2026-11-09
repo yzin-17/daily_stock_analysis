@@ -15,7 +15,10 @@ def require_catalog_request(payload: dict[str, Any], *, ack: bool = False) -> No
     fields = {"contractVersion", "consumer", "requestId"}
     if ack:
         fields |= {"generation", "checksum"}
-    if (set(payload) != fields or payload.get("contractVersion") != 3
+    allowed = fields if ack else fields | {"scope"}
+    if (not fields.issubset(payload) or not set(payload).issubset(allowed)
+            or (not ack and payload.get("scope", "CN") not in ("CN", "HK_US"))
+            or payload.get("contractVersion") != 3
             or payload.get("consumer") != CONSUMER_NAMESPACE
             or not isinstance(payload.get("requestId"), str)
             or not payload["requestId"].strip()):

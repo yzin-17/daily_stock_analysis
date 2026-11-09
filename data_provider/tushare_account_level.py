@@ -1,6 +1,6 @@
 """Tushare 积分与独立接口开通范围；积分来自用户填写。"""
 
-INDEPENDENT_APIS = frozenset({"hk_daily", "rt_k"})
+INDEPENDENT_APIS = frozenset({"hk_daily", "rt_k", "stk_mins", "etf_mins"})
 MINIMUM_POINTS = {"daily": 120, "fund_daily": 2000, "fund_div": 400, "cyq_chips": 5000}
 
 
@@ -19,10 +19,14 @@ def parse_account_level(value):
 
 
 def excluded_access(key, level):
+    if key["capability"] == "MINUTE_BAR":
+        api = "etf_mins" if key["assetType"] == "ETF" else "stk_mins"
+        if level is None or api not in level["independentApis"]:
+            return {"state": "not_included", "attempted": False, "errorCode": "independent_permission_not_enabled"}
+        return None
     if level is None:
         return None
     from data_provider.tushare_account_access import SAMPLES
-
     sample = SAMPLES.get((key["market"], key["assetType"], key["capability"]))
     if sample is None:
         return None

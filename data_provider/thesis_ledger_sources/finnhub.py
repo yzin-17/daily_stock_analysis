@@ -25,7 +25,7 @@ def probe_daily(context):
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
     return build_provider_manifest("finnhub", "Finnhub", {
-        "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK",),
+        "MINUTE_BAR": ("STOCK", "ETF"), "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK",),
     }, requires_credential=True, markets=("US",), configuration_mode="dsa_environment")
 
 
@@ -65,7 +65,13 @@ def quote(query, context):
     return value
 
 
-SOURCE = SourceDefinition("finnhub", manifest, factory, (
+from data_provider.intraday_projection import intraday_bindings
+from data_provider.finnhub_intraday import read_minute
+
+INTRADAY_BINDINGS = intraday_bindings(read_minute, 'finnhub', markets=('US',))
+
+
+SOURCE = SourceDefinition("finnhub", manifest, factory, (*INTRADAY_BINDINGS,
     DailyBinding(ExactKey("US", "STOCK", "DAILY_BAR", "qfq"), "finnhub",
                  "dsa-v3-us-stock-finnhub-qfq-exact-daily-v1", PROTOCOL, PROTOCOL,
                  None, daily, gated=True),

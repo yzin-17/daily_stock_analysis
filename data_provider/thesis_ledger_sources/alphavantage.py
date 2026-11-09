@@ -24,7 +24,7 @@ def probe_daily(context):
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
     return build_provider_manifest("alphavantage", "Alpha Vantage", {
-        "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK",),
+        "MINUTE_BAR": ("STOCK", "ETF"), "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK",),
     }, requires_credential=True, markets=("US",), configuration_mode="dsa_environment")
 
 
@@ -106,7 +106,13 @@ def quote(query, context):
         fetched_at=datetime.now(timezone.utc).isoformat(), source='alphavantage')
 
 
-SOURCE = SourceDefinition("alphavantage", manifest, factory, (
+from data_provider.intraday_projection import intraday_bindings
+from data_provider.alphavantage_intraday import read_minute
+
+INTRADAY_BINDINGS = intraday_bindings(read_minute, 'alphavantage', markets=('US',))
+
+
+SOURCE = SourceDefinition("alphavantage", manifest, factory, (*INTRADAY_BINDINGS,
     DailyBinding(ExactKey("US", "STOCK", "DAILY_BAR", "none"), "alphavantage",
                  "dsa-v3-us-stock-alphavantage-none-exact-daily-v2", PROTOCOL, PROTOCOL,
                  100, daily, gated=True),

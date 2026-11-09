@@ -28,7 +28,7 @@ def probe_quote(context):
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
     return build_provider_manifest("tickflow", "TickFlow", {
-        "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK",),
+        "MINUTE_BAR": ("STOCK", "ETF"), "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK",),
     }, requires_credential=True, markets=("CN",), configuration_mode="dsa_environment")
 
 
@@ -100,12 +100,18 @@ def quote(query, context):
     return value
 
 
+from data_provider.intraday_projection import intraday_bindings
+from data_provider.tickflow_intraday import read_minute
+
+INTRADAY_BINDINGS = intraday_bindings(read_minute, 'tickflow')
+
+
 SOURCE = SourceDefinition("tickflow", manifest, factory, tuple(
     DailyBinding(ExactKey("CN", "STOCK", "DAILY_BAR", adjustment), "tickflow",
                  f"dsa-v3-cn-stock-tickflow-{adjustment}-exact-daily-v1", PROTOCOL, PROTOCOL,
                  None, daily, gated=True)
     for adjustment in ("none", "qfq", "hfq")
-) + (QuoteBinding(ExactKey("CN", "STOCK", "REALTIME_QUOTE"), "tickflow",
+) + INTRADAY_BINDINGS + (QuoteBinding(ExactKey("CN", "STOCK", "REALTIME_QUOTE"), "tickflow",
     "tickflow-cn-stock-exact-quote-v2", "tickflow-direct-quote-v1", quote),),
     ("data_provider.tickflow_fetcher", "TickFlowFetcher"),
     credentials=(("api_key", ("apiKey",)),), dependency_modules=("tickflow",), factory_scope="provider",

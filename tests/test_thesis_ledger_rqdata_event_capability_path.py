@@ -89,9 +89,9 @@ def test_invalid_parameters_never_read_control_credentials_or_sdk(state, key, co
 
 def test_missing_hmac_keeps_declared_revisions_but_does_not_grant_current(state):
     source = CAPABILITY_SOURCES.source('rqdata')
-    assert source.manifest()['capabilities'] == {}
+    assert source.manifest()['capabilities'] == {'MINUTE_BAR': ['ETF', 'STOCK']}
     assert source.credentials == (('username_password', ('username', 'password')),)
-    for binding in source.bindings:
+    for binding in (binding for binding in source.bindings if binding.key.capability in {'CASH_DISTRIBUTION', 'SPLIT_EVENT'}):
         assert binding.adapter_revision and binding.source_revision
         assert binding.revision_resolver(None) is None
         assert binding.revision_resolver('not-required') is None

@@ -68,7 +68,7 @@ def test_registered_event_capabilities_do_not_configure_account_or_routes(runtim
     assert provider["requiresCredential"] is True
     assert provider["credentialConfigured"] is False
     assert provider["credentialSource"] == "none"
-    assert provider["capabilities"] == {"CASH_DISTRIBUTION": ["ETF"], "SPLIT_EVENT": ["ETF"]}
+    assert provider["capabilities"] == {"CASH_DISTRIBUTION": ["ETF"], "SPLIT_EVENT": ["ETF"], "MINUTE_BAR": ["ETF", "STOCK"]}
     assert provider["upstreamSources"][0]["capabilities"] == provider["capabilities"]
     assert _store.policy_projection_v3() is None
     assert provider["credentialSchema"]["methods"] == [{

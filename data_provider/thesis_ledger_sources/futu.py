@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from src.services.thesis_ledger_capability_registry import DailyBinding, QuoteBinding, QueryBinding, ExactKey, SourceDefinition
 from src.services.thesis_ledger_security_static_contract_v1 import CONTRACT as STATIC_CONTRACT
 from src.services.thesis_ledger_security_lot_contract_v1 import CONTRACT as LOT_CONTRACT
-from src.services.thesis_ledger_minute_contract_v1 import CONTRACT as MINUTE_CONTRACT
+from src.services.thesis_ledger_minute_contract_v1 import CONTRACT as MINUTE_CONTRACT, minute_market
 from src.services.thesis_ledger_security_static_contract_v1 import security_market
 from src.services.thesis_ledger_research_instrument_contract import ResearchInstrumentPolicy
 from data_provider.futu_research_identity import calendar_eligible, read_instrument, supports_symbol
@@ -22,7 +22,7 @@ def manifest():
     return build_provider_manifest("futu", "富途 OpenAPI", {
         "SECURITY_LOT_SIZE": ("STOCK",), "REALTIME_QUOTE": ("STOCK", "ETF"),
         "DAILY_BAR": ("STOCK", "ETF"), "MINUTE_BAR": ("STOCK", "ETF"), "SECURITY_STATIC_INFO": ("STOCK", "ETF"),
-    }, requires_credential=True, markets=("HK", "US"))
+    }, requires_credential=True, markets=("CN", "HK", "US"))
 
 
 def factory(context):
@@ -60,9 +60,9 @@ def minute(query, context):
         raise CapabilityContractError(error.code, str(error), retryable=error.code in {"timeout", "upstream_failure"}) from None
     try:
         attrs = value["attrs"]
-        return {"symbol": query.symbol, "market": security_market(query.symbol), "assetType": query.instrument_type,
+        return {"symbol": query.symbol, "market": minute_market(query.symbol), "assetType": query.instrument_type,
                 "source": attrs["upstream_source"], "rows": value["rows"], "observedAt": attrs["observedAt"],
-                "timezone": attrs["timezone"], "session": attrs["session"], "responseSha256": attrs["responseSha256"]}
+                "timeframe": query.timeframe, "timezone": attrs["timezone"], "session": attrs["session"], "responseSha256": attrs["responseSha256"]}
     except (KeyError, TypeError):
         raise CapabilityContractError("invalid_response", "富途分钟响应缺少标准字段") from None
 
@@ -105,9 +105,10 @@ SOURCE = SourceDefinition("futu", manifest, factory, tuple(
         "futu-security-static-info-v1", "futu-single-static-info-v1", static_info, admission_required=False)
     for market, asset in (("HK", "STOCK"), ("HK", "ETF"), ("US", "STOCK"), ("US", "ETF"))
 ) + tuple(
-    QueryBinding(MINUTE_CONTRACT, ExactKey(market, asset, "MINUTE_BAR", "none"), "futu",
+    QueryBinding(MINUTE_CONTRACT, ExactKey(market, asset, "MINUTE_BAR", "none", period), "futu",
         "futu-exact-minute-v1", "futu-complete-minute-sdk-pagination-v1", minute, admission_required=False)
-    for market, asset in (("HK", "STOCK"), ("HK", "ETF"), ("US", "STOCK"), ("US", "ETF"))
+    for market in ("CN", "HK", "US") for asset in ("STOCK", "ETF")
+    for period in ("1m", "5m", "15m", "30m", "60m")
 ) + (QueryBinding(LOT_CONTRACT, ExactKey("HK", "STOCK", "SECURITY_LOT_SIZE"), "futu",
     "futu-security-lot-size-v1", "futu-static-info-v1", lot_size, admission_required=False),),
     ("data_provider.futu_market", "FutuMarketAdapter"), credentials=(("opend", ("host", "port")),),

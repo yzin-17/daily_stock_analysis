@@ -94,7 +94,7 @@ def test_later_page_failure_never_returns_a_prefix(second):
 
 @pytest.mark.parametrize("changes", [
     {"adjustment": "qfq"}, {"adjustment": "hfq"}, {"instrumentType": "INDEX"},
-    {"symbol": "600519.SH"}, {"start": "bad"}, {"end": "2026-05-17"},
+    {"symbol": "600519.BJ"}, {"start": "bad"}, {"end": "2026-05-17"},
 ])
 def test_invalid_minute_request_never_connects(changes):
     value, ctx = sdk([])

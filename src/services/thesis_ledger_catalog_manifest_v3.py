@@ -10,7 +10,7 @@ from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 
 
 def catalog_manifest_matches_v3(provider: Mapping[str, Any], key: Mapping[str, Any], target: Mapping[str, Any]) -> bool:
-    if current_data_adapter_revisions(key, target) is not None:
+    if key.get("capability") == "MINUTE_BAR" or current_data_adapter_revisions(key, target) is not None:
         return _source_declares(provider, key, target)
     if key.get("kind") == "data" and key.get("capability") == "REALTIME_QUOTE":
         return False

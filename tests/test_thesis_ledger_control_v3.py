@@ -350,7 +350,20 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     minutes = [entry for entry in catalog["entries"] if entry["key"]["capability"] == "MINUTE_BAR"]
     assert {(e["key"]["market"], e["key"]["assetType"], e["key"]["timeframe"], e["key"]["adjustment"],
              e["target"]["providerId"]) for e in minutes} == {
-        (market, asset, "1m", "none", "futu") for market in ("HK", "US") for asset in ("STOCK", "ETF")}
+        (market, asset, period, "none", provider)
+        for provider, markets, periods in (
+            ("tencent", ("CN",), ("5m", "15m", "30m", "60m")),
+            ("baostock", ("CN",), ("5m", "15m", "30m", "60m")),
+            *((provider, ("CN",), ("1m", "5m", "15m", "30m", "60m"))
+              for provider in ("efinance", "akshare", "pytdx", "tickflow", "tushare", "rqdata")),
+            *((provider, ("US",), ("1m", "5m", "15m", "30m", "60m"))
+              for provider in ("alphavantage", "finnhub")),
+            *((provider, ("CN", "HK", "US"), ("1m", "5m", "15m", "30m", "60m"))
+              for provider in ("yfinance", "longbridge", "futu")),
+        )
+        for market in markets for period in periods for asset in ("STOCK", "ETF")
+        if provider != "pytdx" or asset == "STOCK"}
+    assert len(minutes) == 191
     events = [
         entry for entry in catalog["entries"]
         if entry["key"]["kind"] == "data"

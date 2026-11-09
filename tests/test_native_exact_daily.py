@@ -114,7 +114,7 @@ def test_baostock_adjustment_and_fields(store, adjustment, flag):
 @pytest.mark.parametrize('date_field', ['date', 'timestamp', 'time', 'ts'])
 def test_tickflow_compact_response_uses_sdk_adjustment(store, adjustment, flag, date_field):
     from data_provider.tickflow_fetcher import TickFlowFetcher
-    store.save_provider_config('tickflow', {'requestId': 'fixture',
+    store.save_provider_config('tickflow', {"enabled": True, 'requestId': 'fixture',
         'credentials': {'method': 'api_key', 'values': {'apiKey': 'synthetic'}}})
     calls = []
     raw = frame().to_dict(orient='list')
@@ -192,7 +192,7 @@ def test_missing_amount_stays_unknown_and_invalid_price_is_rejected():
 
 @pytest.mark.parametrize("market,symbol,endpoint", [("CN", "600519.SH", "daily"), ("HK", "00700.HK", "hk_daily")])
 def test_tushare_stock_endpoint_is_bound_to_market_and_symbol(store, market, symbol, endpoint):
-    store.save_provider_config("tushare", {"requestId": "synthetic", "credentials": {"method": "token", "values": {"token": "synthetic"}}})
+    store.save_provider_config("tushare", {"enabled": True, "requestId": "synthetic", "credentials": {"method": "token", "values": {"token": "synthetic"}}})
     calls = []
     def query(actual_endpoint, **params):
         calls.append((actual_endpoint, params))

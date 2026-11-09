@@ -66,7 +66,7 @@ def test_http_daily_is_source_pinned_and_never_estimates_amount(monkeypatch, sto
             payload = {"Meta Data": {"2. Symbol": "AAPL"}, "Time Series (Daily)": {"2026-05-18": {"1. open": "1", "2. high": "1.2", "3. low": ".9", "4. close": "1.1", "5. volume": "100"}}}
         return SimpleNamespace(raise_for_status=lambda: None, json=lambda: payload)
     monkeypatch.setattr(native.requests, "get", get)
-    store.save_provider_config(provider, {"requestId": "synthetic", "credentials": {"method": "api_key", "values": {"apiKey": "synthetic"}}})
+    store.save_provider_config(provider, {"enabled": True, "requestId": "synthetic", "credentials": {"method": "api_key", "values": {"apiKey": "synthetic"}}})
     key = {"kind": "bar", "market": "US", "assetType": "STOCK", "capability": "DAILY_BAR", "timeframe": "1d", "adjustment": adjustment}
     target = {"providerId": provider, "upstreamSource": provider}
     assert apply(store, key, target)["effective"]["routes"][0]["targets"][0]["eligible"]
@@ -106,7 +106,7 @@ def test_distinct_http_payloads_project_to_same_daily_contract(monkeypatch):
         SimpleNamespace(raise_for_status=lambda: None, json=lambda: payloads[url]))
     results = []
     for source in (ALPHA, FINN):
-        key = source.bindings[0].key.route_key()
+        key = next(binding for binding in source.bindings if binding.key.capability == 'DAILY_BAR').key.route_key()
         request = ThesisLedgerDataRequest('DAILY_BAR', 'AAPL.US', instrument_type='STOCK', timeframe='1d',
             adjustment=key['adjustment'], start='2026-05-18', end='2026-05-18')
         read = CAPABILITY_SOURCES.daily(request, key, {'providerId': source.provider_id, 'upstreamSource': source.provider_id},
@@ -115,4 +115,5 @@ def test_distinct_http_payloads_project_to_same_daily_contract(monkeypatch):
         results.append(read.frame.to_dict(orient='records'))
     assert results[0] == results[1]
     # 结构适配等价不扩大真实价格口径或消费资格。
-    assert ALPHA.bindings[0].key.adjustment == 'none' and FINN.bindings[0].key.adjustment == 'qfq'
+    assert next(binding for binding in ALPHA.bindings if binding.key.capability == 'DAILY_BAR').key.adjustment == 'none'
+    assert next(binding for binding in FINN.bindings if binding.key.capability == 'DAILY_BAR').key.adjustment == 'qfq'

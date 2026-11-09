@@ -162,6 +162,13 @@ def chip(query, context):
                    'akshare', 'eastmoney', 'eastmoney-price-estimate-v1')
 
 
+from data_provider.intraday_projection import intraday_bindings
+from data_provider.eastmoney_intraday import akshare_minute as read_native_intraday
+
+from data_provider.sina_intraday import read_minute as read_sina_minute
+INTRADAY_BINDINGS = intraday_bindings(read_native_intraday, 'eastmoney') + intraday_bindings(read_sina_minute, 'sina')
+
+
 SOURCE = SourceDefinition("akshare", manifest, factory, tuple(
     DailyBinding(ExactKey("CN", asset, "DAILY_BAR", adjustment), upstream,
                  f"dsa-v3-{asset.lower()}-akshare-{upstream}-{adjustment}-adapter-v1",
@@ -174,7 +181,7 @@ SOURCE = SourceDefinition("akshare", manifest, factory, tuple(
         ("ETF", "eastmoney", "akshare-etf-range-response-v1"),
     )
     for adjustment in ("none", "qfq", "hfq")
-) + (*REFERENCE_BINDINGS, NEWS_BINDING, REPORT_METADATA_BINDING, QuoteBinding(ExactKey("CN", "ETF", "REALTIME_QUOTE"), "eastmoney",
+) + INTRADAY_BINDINGS + (*REFERENCE_BINDINGS, NEWS_BINDING, REPORT_METADATA_BINDING, QuoteBinding(ExactKey("CN", "ETF", "REALTIME_QUOTE"), "eastmoney",
     "akshare-etf-single-em-v1", "eastmoney-single-security-v1", etf_quote, dependency_modules=('requests',)),
     QuoteBinding(ExactKey("CN", "STOCK", "REALTIME_QUOTE"), "eastmoney",
         "akshare-stock-em-v2", "akshare-stock-spot-em-v1", stock_quote_reader("eastmoney")),

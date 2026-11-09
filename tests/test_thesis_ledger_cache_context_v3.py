@@ -346,3 +346,44 @@ def test_background_preserves_selected_fallback_identity_without_trying_restrict
     result = runtime.execute_request(req)
     assert result.provider == 'tencent' and result.fallback_used is True and result.route_index == 1
     public.assert_called_once_with('510300.SH'); restricted.assert_not_called()
+
+
+def _policy(store, revision, routes, enabled=True):
+    return store.apply_policy_v3({'contractVersion':3,'consumer':'thesis-ledger','requestId':f'epoch-{revision}',
+        'revision':revision,'enabled':enabled,'routes':routes})
+
+
+def test_unrelated_minute_policy_does_not_invalidate_quote_cache_or_read_data(store, monkeypatch):
+    routes=[{'key':KEY,'targets':[TARGET]}]
+    _policy(store,1,routes)
+    runtime=ThesisLedgerProviderRuntime(store)
+    monkeypatch.setattr(runtime,'execute_request',Mock(side_effect=AssertionError('不得读取来源')))
+    first=read_cache_context(runtime,request())
+    minute={'key':{'kind':'bar','market':'CN','assetType':'ETF','capability':'MINUTE_BAR','timeframe':'60m','adjustment':'none'},
+            'targets':[{'providerId':'efinance','upstreamSource':'eastmoney'}]}
+    _policy(store,2,[*routes,minute])
+    current=read_cache_context(runtime,request())
+    assert current['policyRevision']==2 and first['policyRevision']==1
+    assert current['generation']==first['generation']
+    runtime.execute_request.assert_not_called()
+
+
+@pytest.mark.parametrize('transition',['global-disable','route-disable','remove','reorder'])
+def test_quote_control_change_and_aba_restore_never_reuse_old_generation(store, transition):
+    other={'providerId':'efinance','upstreamSource':'eastmoney'}
+    routes=[{'key':KEY,'targets':[TARGET,other]}]
+    _policy(store,1,routes)
+    runtime=ThesisLedgerProviderRuntime(store)
+    first=read_cache_context(runtime,request())
+    changed=deepcopy(routes)
+    enabled=True
+    if transition=='global-disable':enabled=False
+    elif transition=='route-disable':changed[0]['enabled']=False
+    elif transition=='remove':changed=[]
+    else:changed[0]['targets'].reverse()
+    _policy(store,2,changed,enabled)
+    middle=read_cache_context(runtime,request())
+    _policy(store,3,routes)
+    restored=read_cache_context(runtime,request())
+    assert len({first['generation'],middle['generation'],restored['generation']})==3
+    assert restored['ready'] is True

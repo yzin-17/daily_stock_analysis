@@ -126,8 +126,11 @@
     "tests/test_futu_distribution_contract.py",
     "tests/test_futu_market.py",
     "tests/test_futu_minute.py",
+    "tests/test_native_intraday.py",
+    "tests/test_public_intraday.py",
     "tests/test_futu_quote_consumer.py",
     "tests/test_futu_research_identity.py",
+    "tests/test_futu_catalog.py",
     "tests/test_futu_static_info.py",
     "tests/test_generate_index_from_csv.py",
     "tests/test_hithink_control_credentials.py",
@@ -233,6 +236,7 @@
     "tests/test_thesis_ledger_catalog_job.py",
     "tests/test_thesis_ledger_catalog_manifest_compatibility.py",
     "tests/test_thesis_ledger_catalog_readiness_policy.py",
+    "tests/test_thesis_ledger_catalog_scope.py",
     "tests/test_thesis_ledger_catalog_sources.py",
     "tests/test_thesis_ledger_chart_v3.py",
     "tests/test_thesis_ledger_chip_capability_path.py",
@@ -449,7 +453,8 @@
     "tests/test_thesis_ledger_etf_public_fees.py",
     "tests/test_rule_monitor_store.py",
     "tests/test_rule_monitor_fetch.py",
-    "tests/test_rule_monitor_runtime.py"
+    "tests/test_rule_monitor_runtime.py",
+    "tests/test_arena_historical_opening_evidence.py"
   ],
   "retiredByOwner": {
     "D5": {

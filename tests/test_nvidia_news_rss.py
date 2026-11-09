@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 import time
+import logging
 
 import pytest
 
@@ -17,6 +18,16 @@ from src.services.thesis_ledger_news_execution import execute_news_search
 from src.services.thesis_ledger_news_gateway import execute_news_request
 from src.services.thesis_ledger_news_records import RawNewsRecord
 from src.services.thesis_ledger_provider_runtime import ThesisLedgerProviderRuntime
+
+
+@pytest.fixture(autouse=True)
+def restore_worker_logging():
+    """在当前进程测试子进程入口时，恢复其全局日志开关。"""
+    disabled = logging.root.manager.disable
+    try:
+        yield
+    finally:
+        logging.disable(disabled)
 
 KEY = {"kind": "data", "market": "US", "assetType": "STOCK", "capability": "NEWS_SEARCH"}
 TARGET = {"providerId": source.PROVIDER_ID, "upstreamSource": source.UPSTREAM}

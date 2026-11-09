@@ -57,11 +57,12 @@ class ExactKey:
     asset_type: str
     capability: str
     adjustment: str | None = None
+    timeframe: str | None = None
 
     def route_key(self):
         if self.capability in {"DAILY_BAR", "MINUTE_BAR"}:
             return {"kind": "bar", "market": self.market, "assetType": self.asset_type,
-                    "capability": self.capability, "timeframe": "1m" if self.capability == "MINUTE_BAR" else "1d", "adjustment": self.adjustment}
+                    "capability": self.capability, "timeframe": self.timeframe or ("1m" if self.capability == "MINUTE_BAR" else "1d"), "adjustment": self.adjustment}
         return {"kind": "data", "market": self.market, "assetType": self.asset_type, "capability": self.capability}
 
 
@@ -324,6 +325,10 @@ class CapabilityRegistry:
                     raise ValueError("日线缺少精确价格口径")
                 if binding.key.capability == 'MINUTE_BAR' and binding.key.adjustment != 'none':
                     raise ValueError("分钟线缺少精确不复权口径")
+                if binding.key.capability == 'MINUTE_BAR' and binding.key.timeframe not in {None, '1m', '5m', '15m', '30m', '60m'}:
+                    raise ValueError("分钟线周期无效")
+                if binding.key.capability != 'MINUTE_BAR' and binding.key.timeframe is not None:
+                    raise ValueError("只有分钟线绑定可声明原生分钟周期")
                 if binding.key.capability not in {'DAILY_BAR', 'MINUTE_BAR'} and binding.key.adjustment is not None:
                     raise ValueError("非日线能力不得携带日线价格口径")
                 if isinstance(binding, QuoteBinding):

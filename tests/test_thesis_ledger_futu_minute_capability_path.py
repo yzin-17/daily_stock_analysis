@@ -39,15 +39,19 @@ def post(client, payload):
     return client.post(PATH, json=payload, headers={"authorization": "Bearer synthetic-minute-token"})
 
 
-def test_only_four_exact_unadjusted_minute_bindings_are_advertised():
+def test_exact_native_minute_bindings_do_not_invent_periods():
     from src.services.thesis_ledger_exact_route_inventory import exact_route_inventory
     from src.services.thesis_ledger_price_route_access import configured_data_route
     from src.services.thesis_ledger_market_v3_revisions import market_v3_current_route_revisions
     from src.services.thesis_ledger_control import PROVIDER_MANIFESTS
     entries = [(k, t) for k, t, gated in exact_route_inventory() if k["capability"] == "MINUTE_BAR"]
-    assert len(entries) == 4
+    assert {t['providerId'] for _, t in entries} == {'futu', 'akshare', 'efinance', 'baostock',
+        'pytdx', 'yfinance', 'tushare', 'tickflow', 'alphavantage', 'finnhub', 'longbridge', 'rqdata', 'tencent'}
+    assert not any(k["timeframe"] == "1m" and t["providerId"] == "baostock" for k, t in entries)
+    entries = [(k, t) for k, t in entries if t["providerId"] == "futu"]
+    assert len(entries) == 30
     assert len([b for b in SOURCE.bindings if b.key.capability == "DAILY_BAR"]) == 12
-    assert all(k["kind"] == "bar" and k["timeframe"] == "1m" and k["adjustment"] == "none"
+    assert all(k["kind"] == "bar" and k["timeframe"] in {"1m", "5m", "15m", "30m", "60m"} and k["adjustment"] == "none"
                and configured_data_route(k, t) for k, t in entries)
     for key, target in entries:
         revision = market_v3_current_route_revisions(key, target, PROVIDER_MANIFESTS["futu"], credential_version=1)

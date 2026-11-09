@@ -55,6 +55,7 @@ def test_non_retryable_response_survives_process_boundary(tmp_path):
                                      timeout_seconds=3, max_attempts=3, backoff_seconds=0)
     assert error.value.code == "catalog_provider_invalid_response"
     assert error.value.retryable is False
+    assert str(error.value) == "invalid fixture"
     assert counter.read_text() == "1"
 
 
@@ -106,6 +107,7 @@ def test_provider_retry_is_bounded_and_uses_stable_error(tmp_path):
         )
 
     assert raised.value.code == "catalog_provider_unavailable"
+    assert str(raised.value) == "Provider 目录请求失败"
     assert counter_path.read_text(encoding="utf-8") == "2"
 
 

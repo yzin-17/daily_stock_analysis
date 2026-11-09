@@ -30,6 +30,9 @@ def futu_security(symbol):
         if int(code) > 0:
             return "HK." + code, "HK", "Asia/Hong_Kong"
         raise FutuMarketError("invalid_request", "富途证券代码不能为零")
+    cn = re.fullmatch(r"([0-9]{6})\.(SH|SZ)", value)
+    if cn:
+        return cn[2] + "." + cn[1], cn[2], "Asia/Shanghai"
     if re.match(r"^(HK\.?[0-9]|SH\.|SZ\.|BJ\.)", value):
         raise FutuMarketError("invalid_request", "富途证券代码格式或市场不匹配")
     if value.endswith(".US"):
@@ -120,7 +123,7 @@ class FutuMarketAdapter(FutuLotSizeAdapter):
 
     def get_exact_minute(self, request):
         return self._query({"operation": "minute", "symbol": request.symbol, "instrumentType": request.instrument_type,
-                            "start": request.start, "end": request.end, "adjustment": "none"})
+                            "start": request.start, "end": request.end, "adjustment": "none", "timeframe": request.timeframe})
 
     def _query(self, request):
         try:

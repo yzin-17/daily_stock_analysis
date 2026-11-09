@@ -70,7 +70,7 @@ def test_actual_factory_control_runtime_sdk_projection(monkeypatch, store, marke
         calls.append(args)
         return [candle]
     monkeypatch.setattr(LongbridgeFetcher, '_get_ctx', lambda self: SimpleNamespace(history_candlesticks_by_date=read))
-    store.save_provider_config('longbridge', {'requestId': 'fixture', 'credentials': {'method': 'legacy',
+    store.save_provider_config('longbridge', {"enabled": True, 'requestId': 'fixture', 'credentials': {'method': 'legacy',
         'values': {'appKey': 'synthetic-key', 'appSecret': 'synthetic-secret', 'accessToken': 'synthetic'}}})
     key = {'kind': 'bar', 'market': market, 'assetType': asset, 'capability': 'DAILY_BAR', 'timeframe': '1d', 'adjustment': adjustment}
     assert apply(store, key, {'providerId': 'longbridge', 'upstreamSource': 'longbridge'})['effective']['routes'][0]['targets'][0]['eligible']

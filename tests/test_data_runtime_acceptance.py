@@ -8,6 +8,7 @@ from pathlib import Path
 from queue import Empty, Queue
 import shutil
 import subprocess
+import sys
 import tempfile
 from threading import Thread
 import time
@@ -71,7 +72,8 @@ def running_data_process(executable, root, *, scenario=None):
     bound = None
     try:
         try:
-            bound = messages.get(timeout=15)
+            # macOS 对新复制的原生扩展首次加载约需 18–22 秒；Linux 保持原预算。
+            bound = messages.get(timeout=30 if sys.platform == "darwin" else 15)
         except Empty:
             pytest.fail("数据进程未监听：" + "".join(output)[-2400:])
         assert bound["kind"] == "bound", bound
@@ -133,10 +135,13 @@ def test_physical_data_environment_server_entrypoint_and_restart(data_python, tm
             for path in paths - {"/health", "/api/health"}:
                 route = path.replace("{provider_id}", "longbridge").replace("{job_id}", "missing")
                 route = route.replace("{session_id}", "missing")
-                method = next(method for method in schema["paths"][path] if method in {"get", "post"})
-                response = session.request(method, origin + route, json={} if method == "post" else None, timeout=5)
-                expected = 200 if path == "/api/v3/thesis-ledger/capabilities" else 401
-                assert response.status_code == expected, (path, response.status_code, response.text[:200])
+                methods = set(schema["paths"][path]) & {"get", "post", "put", "patch", "delete"}
+                assert methods, path
+                for method in methods:
+                    response = session.request(method, origin + route,
+                                               json={} if method != "get" else None, timeout=5)
+                    expected = 200 if path == "/api/v3/thesis-ledger/capabilities" else 401
+                    assert response.status_code == expected, (method, path, response.status_code, response.text[:200])
             index = session.get(origin + "/stocks.index.json", timeout=5)
             assert index.status_code == 200 and len(index.json()) > 1000
             for prefix in ("v1", "v2"):

@@ -32,12 +32,13 @@ def sdk_for(code="HK.00700", asset="STOCK", **changes):
 @pytest.mark.parametrize("symbol,code,zone", [("00700.HK", "HK.00700", "Asia/Hong_Kong"),
     ("HK00700", "HK.00700", "Asia/Hong_Kong"), ("HK.00700", "HK.00700", "Asia/Hong_Kong"),
     ("AAPL.US", "US.AAPL", "America/New_York"), ("US.AAPL", "US.AAPL", "America/New_York"),
-    ("BRK.B.US", "US.BRK.B", "America/New_York")])
+    ("BRK.B.US", "US.BRK.B", "America/New_York"),
+    ("600519.SH", "SH.600519", "Asia/Shanghai"), ("000001.SZ", "SZ.000001", "Asia/Shanghai")])
 def test_symbol_binding(symbol, code, zone):
     assert futu_security(symbol) == (code, code[:2], zone)
 
 
-@pytest.mark.parametrize("symbol", ["600519.SH", "SH.600519", "00700.HK.US", "00000.HK", "HK000700", "00700", ""])
+@pytest.mark.parametrize("symbol", ["60051.SH", "SH.600519", "00700.HK.US", "00000.HK", "HK000700", "00700", ""])
 def test_invalid_symbol_rejected_before_sdk(symbol):
     with pytest.raises(FutuMarketError):
         futu_security(symbol)

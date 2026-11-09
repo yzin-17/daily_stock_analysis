@@ -38,7 +38,6 @@ from src.services.provider_credentials import (
 from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
 from src.services.thesis_ledger_control_sqlite import control_connection
 from src.services import thesis_ledger_catalog_worker as catalog_worker
-from src.services.thesis_ledger_catalog_execution import catalog_checkpoint
 from src.services.thesis_ledger_environment_credentials import environment_credential_values as _environment_credential_values
 from src.services.thesis_ledger_environment_credentials import environment_credential_method, environment_snapshot_values
 from src.services.provider_oauth_contract import OAuthStateError, validate_oauth_token
@@ -436,7 +435,7 @@ def normalize_policy_v3(payload: dict[str, Any]) -> dict[str, Any]:
                 fail("INVALID_POLICY_SCHEMA", "V3 bar capability 不受支持", request_id)
             if not isinstance(timeframe, str) or not isinstance(adjustment, str):
                 fail("INVALID_POLICY_SCHEMA", "V3 timeframe 或 adjustment 不受支持", request_id)
-            if (capability, timeframe) not in {("DAILY_BAR", "1d"), ("MINUTE_BAR", "1m")}:
+            if (capability, timeframe) not in {("DAILY_BAR", "1d"), *(("MINUTE_BAR", p) for p in ("1m", "5m", "15m", "30m", "60m"))}:
                 fail("INVALID_POLICY_SCHEMA", "V3 bar capability 与 timeframe 不匹配", request_id)
             if adjustment not in {"none", "qfq", "hfq"}:
                 fail("INVALID_POLICY_SCHEMA", "V3 adjustment 不受支持", request_id)
@@ -625,6 +624,7 @@ class ThesisLedgerControlStore:
                 CREATE TABLE IF NOT EXISTS thesis_ledger_catalog_job (
                     id TEXT PRIMARY KEY,
                     status TEXT NOT NULL,
+                    scope TEXT NOT NULL DEFAULT 'CN',
                     generation INTEGER NOT NULL,
                     checksum TEXT NOT NULL,
                     error_json TEXT,
@@ -651,6 +651,8 @@ class ThesisLedgerControlStore:
                     "PRAGMA table_info(thesis_ledger_catalog_job)"
                 ).fetchall()
             }
+            if "scope" not in job_columns:
+                connection.execute("ALTER TABLE thesis_ledger_catalog_job ADD COLUMN scope TEXT NOT NULL DEFAULT 'CN'")
             if "owner" not in job_columns:
                 connection.execute(
                     "ALTER TABLE thesis_ledger_catalog_job ADD COLUMN owner TEXT"
@@ -1975,6 +1977,7 @@ class ThesisLedgerControlStore:
         owner: str,
         *,
         initial_status: str = "pending",
+        scope: str = "CN",
     ) -> tuple[sqlite3.Row, bool]:
         """在单一 SQLite 写事务中去重并声明一个 Catalog Job。"""
         if initial_status not in {"pending", "running"}:
@@ -1998,6 +2001,8 @@ class ThesisLedgerControlStore:
                     """
                 ).fetchone()
                 if running is not None:
+                    if running["scope"] != scope:
+                        raise ControlContractError("CATALOG_SCOPE_BUSY", "另一市场范围的目录任务正在执行", status_code=409)
                     connection.commit()
                     return running, False
                 latest = connection.execute(
@@ -2011,8 +2016,8 @@ class ThesisLedgerControlStore:
                     """
                     INSERT INTO thesis_ledger_catalog_job
                     (id, status, generation, checksum, error_json, owner,
-                     lease_expires_at, created_at, updated_at)
-                    VALUES (?, ?, ?, '', NULL, ?, ?, ?, ?)
+                     lease_expires_at, created_at, updated_at, scope)
+                    VALUES (?, ?, ?, '', NULL, ?, ?, ?, ?, ?)
                     """,
                     (
                         job_id,
@@ -2022,6 +2027,7 @@ class ThesisLedgerControlStore:
                         _lease_expires_at(now) if initial_status == "running" else None,
                         now,
                         now,
+                        scope,
                     ),
                 )
                 connection.commit()
@@ -2207,6 +2213,8 @@ class ThesisLedgerControlStore:
                     "SELECT * FROM thesis_ledger_catalog_job WHERE status='timeout'"
                 ).fetchall()
                 for row in timeout_rows:
+                    if row["scope"] == "HK_US":
+                        continue
                     error = _json_load(row["error_json"], {})
                     if not isinstance(error, dict):
                         continue
@@ -2266,7 +2274,7 @@ class ThesisLedgerControlStore:
             from src.services.thesis_ledger_catalog_contract import require_catalog_request
             require_catalog_request(payload)
         job_owner = self._catalog_job_owner_value(owner)
-        job, claimed = self._claim_catalog_job(job_owner, initial_status="pending")
+        job, claimed = self._claim_catalog_job(job_owner, initial_status="pending", scope=(payload or {}).get("scope", "CN"))
         if claimed:
             _catalog_job_manager_for(self.database_path).enqueue(
                 str(job["id"]), job_owner
@@ -2309,52 +2317,8 @@ class ThesisLedgerControlStore:
             )
 
     def execute_catalog_job(self, job_id: str, owner: str) -> dict[str, Any]:
-        """Run one claimed Job; called by the process-local Catalog worker."""
-        started = self._start_catalog_job(job_id, owner)
-        if started is None:
-            raise ControlContractError(
-                "CATALOG_JOB_NOT_FOUND",
-                "Catalog Job 不存在，无法执行",
-                status_code=409,
-            )
-        if started["status"] != "running" or started["owner"] != owner:
-            return self._job_payload(started)
-        try:
-            fixture_mode = os.getenv("THESIS_LEDGER_FIXTURE_MODE", "false").strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
-            failures: dict[str, str] = {}
-            if fixture_mode:
-                items = list(DEFAULT_CATALOG)
-            else:
-                from src.services.thesis_ledger_catalog import build_catalog
-
-                items, failures = build_catalog()
-            items = sorted(
-                items,
-                key=lambda item: (
-                    item["canonicalCode"],
-                    item["market"],
-                    item["instrumentType"],
-                ),
-            )
-            catalog_checkpoint()
-            completed = self._complete_catalog_job(job_id, owner, items, failures)
-            return self._job_payload(completed)
-        except Exception as exc:
-            failure = {
-                "code": str(getattr(exc, "code", "catalog_provider_unavailable")),
-                "retryable": bool(getattr(exc, "retryable", True)),
-            }
-            if hasattr(exc, "code"):
-                failure["message"] = str(exc)
-            failed = self._fail_catalog_job(job_id, owner, error=failure)
-            if failed is None:
-                raise
-            return self._job_payload(failed)
+        from src.services.thesis_ledger_catalog_refresh import execute_catalog_job
+        return execute_catalog_job(self, job_id, owner)
 
     @staticmethod
     def _job_payload(row: sqlite3.Row, *, now: str | None = None) -> dict[str, Any]:
@@ -2364,6 +2328,7 @@ class ThesisLedgerControlStore:
             "contractVersion": CONTROL_CONTRACT_V3_VERSION,
             "consumer": CONSUMER_NAMESPACE,
             "id": row["id"],
+            "scope": row["scope"],
             "status": status,
             "generation": int(row["generation"]),
             "checksum": row["checksum"],

@@ -33,13 +33,16 @@ def chart_bar_point(row, market, fetched_at, number):
             "completionStatus": "complete" if complete else "incomplete", "availableAt": fetched_at}
 
 
-def minute_chart_point(row, market, fetched_at, number):
-    zone = ZoneInfo({"HK": "Asia/Hong_Kong", "US": "America/New_York"}[market])
+def minute_chart_point(row, market, fetched_at, number, *, timeframe="1m", convention="interval-start"):
+    zone = ZoneInfo({"CN": "Asia/Shanghai", "HK": "Asia/Hong_Kong", "US": "America/New_York"}[market])
     stamp = datetime.fromisoformat(str(row["timestamp"]))
     observed = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
     complete = row.get("complete")
-    if (stamp.utcoffset() is None or stamp.second or stamp.microsecond or type(complete) is not bool
-            or complete and stamp + timedelta(minutes=1) > observed):
+    if (stamp.utcoffset() is None or stamp.second or stamp.microsecond or (complete is not None and type(complete) is not bool)
+            or stamp > observed or complete and stamp + timedelta(minutes=int(timeframe[:-1]) if convention == "interval-start" else 0) > observed):
         raise ValueError("invalid minute time or completion")
+    status = 'unknown'
+    if complete is not None:
+        status = 'complete' if complete else 'incomplete'
     return {"timestamp": stamp.astimezone(zone).isoformat(), **bar_fields(row, number),
-            "completionStatus": "complete" if complete else "incomplete", "availableAt": fetched_at}
+            "completionStatus": status, "availableAt": fetched_at}

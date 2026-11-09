@@ -29,7 +29,7 @@ DAILY_PROTOCOL = "dsa-baostock-exact-daily-single-response-v1"
 
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
-    capabilities = {"DAILY_BAR": ("STOCK",), "HISTORICAL_TRADING_STATUS": ("STOCK",)}
+    capabilities = {"MINUTE_BAR": ("STOCK", "ETF"), "DAILY_BAR": ("STOCK",), "HISTORICAL_TRADING_STATUS": ("STOCK",)}
     capabilities.update({binding.key.capability: ("STOCK",) for binding in BINDINGS})
     return reference_manifest(build_provider_manifest("baostock", "BaoStock", capabilities, markets=("CN",), configuration_mode="built_in"), REFERENCE_BINDINGS)
 
@@ -182,7 +182,13 @@ BINDINGS = (
 from src.services.thesis_ledger_legacy_status_contract_v1 import CONTRACT as LEGACY_CONTRACT
 from data_provider.baostock_legacy_status import read_status as read_legacy_status
 
-SOURCE = SourceDefinition("baostock", manifest, factory, (
+from data_provider.intraday_projection import intraday_bindings
+from data_provider.baostock_intraday import read_minute as read_native_intraday
+
+INTRADAY_BINDINGS = intraday_bindings(read_native_intraday, 'baostock', assets=('STOCK', 'ETF'), periods=('5m', '15m', '30m', '60m'))
+
+
+SOURCE = SourceDefinition("baostock", manifest, factory, (*INTRADAY_BINDINGS,
     *REFERENCE_BINDINGS,
     QueryBinding(LEGACY_CONTRACT, ExactKey('CN','STOCK','HISTORICAL_TRADING_STATUS'), 'baostock',
         'baostock-daily-flags-v1', 'baostock-query-history-status-v1', read_legacy_status, admission_required=False),

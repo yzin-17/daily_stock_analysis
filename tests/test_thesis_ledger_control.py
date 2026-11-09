@@ -374,7 +374,8 @@ def test_provider_test_uses_in_memory_structured_draft_without_persisting(monkey
         json=_provider_envelope(credentials={"method": "token", "values": {"token": ""}}),
     )
     assert response.status_code == 200
-    assert response.json()["status"] == "healthy"
+    assert response.json()["status"] == "degraded"
+    assert response.json()["capabilityResults"]["MINUTE_BAR"]["errorCode"] == "independent_permission_not_enabled"
     assert response.json()["capabilityResults"]["REALTIME_QUOTE"]["attempted"] is True
     assert calls
     assert all(snapshot.values["token"] == "page-token" for _, _, snapshot in calls)

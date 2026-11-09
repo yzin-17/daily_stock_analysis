@@ -11,6 +11,8 @@
 
 ## 来源验证入口
 
+- [富途与 HiThink 筹码账号核查](2026-11-09-chip-provider-accounts.md)：区分外部开放状态、现有认证和真实只读结果。
+
 - [目录来源](thesis-ledger-catalog-source-evidence.md)
 - [基金持仓来源](thesis-ledger-holdings-source-evidence.md)
 - [基金净值来源](thesis-ledger-nav-source-evidence.md)

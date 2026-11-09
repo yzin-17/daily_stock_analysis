@@ -23,7 +23,7 @@ def period_indicator_capabilities() -> dict[str, Any]:
         "engineVersion": "dsa-indicator-v3",
         "calculation": "provided-points",
         "periodProtocol": PERIOD_PROTOCOL,
-        "nativeTimeframes": ["1m", "1d"],
+        "nativeTimeframes": ["1m", "5m", "15m", "30m", "60m", "1d"],
         "periods": [
             {
                 "timeframe": timeframe,
@@ -92,7 +92,7 @@ def validate_indicator_fingerprint(
     timeframe = identity.get("timeframe")
     context = payload.get("periodContext")
     expected = payload.get("inputFingerprint")
-    if timeframe in ("1m", "1d"):
+    if timeframe in ("1m", "1d") or timeframe in MINUTE_PERIOD_TIMEFRAMES and context is None:
         if context is not None:
             raise ValueError("原生指标请求不能携带派生上下文")
         if point_fingerprint() != expected:

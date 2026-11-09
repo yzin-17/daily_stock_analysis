@@ -137,10 +137,10 @@ def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
         "alphavantage",
         "hithink",
         "rqdata",
-        "tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng",
+        "tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng", "cls", "wallstreetcn", "nvidia-news",
     }
     assert all("routeEligible" not in manifest for manifest in registry.values())
-    news = {"tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng"}
+    news = {"tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng", "cls", "wallstreetcn", "nvidia-news"}
     assert set(_PROVIDER_ADAPTER_IMPORTS) == set(registry) - {"hithink", "rqdata", "tickflow-free"} - news
     assert all(registry[provider]["enabled"] is False for provider in news)
     from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
@@ -151,19 +151,25 @@ def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
         "DAILY_BAR": ["ETF", "STOCK"],
         "REALTIME_QUOTE": ["ETF", "STOCK"],
         "CASH_DISTRIBUTION": ["ETF"],
+        "NEWS_SEARCH": ["STOCK"],
+        "REFERENCE_THS_THEME_REASONS": ["STOCK"],
+        "REFERENCE_THS_EPS_CONSENSUS": ["STOCK"],
+        "REFERENCE_THS_INSTITUTION_EPS": ["STOCK"],
     }
     assert registry["hithink"]["requiresCredential"] is True
-    assert registry["rqdata"]["capabilities"] == {"CASH_DISTRIBUTION": ["ETF"], "SPLIT_EVENT": ["ETF"]}
+    assert registry["rqdata"]["capabilities"] == {"CASH_DISTRIBUTION": ["ETF"], "SPLIT_EVENT": ["ETF"], "MINUTE_BAR": ["ETF", "STOCK"]}
     assert registry["rqdata"]["upstreamSources"][0]["capabilities"] == registry["rqdata"]["capabilities"]
     assert registry["tencent"]["origin"] == "dsa"
     assert registry["tencent"]["capabilities"] == {
         "DAILY_BAR": ["ETF", "STOCK"], "REALTIME_QUOTE": ["ETF"],
+        "MINUTE_BAR": ["ETF", "STOCK"], "REFERENCE_TICKS": ["STOCK"], "REFERENCE_ETF_TICKS": ["ETF"],
     }
     assert registry["tencent"]["upstreamSources"] == [
         {
             "sourceId": "tencent",
             "displayName": "腾讯财经",
-            "capabilities": {"DAILY_BAR": ["ETF", "STOCK"], "REALTIME_QUOTE": ["ETF"]},
+            "capabilities": {"DAILY_BAR": ["ETF", "STOCK"], "REALTIME_QUOTE": ["ETF"],
+                "MINUTE_BAR": ["ETF", "STOCK"], "REFERENCE_TICKS": ["STOCK"], "REFERENCE_ETF_TICKS": ["ETF"]},
         }
     ]
     assert registry["yfinance"]["markets"] == ["CN", "HK", "US"]

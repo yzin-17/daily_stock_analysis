@@ -24,7 +24,7 @@ def fixture_runtime(tmp_path, provider='rqdata'):
     return runtime, snapshot, admission
 
 
-@pytest.mark.parametrize('binding', rqdata.SOURCE.bindings)
+@pytest.mark.parametrize('binding', tuple(binding for binding in rqdata.SOURCE.bindings if binding.key.capability in {'CASH_DISTRIBUTION', 'SPLIT_EVENT'}))
 def test_rq_probe_binding_keeps_original_mapped_reader_options(binding, tmp_path, monkeypatch):
     assert callable(binding.probe_read)
     runtime, snapshot, admission = fixture_runtime(tmp_path)

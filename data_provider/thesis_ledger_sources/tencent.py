@@ -19,7 +19,7 @@ REFERENCE_BINDINGS = reference_bindings('tencent')
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
     return reference_manifest(build_provider_manifest("tencent", "腾讯财经", {
-        "DAILY_BAR": ("STOCK", "ETF"), "REALTIME_QUOTE": ("ETF",),
+        "MINUTE_BAR": ("STOCK", "ETF"), "DAILY_BAR": ("STOCK", "ETF"), "REALTIME_QUOTE": ("ETF",),
     }, upstream_sources=(("tencent", "腾讯财经"),)), REFERENCE_BINDINGS)
 
 
@@ -121,8 +121,13 @@ def verify_transport(frame, start, end, adjustment):
     return len(partitions)
 
 
+from data_provider.intraday_projection import intraday_bindings
+from data_provider.tencent_intraday import read_minute
+INTRADAY_BINDINGS = intraday_bindings(read_minute, 'tencent', periods=('5m', '15m', '30m', '60m'))
+
+
 SOURCE = SourceDefinition("tencent", manifest, factory, (
-    *REFERENCE_BINDINGS,
+    *REFERENCE_BINDINGS, *INTRADAY_BINDINGS,
     *(DailyBinding(ExactKey("CN", asset, "DAILY_BAR", adjustment), "tencent",
         f"dsa-v3-{asset.lower()}-tencent-{adjustment}-adapter-v2" if adjustment != "hfq"
         else "dsa-v3-etf-tencent-hfq-newfqkline-adapter-v1",

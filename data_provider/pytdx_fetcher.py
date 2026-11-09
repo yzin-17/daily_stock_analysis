@@ -182,7 +182,7 @@ class PytdxFetcher(BaseFetcher):
             return None
     
     @contextmanager
-    def _pytdx_session(self) -> Generator:
+    def _pytdx_session(self, *, max_hosts=None, timeout_seconds=5) -> Generator:
         """
         Pytdx 连接上下文管理器
         
@@ -209,12 +209,12 @@ class PytdxFetcher(BaseFetcher):
         
         try:
             # 尝试连接服务器（自动选择最优）
-            for i in range(len(self._hosts)):
+            for i in range(min(len(self._hosts), max_hosts or len(self._hosts))):
                 host_idx = (self._current_host_idx + i) % len(self._hosts)
                 host, port = self._hosts[host_idx]
                 
                 try:
-                    if api.connect(host, port, time_out=5):
+                    if api.connect(host, port, time_out=timeout_seconds):
                         connected = True
                         self._current_host_idx = host_idx
                         logger.debug(f"Pytdx 连接成功: {host}:{port}")

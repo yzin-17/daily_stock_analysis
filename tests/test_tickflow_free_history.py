@@ -46,7 +46,8 @@ def test_free_target_has_only_three_stock_daily_bindings():
     from data_provider.thesis_ledger_sources.tickflow import SOURCE as PAID
     assert SOURCE.credentials == () and SOURCE.manifest()["requiresCredential"] is False
     assert SOURCE.manifest()["displayName"] == "TickFlow 免费历史"
-    assert len(SOURCE.bindings) == 3 and len(PAID.bindings) == 4
+    assert len(SOURCE.bindings) == 3 and len([binding for binding in PAID.bindings if binding.key.capability != "MINUTE_BAR"]) == 4
+    assert len([binding for binding in PAID.bindings if binding.key.capability == "MINUTE_BAR"]) == 10
     assert PAID.manifest()["requiresCredential"] is True
     for binding in SOURCE.bindings:
         assert CAPABILITY_SOURCES.resolve(binding.key.route_key(), {

@@ -24,7 +24,7 @@ def _number(value, *, optional=False):
     return number
 
 
-def normalize_futu_minute(raw, zone, *, observed_at=None):
+def normalize_futu_minute(raw, zone, *, observed_at=None, timeframe="1m"):
     observed_at = observed_at or datetime.now(timezone.utc)
     if observed_at.tzinfo is None:
         raise ExactDailyError("invalid_request", "分钟观察时间必须包含时区")
@@ -46,14 +46,14 @@ def normalize_futu_minute(raw, zone, *, observed_at=None):
             rows.append({"timestamp": stamp.isoformat(), **prices,
                          "volume": _number(item.get("volume"), optional=True),
                          "amount": _number(item.get("turnover"), optional=True),
-                         "complete": stamp + timedelta(minutes=1) <= observed_at})
+                         "complete": stamp + timedelta(minutes=int(timeframe[:-1])) <= observed_at})
     except (KeyError, TypeError, ValueError, OverflowError):
         raise ExactDailyError("invalid_response", "富途分钟时间或数值无效") from None
     frame = pd.DataFrame(sorted(rows, key=lambda row: row["timestamp"]))
     for field in ("volume", "amount"):
         frame[field] = frame[field].astype(object)
         frame.loc[frame[field].isna(), field] = None
-    frame.attrs.update({"upstream_source": "futu", "timeframe": "1m", "timezone": zone,
+    frame.attrs.update({"upstream_source": "futu", "timeframe": timeframe, "timezone": zone,
                         "session": "regular", "adjustment": "none", "observedAt": observed_at.isoformat(),
                         "responseSha256": sha256(raw.to_json(date_format="iso", orient="split").encode()).hexdigest(),
                         "fieldAvailability": {field: bool(frame[field].notna().all()) for field in ("volume", "amount")},
@@ -62,5 +62,5 @@ def normalize_futu_minute(raw, zone, *, observed_at=None):
 
 
 def read_futu_minute(sdk, host, port, request):
-    raw, zone = read_futu_history(sdk, host, port, request, timeframe="1m")
-    return normalize_futu_minute(raw, zone)
+    raw, zone = read_futu_history(sdk, host, port, request, timeframe=request.get("timeframe", "1m"))
+    return normalize_futu_minute(raw, zone, timeframe=request.get("timeframe", "1m"))

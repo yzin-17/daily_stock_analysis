@@ -65,7 +65,8 @@ def _catalog_provider_process_worker(connection: Any, operation: Callable[[], An
         try:
             code = exc.code if isinstance(exc, CatalogBuildError) else "catalog_provider_unavailable"
             retryable = exc.retryable if isinstance(exc, CatalogBuildError) else True
-            connection.send((False, code, retryable))
+            detail = str(exc)[:500] if isinstance(exc, CatalogBuildError) else "Provider 目录请求失败"
+            connection.send((False, code, retryable, detail))
         except BaseException:
             # Provider 可能在发送错误前退出；父进程会按稳定的 isolation code 处理。
             pass
@@ -125,7 +126,7 @@ def _run_catalog_provider_once(
         if result[0]:
             return result[1]
         raise CatalogBuildError(
-            "Provider 目录请求失败",
+            result[3] if len(result) > 3 else "Provider 目录请求失败",
             code=result[1],
             retryable=result[2],
         )

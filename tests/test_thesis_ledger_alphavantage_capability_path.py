@@ -13,7 +13,9 @@ from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest, ThesisLedgerProviderRuntime
 from tests.test_configured_market_routes import store, apply, no_admissions
 
-KEY = SOURCE.bindings[0].key.route_key()
+DAILY = next(binding for binding in SOURCE.bindings if binding.key.capability == 'DAILY_BAR')
+QUOTE = next(binding for binding in SOURCE.bindings if binding.key.capability == 'REALTIME_QUOTE')
+KEY = DAILY.key.route_key()
 TARGET = {'providerId': 'alphavantage', 'upstreamSource': 'alphavantage'}
 
 
@@ -32,15 +34,15 @@ def test_original_registration_revisions_and_credential_definition():
         if target['providerId'] == 'alphavantage' and key['capability'] == 'DAILY_BAR']
     assert targets == [(KEY, TARGET, True)]
     assert not any(provider == 'alphavantage' for _, _, provider, _ in NATIVE_DAILY_ROUTES)
-    assert CAPABILITY_SOURCES.resolve(KEY, TARGET) is SOURCE.bindings[0]
+    assert CAPABILITY_SOURCES.resolve(KEY, TARGET) is DAILY
     assert SOURCE.factory_scope == 'provider' and SOURCE.dependency_modules == ('requests',)
     assert credential_schema('alphavantage')['methods'][0]['method'] == 'api_key'
     revision = market_v3_current_route_revisions(KEY, TARGET, PROVIDER_MANIFESTS['alphavantage'], credential_version=1)
     assert revision['adapterRevision'] == 'dsa-v3-us-stock-alphavantage-none-exact-daily-v2'
     assert revision['sourceRevision'] == PROTOCOL
     assert PROTOCOL == 'dsa-alphavantage-compact-daily-single-response-v2'
-    assert SOURCE.bindings[0].maximum_rows == 100
-    assert SOURCE.bindings[1].adapter_revision == 'alphavantage-us-stock-exact-quote-v2'
+    assert DAILY.maximum_rows == 100
+    assert QUOTE.adapter_revision == 'alphavantage-us-stock-exact-quote-v2'
 
 
 def test_actual_factory_and_runtime_read_one_pinned_compact_response(monkeypatch, store):
@@ -52,7 +54,7 @@ def test_actual_factory_and_runtime_read_one_pinned_compact_response(monkeypatch
             '2026-05-18': {'1. open': '1', '2. high': '1.2', '3. low': '.9', '4. close': '1.1', '5. volume': '100'},
         }})
     monkeypatch.setattr('data_provider.multimarket_exact_daily.requests.get', get)
-    store.save_provider_config('alphavantage', {'requestId': 'fixture',
+    store.save_provider_config('alphavantage', {"enabled": True, 'requestId': 'fixture',
         'credentials': {'method': 'api_key', 'values': {'apiKey': 'synthetic'}}})
     assert apply(store, KEY, TARGET)['effective']['routes'][0]['targets'][0]['eligible']
     runtime = ThesisLedgerProviderRuntime(store)
@@ -69,7 +71,7 @@ def test_actual_factory_and_runtime_read_one_pinned_compact_response(monkeypatch
 
 
 def test_factory_keeps_environment_error_mode_and_probe_cache_isolation(monkeypatch, store):
-    store.save_provider_config('alphavantage', {'requestId': 'fixture',
+    store.save_provider_config('alphavantage', {"enabled": True, 'requestId': 'fixture',
         'credentials': {'method': 'api_key', 'values': {'apiKey': 'synthetic'}}})
     snapshot = store.provider_credential_snapshot('alphavantage')
     calls = []

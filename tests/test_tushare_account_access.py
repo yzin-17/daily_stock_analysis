@@ -67,13 +67,14 @@ def test_mixed_rights_use_six_exact_endpoints_without_admission_or_writes(runtim
     assert len(calls) == 6
     assert states(result) == {("CN", "STOCK", "DAILY_BAR"): "allowed", ("HK", "STOCK", "DAILY_BAR"): "permission_missing",
         ("CN", "ETF", "DAILY_BAR"): "permission_missing", ("CN", "STOCK", "REALTIME_QUOTE"): "unknown",
-        ("CN", "STOCK", "CHIP_SUMMARY"): "unknown", ("CN", "ETF", "CASH_DISTRIBUTION"): "permission_missing"}
+        ("CN", "STOCK", "CHIP_SUMMARY"): "unknown", ("CN", "ETF", "CASH_DISTRIBUTION"): "permission_missing", ("CN", "STOCK", "MINUTE_BAR"): "not_included",
+        ("CN", "ETF", "MINUTE_BAR"): "not_included"}
     assert result["capabilityResults"] == {} and "routeResults" not in result
     assert result["status"] == "degraded" and db_state(runtime) == before
     assert "synthetic-current-token" not in json.dumps(result)
     catalog = runtime.market_route_catalog_v3()
     entries = [e for e in catalog["entries"] if e["target"]["providerId"] == "tushare"]
-    assert len(entries) == 6 and entries[0]["accountAccess"]["state"] == "allowed"
+    assert len(entries) == 16 and entries[0]["accountAccess"]["state"] == "allowed"
     assert next(e for e in entries if e["key"]["capability"] == "CASH_DISTRIBUTION")["state"] != "ready"
 
 
@@ -123,7 +124,10 @@ def test_budget_stops_remaining_requests_and_rejects_late_success(runtime, monke
     monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", post)
     result = check_provider(runtime, "tushare", envelope(purpose="account_access"))
     assert len(calls) == 1
-    assert all(r["access"]["errorCode"] == "request_budget_exceeded" for r in result["accountAccess"]["routes"])
+    assert all(r["access"]["errorCode"] == "request_budget_exceeded" for r in result["accountAccess"]["routes"]
+               if r["key"]["capability"] != "MINUTE_BAR")
+    assert all(r["access"]["state"] == "not_included" for r in result["accountAccess"]["routes"]
+               if r["key"]["capability"] == "MINUTE_BAR")
     assert result["status"] != "healthy"
 
 
@@ -133,7 +137,7 @@ def test_fixture_no_credentials_and_unsupported_source_never_request(runtime, mo
     assert all(not r["access"]["attempted"] for r in result["accountAccess"]["routes"])
     runtime.store.save_provider_config("tushare", envelope(clearCredentials=True))
     result = check_provider(runtime, "tushare", envelope(purpose="account_access"))
-    assert result["status"] == "unconfigured" and set(states(result).values()) == {"credential_missing"}
+    assert result["status"] == "unconfigured" and set(states(result).values()) == {"credential_missing", "not_included"}
     with pytest.raises(ControlContractError):
         check_provider(runtime, "tencent", envelope(purpose="account_access"))
 
@@ -153,7 +157,7 @@ def test_control_http_keeps_account_report_separate_with_offline_upstream(runtim
             headers={"authorization": "Bearer synthetic-control-token"}, json=envelope(purpose="account_access"))
     assert actual.status_code == 200
     result = actual.json()
-    assert result["purpose"] == "account_access" and set(states(result).values()) == {"permission_missing"}
+    assert result["purpose"] == "account_access" and set(states(result).values()) == {"permission_missing", "not_included"}
     assert result["capabilityResults"] == {} and db_state(runtime) == before
 
 
@@ -178,7 +182,7 @@ def test_basic_account_skips_unincluded_interfaces(runtime, monkeypatch):
     result = check_provider(runtime, "tushare", envelope(purpose="account_access",
         accountLevel={"points": 120, "independentApis": []}))
     assert calls == ["daily"] and result["status"] == "healthy"
-    assert list(states(result).values()).count("not_included") == 5
+    assert list(states(result).values()).count("not_included") == 7
     assert all(not r["access"]["attempted"] for r in result["accountAccess"]["routes"]
                if r["access"]["state"] == "not_included")
 
@@ -195,7 +199,7 @@ def test_save_reuses_draft_and_persists_across_runtime_restart(runtime, monkeypa
     assert calls == ["daily"] and saved["settings"]["accountLevel"] == level
     restarted = ThesisLedgerProviderRuntime(ThesisLedgerControlStore(runtime.store.database_path))
     entries = [e for e in restarted.market_route_catalog_v3()["entries"] if e["target"]["providerId"] == "tushare"]
-    assert len(entries) == 6 and sum(e["accountAccess"]["state"] == "allowed" for e in entries) == 1
+    assert len(entries) == 16 and sum(e["accountAccess"]["state"] == "allowed" for e in entries) == 1
     assert all(e["accountAccess"]["persisted"] for e in entries) and calls == ["daily"]
     with runtime.store._connect() as connection:
         rows = connection.execute("SELECT report_json FROM thesis_ledger_account_access").fetchall()
@@ -260,7 +264,7 @@ def test_budget_failure_does_not_replace_level_exclusions(runtime, monkeypatch):
     monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", post)
     result = check_provider(runtime, "tushare", envelope(purpose="account_access",
         accountLevel={"points": 120, "independentApis": []}))
-    assert calls == ["daily"] and list(states(result).values()).count("not_included") == 5
+    assert calls == ["daily"] and list(states(result).values()).count("not_included") == 7
     assert all(not r["access"]["attempted"] for r in result["accountAccess"]["routes"]
                if r["access"]["state"] == "not_included")
 

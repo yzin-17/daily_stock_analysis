@@ -23,7 +23,7 @@ def test_nine_exact_targets_keep_revisions_and_bounded_windows():
     from src.services.thesis_ledger_native_daily import NATIVE_DAILY_ROUTES
     from src.services.thesis_ledger_market_v3_revisions import market_v3_current_route_revisions
     targets = [(key, target, gated) for key, target, gated in exact_route_inventory()
-        if target == {'providerId': 'yfinance', 'upstreamSource': 'yfinance'} and key['kind'] == 'bar' and key['assetType'] != 'INDEX']
+        if target == {'providerId': 'yfinance', 'upstreamSource': 'yfinance'} and key['capability'] == 'DAILY_BAR' and key['assetType'] != 'INDEX']
     assert len(targets) == 6 and all(gated and key['adjustment'] == 'qfq' for key, _, gated in targets)
     assert len([b for b in SOURCE.bindings if b.key.capability == 'DAILY_BAR']) == 9 and SOURCE.factory_scope == 'provider'
     for binding in (b for b in SOURCE.bindings if b.key.capability == 'DAILY_BAR'):

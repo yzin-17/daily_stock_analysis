@@ -118,6 +118,10 @@ def test_hithink_basic_price_effective_is_ready_with_environment_key(
         "DAILY_BAR": ["ETF", "STOCK"],
         "REALTIME_QUOTE": ["ETF", "STOCK"],
         "CASH_DISTRIBUTION": ["ETF"],
+        "NEWS_SEARCH": ["STOCK"],
+        "REFERENCE_THS_THEME_REASONS": ["STOCK"],
+        "REFERENCE_THS_EPS_CONSENSUS": ["STOCK"],
+        "REFERENCE_THS_INSTITUTION_EPS": ["STOCK"],
     }
     assert manifest["upstreamSources"] == [
         {
@@ -145,6 +149,9 @@ def test_hithink_basic_price_effective_is_ready_with_environment_key(
             "displayName": "HiThink 场内基金分红",
             "capabilities": {"CASH_DISTRIBUTION": ["ETF"]},
         },
+        {"sourceId": "hithink-news-stock-timeline", "displayName": "HiThink 个股新闻", "capabilities": {"NEWS_SEARCH": ["STOCK"]}},
+        {"sourceId": "ths-editorial-themes", "displayName": "同花顺编辑题材", "capabilities": {"REFERENCE_THS_THEME_REASONS": ["STOCK"]}},
+        {"sourceId": "ths-public-forecast", "displayName": "同花顺公开盈利预测", "capabilities": {"REFERENCE_THS_EPS_CONSENSUS": ["STOCK"], "REFERENCE_THS_INSTITUTION_EPS": ["STOCK"]}},
     ]
 
     store = ThesisLedgerControlStore(str(tmp_path / "hithink-market-v3.db"))

@@ -140,6 +140,9 @@ def test_draft_http_probe_uses_input_for_all_capabilities_without_saving_or_admi
         ("DAILY_BAR", "hithink-financial-api"),
         ("NEWS_SEARCH", "hithink-news-stock-timeline"),
         ("REALTIME_QUOTE", "a-share-prices-snapshot"),
+        ("REFERENCE_THS_EPS_CONSENSUS", "ths-public-forecast"),
+        ("REFERENCE_THS_INSTITUTION_EPS", "ths-public-forecast"),
+        ("REFERENCE_THS_THEME_REASONS", "ths-editorial-themes"),
     ]
     redacted(response.json())
     assert store.provider_credential_snapshot("hithink").source == "environment"

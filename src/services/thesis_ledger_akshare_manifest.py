@@ -12,6 +12,7 @@ def build_akshare_manifest(*, sina_daily_assets: tuple[str, ...]) -> dict[str, A
         {
             "REALTIME_QUOTE": ("STOCK", "ETF"),
             "DAILY_BAR": ("STOCK", "ETF"),
+            "MINUTE_BAR": ("STOCK", "ETF"),
             "FUND_NAV": ("MUTUAL_FUND",),
             "FUND_NAV_HISTORY": ("MUTUAL_FUND",),
             "FUND_HOLDINGS": ("MUTUAL_FUND",),
@@ -31,6 +32,7 @@ def build_akshare_manifest(*, sina_daily_assets: tuple[str, ...]) -> dict[str, A
         if source["sourceId"] == "eastmoney":
             source["capabilities"].update({
                 "REALTIME_QUOTE": ["STOCK", "ETF"],
+                "MINUTE_BAR": ["STOCK", "ETF"],
                 "FUND_NAV": ["MUTUAL_FUND"],
                 "FUND_NAV_HISTORY": ["MUTUAL_FUND"],
                 "FUND_HOLDINGS": ["MUTUAL_FUND"],
@@ -42,6 +44,7 @@ def build_akshare_manifest(*, sina_daily_assets: tuple[str, ...]) -> dict[str, A
             source["capabilities"]["REALTIME_QUOTE"] = ["STOCK"]
         if source['sourceId'] == 'sina':
             source['capabilities']['DAILY_BAR'] = list(sina_daily_assets)
+            source['capabilities']['MINUTE_BAR'] = ['STOCK', 'ETF']
         if source['sourceId'] != 'eastmoney':
             source['capabilities'].pop('RESEARCH_REPORT_METADATA', None)
         if source['sourceId'] == 'akshare':
