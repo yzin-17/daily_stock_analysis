@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 import requests
+from src.services.thesis_ledger_provider_errors import classify_provider_failure
 
 
 def exact_etf_quote(symbol, error_type):
@@ -19,8 +20,8 @@ def exact_etf_quote(symbol, error_type):
         }, timeout=4.5)
         response.raise_for_status()
         data = response.json().get("data")
-    except requests.RequestException:
-        raise error_type("upstream_failure", "东方财富 ETF 报价请求失败") from None
+    except requests.RequestException as error:
+        raise error_type(classify_provider_failure(error), "东方财富 ETF 报价请求失败") from None
     except (TypeError, ValueError, AttributeError):
         raise error_type("invalid_response", "东方财富 ETF 报价响应无效") from None
     if not isinstance(data, dict) or data.get("f57") != code or ("f13" in data and data["f13"] != market):

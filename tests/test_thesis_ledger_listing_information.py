@@ -67,9 +67,17 @@ def test_other_requests_still_require_existing_listing(change):
         payload["routeTarget"]["providerId" if change == "provider" else "upstreamSource"] = "hithink"
     else:
         field, value = {"asset": ("assetType", "ETF"), "market": ("market", "HK"),
-                        "timeframe": ("timeframe", "1m"), "adjustment": ("adjustment", "hfq")}[change]
+                        "timeframe": ("timeframe", "1m"), "adjustment": ("adjustment", "unsupported")}[change]
         payload["routeKey"][field] = value
     assert research_market_coverage_context(payload, observed_at=NOW) is None
+
+
+@pytest.mark.parametrize("adjustment", ["none", "qfq", "hfq"])
+def test_registered_tencent_adjustments_keep_unknown_listing(adjustment):
+    payload = request()
+    payload["routeKey"]["adjustment"] = adjustment
+    context = research_market_coverage_context(payload, observed_at=NOW)
+    assert context["listing"] == {"symbol": payload["symbol"], "status": "unknown"}
 
 
 @pytest.mark.parametrize("symbol", ["600000.SH", "000995.SZ", "159516.SZ"])

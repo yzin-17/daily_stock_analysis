@@ -50,13 +50,19 @@ def test_exact_native_minute_bindings_do_not_invent_periods():
     assert not any(k["timeframe"] == "1m" and t["providerId"] == "baostock" for k, t in entries)
     entries = [(k, t) for k, t in entries if t["providerId"] == "futu"]
     assert len(entries) == 30
-    assert len([b for b in SOURCE.bindings if b.key.capability == "DAILY_BAR"]) == 12
+    assert {(b.key.market, b.key.asset_type, b.key.adjustment) for b in SOURCE.bindings if b.key.capability == "DAILY_BAR"} == {
+        (market, asset, adjustment) for market in ("CN", "HK", "US")
+        for asset in ("STOCK", "ETF") for adjustment in ("none", "qfq", "hfq")}
     assert all(k["kind"] == "bar" and k["timeframe"] in {"1m", "5m", "15m", "30m", "60m"} and k["adjustment"] == "none"
                and configured_data_route(k, t) for k, t in entries)
     for key, target in entries:
         revision = market_v3_current_route_revisions(key, target, PROVIDER_MANIFESTS["futu"], credential_version=1)
-        assert revision["adapterRevision"] == "futu-exact-minute-v1"
-        assert revision["sourceRevision"] == "futu-complete-minute-sdk-pagination-v1"
+        if key['market'] == 'CN' and key['timeframe'] == '1m':
+            assert revision['adapterRevision'] == 'futu-exact-cn-minute-end-v2'
+            assert revision['sourceRevision'] == 'futu-complete-cn-minute-end-sdk-pagination-v2'
+        else:
+            assert revision["adapterRevision"] == "futu-exact-minute-v1"
+            assert revision["sourceRevision"] == "futu-complete-minute-sdk-pagination-v1"
 
 
 @pytest.mark.parametrize("market,asset,symbol,code", [
@@ -122,7 +128,7 @@ def test_later_page_failure_is_not_http_success(monkeypatch, store):
     apply(store, payload["routeKey"], {"providerId": "futu", "upstreamSource": "futu"})
     client, _ = client_for(monkeypatch, store)
     response = post(client, payload)
-    assert response.status_code in {502, 503}, response.text
+    assert response.status_code == 403, response.text
     assert "bars" not in response.json()
     ctx.close.assert_called_once()
 

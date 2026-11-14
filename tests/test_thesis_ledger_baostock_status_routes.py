@@ -74,7 +74,7 @@ def test_changed_policy_during_read_rejects_response(configured_client, monkeypa
         return value_after_read
     monkeypatch.setattr("src.services.thesis_ledger_baostock_status_source.read_baostock_status_response", change)
     result = client.post(URL, json=request(), headers=DATA_HEADERS)
-    assert result.status_code == 503 and result.json()["detail"]["code"] == "not_admitted"
+    assert result.status_code == 503 and result.json()["detail"]["error"]["code"] == "upstream_failure"
 
 
 def test_upstream_failure_never_returns_fake_zero_or_overwrites_cache(tmp_path):

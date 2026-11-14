@@ -29,6 +29,9 @@ def normalize_futu_minute(raw, zone, *, observed_at=None, timeframe="1m"):
     if observed_at.tzinfo is None:
         raise ExactDailyError("invalid_request", "分钟观察时间必须包含时区")
     rows, seen = [], set()
+    # A 股原生 1 分钟标签含 09:30 竞价点，连续时段为 09:31..11:30、13:01..15:00。
+    # 保留原标签；回放消费方依据真实日历排除开盘竞价点。
+    convention = "interval-end" if zone == "Asia/Shanghai" and timeframe == "1m" else "interval-start"
     try:
         for item in raw.to_dict(orient="records"):
             stamp = datetime.strptime(str(item["time_key"]), "%Y-%m-%d %H:%M:%S")
@@ -46,7 +49,7 @@ def normalize_futu_minute(raw, zone, *, observed_at=None, timeframe="1m"):
             rows.append({"timestamp": stamp.isoformat(), **prices,
                          "volume": _number(item.get("volume"), optional=True),
                          "amount": _number(item.get("turnover"), optional=True),
-                         "complete": stamp + timedelta(minutes=int(timeframe[:-1])) <= observed_at})
+                         "complete": stamp + timedelta(minutes=int(timeframe[:-1]) if convention == 'interval-start' else 0) <= observed_at})
     except (KeyError, TypeError, ValueError, OverflowError):
         raise ExactDailyError("invalid_response", "富途分钟时间或数值无效") from None
     frame = pd.DataFrame(sorted(rows, key=lambda row: row["timestamp"]))
@@ -57,7 +60,7 @@ def normalize_futu_minute(raw, zone, *, observed_at=None, timeframe="1m"):
                         "session": "regular", "adjustment": "none", "observedAt": observed_at.isoformat(),
                         "responseSha256": sha256(raw.to_json(date_format="iso", orient="split").encode()).hexdigest(),
                         "fieldAvailability": {field: bool(frame[field].notna().all()) for field in ("volume", "amount")},
-                        "has_more_before": False})
+                        "has_more_before": False, "timestampConvention": convention})
     return frame
 
 

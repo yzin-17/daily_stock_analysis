@@ -4,23 +4,24 @@ from copy import deepcopy
 import hmac
 import json
 from secrets import token_bytes
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from threading import RLock
 from types import MappingProxyType
 from uuid import uuid4
 from weakref import WeakKeyDictionary
 
 from src.services.thesis_ledger_account_access_contract import AccountAccessProbeContext, AccountAccessResult
+from src.services.thesis_ledger_account_access_progress import check_slot, previous_report, cooling_down, probe_routes, check_response, utc_now
 from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from src.services.thesis_ledger_control import ControlContractError
 from src.services.thesis_ledger_price_route_access import basic_price_credential_ready
 from src.services.thesis_ledger_provider_dependencies import provider_dependency_ready
+from src.services.thesis_ledger_route_credentials import route_requires_credential
 
 _LOCK = RLock()
 _CACHES = WeakKeyDictionary()
 TTL_SECONDS = 300
 REQUEST_BUDGET_SECONDS = 18
-MAX_REQUESTS = 6
 MAX_ROUTE_ENTRIES = 64
 _IDENTITY_KEY = token_bytes(32)
 
@@ -40,6 +41,10 @@ def _identity(snapshot):
     return hmac.digest(_IDENTITY_KEY, payload, "sha256")
 
 
+def credential_required(source, key, target):
+    return route_requires_credential(key, target, source.manifest())
+
+
 def account_access_for(runtime, key, target):
     source = CAPABILITY_SOURCES.source(target["providerId"])
     if source is None or source.account_access_probe is None:
@@ -51,7 +56,7 @@ def account_access_for(runtime, key, target):
         snapshot = _account_snapshot(source, read_snapshot(target["providerId"]))
     except (ControlContractError, ValueError):
         return {"state": "unknown", "attempted": False, "errorCode": "credential_unavailable"}
-    if not basic_price_credential_ready(snapshot):
+    if credential_required(source, key, target) and not basic_price_credential_ready(snapshot):
         return {"state": "credential_missing", "attempted": False, "errorCode": "credential_missing"}
     identity = _identity(snapshot)
     from src.services.thesis_ledger_account_access_store import configured_level, load_record
@@ -77,7 +82,7 @@ def account_access_for(runtime, key, target):
 
 
 def _check_one(runtime, source, entry, snapshot, adapter, remaining, *, fixture):
-    if not basic_price_credential_ready(snapshot):
+    if credential_required(source, entry["key"], entry["target"]) and not basic_price_credential_ready(snapshot):
         return {"state": "credential_missing", "attempted": False, "errorCode": "credential_missing"}
     if fixture:
         return {"state": "unknown", "attempted": False, "errorCode": "fixture_mode"}
@@ -97,6 +102,11 @@ def _check_one(runtime, source, entry, snapshot, adapter, remaining, *, fixture)
 
 
 def check_account_access(runtime, provider, value, catalog, *, fixture=False):
+    with check_slot(runtime, provider["providerId"]):
+        return _check_account_access(runtime, provider, value, catalog, fixture=fixture)
+
+
+def _check_account_access(runtime, provider, value, catalog, *, fixture=False):
     from src.services.thesis_ledger_provider_exact_checks import _check_baseline, _snapshot
 
     source = CAPABILITY_SOURCES.source(provider["providerId"])
@@ -118,32 +128,28 @@ def check_account_access(runtime, provider, value, catalog, *, fixture=False):
         current = _account_snapshot(source, runtime.store.provider_credential_snapshot(source.provider_id))
         if current != normalized_baseline:
             raise ControlContractError("PROVIDER_CREDENTIAL_CHANGED", "检查期间凭证或来源端点发生变化")
+    draft = "credentials" in value or "accountLevel" in value
+    check_current()
+    previous = previous_report(runtime, snapshot, level, draft=draft, fixture=fixture)
+    ready = basic_price_credential_ready(snapshot)
+    global_limit = previous and any(r["access"].get("errorCode") == "rate_limited_global" for r in previous["routes"])
+    if (source.account_access_group is None or global_limit) and cooling_down(previous, source.account_access_cooldown_seconds):
+        check_current()
+        return check_response(source, provider, value, previous, ready)
     generation = str(uuid4())
     with _LOCK:
         _cache(runtime)["generations"][source.provider_id] = generation
     deadline = runtime.clock() + REQUEST_BUDGET_SECONDS
     adapter = None
-    ready = basic_price_credential_ready(snapshot)
-    if ready and not fixture and provider_dependency_ready(source.provider_id, entries[0]["key"], entries[0]["target"]):
+    if (ready or not provider.get("requiresCredential", True)) and not fixture and provider_dependency_ready(source.provider_id, entries[0]["key"], entries[0]["target"]):
         check_current()
         adapter = runtime._adapter(source.provider_id, snapshot=snapshot, cache=False, probe=True,
                                    market_v3_route_key=entries[0]["key"])
-    routes, requests = [], 0
-    for entry in entries:
-        check_current()
-        excluded = policy.excluded(entry["key"], level) if policy else None
-        access = excluded or _check_one(
-            runtime, source, entry, snapshot, adapter, (deadline - runtime.clock()) if requests < MAX_REQUESTS else 0, fixture=fixture)
-        requests += int(access.get("attempted", False))
-        if not excluded and runtime.clock() > deadline:
-            access = {"state": "unknown", "attempted": access["attempted"], "errorCode": "request_budget_exceeded"}
-        check_current()
-        routes.append({"key": deepcopy(entry["key"]), "target": deepcopy(entry["target"]), "access": access})
-    checked_at = datetime.now(timezone.utc)
+    routes = probe_routes(runtime, source, entries, level, previous,
+                          lambda entry, remaining: _check_one(runtime, source, entry, snapshot, adapter, remaining, fixture=fixture),
+                          check_current, deadline=deadline, ttl=TTL_SECONDS, config_version=baseline.config_version)
+    checked_at = utc_now()
     valid_until = (checked_at + timedelta(seconds=TTL_SECONDS)).isoformat()
-    for route in routes:
-        route["access"].update(checkedAt=checked_at.isoformat(), validUntil=valid_until, configVersion=baseline.config_version)
-    draft = "credentials" in value or "accountLevel" in value
     report = {"scope": "account_interfaces", "credentialContext": "draft" if draft else "current",
               "configVersion": baseline.config_version, "checkedAt": checked_at.isoformat(),
               "validUntil": valid_until, "routes": routes}
@@ -158,12 +164,5 @@ def check_account_access(runtime, provider, value, catalog, *, fixture=False):
                 raise ControlContractError("PROVIDER_CHECK_SUPERSEDED", "已有更新的账户检查，不采用迟到结果")
             check_current()
             _cache(runtime)["reports"][source.provider_id] = (_identity(snapshot), runtime.clock() + TTL_SECONDS, deepcopy(report))
-            if level is not None and ready:
-                report = save_record(runtime.store, snapshot, level, report)
-    included = [r for r in routes if r["access"]["state"] != "not_included"]
-    status = "healthy" if included and all(r["access"]["state"] == "allowed" for r in included) else "degraded"
-    if not ready:
-        status = "unconfigured"
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "providerId": source.provider_id,
-            "requestId": value["requestId"], "purpose": "account_access", "status": status,
-            "credentialConfigured": ready, "capabilityResults": {}, "accountAccess": report}
+            report = save_record(runtime.store, snapshot, level, report)
+    return check_response(source, provider, value, report, ready)

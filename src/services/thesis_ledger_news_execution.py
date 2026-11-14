@@ -45,7 +45,7 @@ def news_search_worker(connection, settings, query, max_results, days, deadline)
             observer = NewsTransportObserver(connection, settings, deadline)
             source = build_news_source(settings)
             with observer.capture():
-                kwargs = {"topic": "news"} if settings.provider_id == "tavily" else {}
+                kwargs = {"topic": getattr(settings, "topic", "news")} if settings.provider_id == "tavily" else {}
                 result = source.search(query, max_results=max_results, days=days, **kwargs)
             rows = observer.records(result.results)
             connection.send(("result", {
@@ -64,7 +64,8 @@ def execute_news_search(
     cursor: str | None = None, worker=news_search_worker,
 ) -> RawNewsRead:
     maximum = settings.result_limit
-    if maximum is None or cursor is not None:
+    paginated = getattr(settings, "paginated", False)
+    if maximum is None or (cursor is not None and not paginated):
         return RawNewsRead(errors=(_error("unsupported"),))
     if not settings.configured():
         return RawNewsRead(errors=(_error("missing_credentials"),))
@@ -74,14 +75,15 @@ def execute_news_search(
         return RawNewsRead(errors=(_error("timeout"),))
     if not _NEWS_WORKER_SLOTS.acquire(blocking=False):
         return RawNewsRead(errors=(NewsError(code="rate_limited", message="新闻执行并发达到上限"),))
-    max_results = min(limit + 1, maximum)
+    max_results = min(limit if paginated else limit + 1, maximum)
+    worker_query = (query, cursor or "first") if paginated else query
     parent = child = process = None
     attempts, codes, payload = 0, set(), None
     started = False
     try:
         context = multiprocessing.get_context("spawn")
         parent, child = context.Pipe(duplex=False)
-        process = context.Process(target=worker, args=(child, settings, query, max_results, days, deadline),
+        process = context.Process(target=worker, args=(child, settings, worker_query, max_results, days, deadline),
                                   name="news-data-fetch", daemon=True)
         process.start()
         started = True
@@ -158,6 +160,7 @@ def execute_news_search(
         records=payload["records"] if successful else (), success=successful, upstream_attempts=attempts,
         errors=tuple(_error(code) for code in sorted(codes)),
         truncated=bool(payload and payload["truncated"]),
+        next_cursor=payload.get("next_cursor") if successful and paginated else None,
         examined_count=payload["examined_count"] if payload else None,
         missing_reasons=tuple(payload.get("missing_reasons", ())) if payload else (),
     )

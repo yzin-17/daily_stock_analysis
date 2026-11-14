@@ -24,9 +24,11 @@ def test_four_quote_bindings_replace_central_entries_with_identical_revisions():
         key, target = binding.key.route_key(), {'providerId': 'futu', 'upstreamSource': 'futu'}
         assert CAPABILITY_SOURCES.resolve(key, target) is binding
         assert (key['market'], key['assetType'], 'REALTIME_QUOTE', 'futu', 'futu') not in _DATA_ADAPTERS
+        revision = 'v2' if key['market'] == 'US' else 'v1'
         assert current_data_adapter_revisions(key, target) == {
-            'adapterRevision': f"futu-{key['market'].lower()}-{key['assetType'].lower()}-exact-quote-v1",
-            'sourceRevision': 'futu-direct-quote-v1', 'credentialRevision': 'not-required'}
+            'adapterRevision': f"futu-{key['market'].lower()}-{key['assetType'].lower()}-exact-quote-{revision}",
+            'sourceRevision': 'futu-current-us-execution-v2' if key['market'] == 'US' else 'futu-direct-quote-v1',
+            'credentialRevision': 'not-required'}
 
 
 @pytest.mark.parametrize('market,asset,symbol,code,expected', [
@@ -38,6 +40,11 @@ def test_four_quote_bindings_replace_central_entries_with_identical_revisions():
 def test_four_quotes_run_control_factory_worker_single_security_and_standard_clock(
         monkeypatch, store, market, asset, symbol, code, expected):
     configure(store)
+    rule_contexts = []
+    def current_rules(day, *, observed_at, context=None):
+        rule_contexts.append(context)
+        return None
+    monkeypatch.setattr('src.services.us_live_execution_rules.current_us_cash_rules', current_rules)
     sdk, ctx = sdk_for(code, asset)
     calls = worker_transport(monkeypatch, sdk)
     key = {'kind': 'data', 'market': market, 'assetType': asset, 'capability': 'REALTIME_QUOTE'}
@@ -46,7 +53,16 @@ def test_four_quotes_run_control_factory_worker_single_security_and_standard_clo
     result = ThesisLedgerProviderRuntime(store).execute_request(ThesisLedgerDataRequest('REALTIME_QUOTE', symbol, instrument_type=asset))
     value = result.value
     assert value.price == 12 and value.pre_close == 11 and value.open_price == 11 and value.high == 13 and value.low == 10
-    assert value.volume == 0 and value.amount is None and value.units is None
+    assert value.volume == 0 and value.amount is None
+    if market == 'US':
+        assert value.units.priceCurrency == 'USD'
+        assert value.execution_facts.symbol == symbol and value.execution_facts.assetType == asset
+        assert value.execution_facts.tradingState == 'unknown'
+        assert len(rule_contexts) == 1
+        assert rule_contexts[0].database_path == store.database_path
+        assert rule_contexts[0].publish_guard()
+    else:
+        assert value.units is None and value.execution_facts is None
     assert value.provider_timestamp == expected and value.fetched_at != expected
     assert value.source == result.provider == result.upstream_source == 'futu'
     assert len(calls) == 1 and calls[0][1]['timeout'] == 4.5

@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from api.thesis_ledger_source_basis import native_field_units, native_source_basis
 from api.thesis_ledger_exact_bar_fields import chart_bar_point, minute_chart_point
 from src.services.thesis_ledger_market_errors_v3 import market_runtime_error
+from src.services.thesis_ledger_verification_request import VerificationRequest
 
 from api.thesis_ledger import (
     MARKET_DATA_V3_METHOD_VERSION,
@@ -129,8 +130,10 @@ def market_chart_bars(request: Request, payload: Any = Body(...)) -> dict[str, A
             ThesisLedgerDataRequest, get_thesis_ledger_runtime,
         )
         key = parsed["routeKey"]
+        runtime = get_thesis_ledger_runtime()
+        verification = VerificationRequest(runtime, key)
         try:
-            execution = get_thesis_ledger_runtime().execute_market_bars_v3(
+            execution = runtime.execute_market_bars_v3(
                 ThesisLedgerDataRequest(
                     capability=key["capability"], symbol=parsed["symbol"],
                     timeframe=key["timeframe"], start=parsed["start"], end=parsed["end"],
@@ -146,6 +149,6 @@ def market_chart_bars(request: Request, payload: Any = Body(...)) -> dict[str, A
                                parsed["symbol"], key["adjustment"], code, str(error)[:160])
             mapped, status = market_runtime_error(error)
             _market_data_v3_error(mapped, status, parsed["requestId"])
-        return chart_response(parsed, execution)
+        return verification.accept(chart_response(parsed, execution))
     except HTTPException as error:
         return JSONResponse(status_code=error.status_code, content=error.detail)

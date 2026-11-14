@@ -287,7 +287,7 @@ def test_background_http_auth_identity_and_success(store, monkeypatch):
 
 
 @pytest.mark.parametrize('fail', [False, True])
-def test_background_actual_execution_shares_persistent_budget_across_restart(store, fail):
+def test_background_actual_execution_has_no_local_frequency_budget_after_restart(store, fail):
     from types import SimpleNamespace
     from src.services.thesis_ledger_background_quote import background_quote_plan
     from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest, ThesisLedgerGatewayError
@@ -318,9 +318,12 @@ def test_background_actual_execution_shares_persistent_budget_across_restart(sto
     new_plan = background_quote_plan(restarted, background_request())
     req = ThesisLedgerDataRequest('REALTIME_QUOTE', '510300.SH', instrument_type='ETF',
         request_id='background-budget-restart', parameters={'backgroundQuote': {'generation': new_plan['generation']}})
-    with pytest.raises(ThesisLedgerGatewayError):
-        restarted.execute_request(req)
-    assert calls == ['510300.SH']
+    if fail:
+        with pytest.raises(ThesisLedgerGatewayError):
+            restarted.execute_request(req)
+    else:
+        assert restarted.execute_request(req).provider == 'tencent'
+    assert calls == ['510300.SH', '510300.SH']
 
 
 def test_background_preserves_selected_fallback_identity_without_trying_restricted_primary(store):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from typing import Any, Iterable
+from zoneinfo import ZoneInfo
 
 from src.services.thesis_ledger_dependency_facts import (
     DependencyFactError, calendar_fact, fixture_calendar, parse_date, parse_data_as_of, response,
@@ -11,16 +12,20 @@ from src.services.thesis_ledger_dependency_facts import (
 )
 
 
-def validate_market_calendar_range(start: str, end: str, data_as_of: datetime) -> tuple[date, date]:
+def validate_market_calendar_range(start: str, end: str, data_as_of: datetime, market: str = "CN") -> tuple[date, date]:
     start_date = parse_date(start, "start")
     end_date = parse_date(end, "end")
     if start_date.isoformat() != start or end_date.isoformat() != end:
         raise DependencyFactError("invalid_request", "展示日历日期必须为 YYYY-MM-DD")
-    if start_date > end_date or start_date > data_as_of.date():
+    timezone = {"CN": "Asia/Shanghai", "HK": "Asia/Hong_Kong", "US": "America/New_York"}.get(market)
+    if timezone is None:
+        raise DependencyFactError("invalid_request", "展示日历市场无效")
+    market_day = data_as_of.astimezone(ZoneInfo(timezone)).date()
+    if start_date > end_date or start_date > market_day:
         raise DependencyFactError("invalid_request", "展示日历开始日期或日期顺序无效")
     if (end_date - start_date).days + 1 > 20000:
         raise DependencyFactError("invalid_request", "展示日历范围超过 20000 个自然日预算")
-    if end_date > data_as_of.date() + timedelta(days=366):
+    if end_date > market_day + timedelta(days=366):
         raise DependencyFactError("invalid_request", "展示日历计划超过 366 个自然日预算")
     return start_date, end_date
 
@@ -58,6 +63,8 @@ def calendar_request_response(
     if market not in {"CN", "HK", "US"}:
         raise DependencyFactError("unsupported_capability", "当前合同仅支持 CN/HK/US 市场交易日历")
     instant = parse_data_as_of(data_as_of)
-    validator = validate_market_calendar_range if display else validate_calendar_range
-    first, last = validator(start, end, instant)
+    if display:
+        first, last = validate_market_calendar_range(start, end, instant, market)
+    else:
+        first, last = validate_calendar_range(start, end, instant)
     return calendar_contract_response(first, last, instant, fixtures, market)

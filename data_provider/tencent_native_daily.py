@@ -14,7 +14,7 @@ from typing import Any
 import pandas as pd
 import requests
 
-from .base import DataFetchError
+from .base import DataFetchError, ProviderHTTPError
 
 
 TENCENT_NATIVE_DAILY_URL = (
@@ -24,18 +24,26 @@ TENCENT_NATIVE_DAILY_PROTOCOL = "tencent-newfqkline-year-partitions-v3"
 MAX_RESPONSE_BYTES = 1_048_576
 MAX_PARTITIONS = 16
 MAX_ROWS = 3650
-MAX_ROWS_PER_RESPONSE = 640
+REQUEST_ROW_LIMIT = 640
+# 2026-11-11的真实响应在640条请求下包含641行；查询数量不是响应资源边界。
+MAX_ROWS_PER_RESPONSE = REQUEST_ROW_LIMIT + 1
+
+
+class TencentDailyResponseError(DataFetchError):
+    """腾讯原生日线响应未满足精确数据契约。"""
+
+    code = "invalid_response"
 
 
 def _number(value: Any, field: str, *, positive: bool = False) -> Decimal:
     if isinstance(value, bool) or not isinstance(value, (str, int, float, Decimal)):
-        raise DataFetchError(f"腾讯原生日线 {field} 非法")
+        raise TencentDailyResponseError(f"腾讯原生日线 {field} 非法")
     try:
         number = Decimal(str(value))
     except InvalidOperation as exc:
-        raise DataFetchError(f"腾讯原生日线 {field} 非法") from exc
+        raise TencentDailyResponseError(f"腾讯原生日线 {field} 非法") from exc
     if not number.is_finite() or (positive and number <= 0) or number < 0:
-        raise DataFetchError(f"腾讯原生日线 {field} 非法")
+        raise TencentDailyResponseError(f"腾讯原生日线 {field} 非法")
     return number
 
 
@@ -58,18 +66,18 @@ def _parse_response(
     start: date, end: date,
 ) -> list[dict[str, str]]:
     if len(text.encode("utf-8")) > MAX_RESPONSE_BYTES or not text.startswith(f"{variable}="):
-        raise DataFetchError("腾讯原生日线响应包装或大小非法")
+        raise TencentDailyResponseError("腾讯原生日线响应包装或大小非法")
     try:
         payload = json.loads(text[len(variable) + 1:])
     except (TypeError, ValueError) as exc:
-        raise DataFetchError("腾讯原生日线响应 JSON 非法") from exc
+        raise TencentDailyResponseError("腾讯原生日线响应 JSON 非法") from exc
     if (
         not isinstance(payload, dict)
         or type(payload.get("code")) is not int or payload["code"] != 0
         or not isinstance(payload.get("data"), dict)
         or set(payload["data"]) != {symbol}
     ):
-        raise DataFetchError("腾讯原生日线响应身份或状态非法")
+        raise TencentDailyResponseError("腾讯原生日线响应身份或状态非法")
     body = payload["data"][symbol]
     key = {"none": "day", "qfq": "qfqday", "hfq": "hfqday"}.get(adjustment)
     if key is None:
@@ -79,26 +87,27 @@ def _parse_response(
         # 上游对尚无历史的年份仅返回空原生数组；保留零事实，不转换另一口径。
         return []
     if not isinstance(body, dict) or not isinstance(body.get(key), list):
-        raise DataFetchError("腾讯原生日线响应口径或行结构非法")
+        raise TencentDailyResponseError("腾讯原生日线响应口径或行结构非法")
     raw_rows = body[key]
     if len(raw_rows) > MAX_ROWS_PER_RESPONSE:
-        raise DataFetchError("腾讯原生日线单段行数超限")
+        raise TencentDailyResponseError("腾讯原生日线单段行数超限")
     rows: list[dict[str, str]] = []
     seen: set[str] = set()
     for raw in raw_rows:
         if not isinstance(raw, list) or len(raw) < 9 or not isinstance(raw[0], str):
-            raise DataFetchError("腾讯原生日线缺少原生成交额或行结构非法")
+            raise TencentDailyResponseError("腾讯原生日线缺少原生成交额或行结构非法")
         try:
             trading_date = date.fromisoformat(raw[0])
         except ValueError as exc:
-            raise DataFetchError("腾讯原生日线日期非法") from exc
+            raise TencentDailyResponseError("腾讯原生日线日期非法") from exc
         if trading_date.isoformat() != raw[0]:
-            raise DataFetchError("腾讯原生日线日期格式非法")
+            raise TencentDailyResponseError("腾讯原生日线日期格式非法")
+        if raw[0] in seen:
+            raise TencentDailyResponseError("腾讯原生日线日期重复")
+        seen.add(raw[0])
+        # 上游可能返回范围外历史；校验日期身份后，仅投影请求闭区间。
         if trading_date < start or trading_date > end:
             continue
-        if raw[0] in seen:
-            raise DataFetchError("腾讯原生日线日期重复")
-        seen.add(raw[0])
         open_price = _number(raw[1], "开盘价", positive=True)
         close = _number(raw[2], "收盘价", positive=True)
         high = _number(raw[3], "最高价", positive=True)
@@ -106,7 +115,7 @@ def _parse_response(
         volume = _number(raw[5], "成交量")
         native_amount = _number(raw[8], "原生成交额")
         if high < max(open_price, close, low) or low > min(open_price, close, high):
-            raise DataFetchError("腾讯原生日线 OHLC 非法")
+            raise TencentDailyResponseError("腾讯原生日线 OHLC 非法")
         # 锁定版 AKShare 对该接口的字段约定：常规股票/ETF 为手，科创板为股；
         # 金额原文字段为万元。真实 ETF 单位准入仍由 G0-M 单独完成。
         shares = volume if symbol.startswith("sh688") else volume * 100
@@ -147,22 +156,27 @@ def fetch_tencent_native_daily(
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise DataFetchError("腾讯原生日线总期限已耗尽")
-        variable = f"kline_day{adjustment}{part_start.year}"
+        source_adjustment = "" if adjustment == "none" else adjustment
+        variable = f"kline_day{source_adjustment}{part_start.year}"
         param = (
             f"{symbol},day,{part_start.isoformat()},{part_end.isoformat()},"
-            f"{MAX_ROWS_PER_RESPONSE},{'' if adjustment == 'none' else adjustment}"
+            f"{REQUEST_ROW_LIMIT},{source_adjustment}"
         )
         try:
             response = requests.get(
                 TENCENT_NATIVE_DAILY_URL,
-                params={"_var": variable, "param": param},
-                headers={"User-Agent": "Mozilla/5.0", "Accept": "text/plain,*/*"},
+                params={"_var": variable, "param": param, "r": "0.8205512681390605"},
                 timeout=remaining,
             )
             response.raise_for_status()
             source_text = response.text
+        except requests.Timeout as exc:
+            raise TimeoutError("腾讯原生日线请求超时") from exc
+        except requests.HTTPError as exc:
+            status = getattr(exc.response, "status_code", None)
+            raise ProviderHTTPError("tencent", status) from exc
         except requests.RequestException as exc:
-            raise DataFetchError("腾讯原生日线请求失败") from exc
+            raise ConnectionError("腾讯原生日线网络请求失败") from exc
         if time.monotonic() > deadline:
             raise DataFetchError("腾讯原生日线总期限已耗尽")
         rows = _parse_response(
@@ -171,7 +185,7 @@ def fetch_tencent_native_daily(
         )
         all_rows.extend(rows)
         if len(all_rows) > MAX_ROWS:
-            raise DataFetchError("腾讯原生日线整窗行数超限")
+            raise TencentDailyResponseError("腾讯原生日线整窗行数超限")
         retrieval_parts.append({
             "start": part_start.isoformat(),
             "end": part_end.isoformat(),
@@ -182,7 +196,7 @@ def fetch_tencent_native_daily(
             raise DataFetchError("腾讯原生日线总期限已耗尽")
     all_rows.sort(key=lambda row: row["date"])
     if len({row["date"] for row in all_rows}) != len(all_rows):
-        raise DataFetchError("腾讯原生日线跨段日期重复")
+        raise TencentDailyResponseError("腾讯原生日线跨段日期重复")
     revision = sha256(json.dumps(
         retrieval_parts, sort_keys=True, separators=(",", ":"),
     ).encode("utf-8")).hexdigest()

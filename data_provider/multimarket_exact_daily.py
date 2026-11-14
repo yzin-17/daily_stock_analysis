@@ -3,6 +3,7 @@
 import requests
 
 from .exact_daily_contract import ExactDailyError
+from src.services.thesis_ledger_provider_errors import classify_provider_failure
 
 
 def _http_json(url, params):
@@ -11,12 +12,7 @@ def _http_json(url, params):
         response.raise_for_status()
         value = response.json()
     except requests.HTTPError as error:
-        status = getattr(error.response, "status_code", None)
-        if status in {401, 403}:
-            raise ExactDailyError("permission_denied", "来源凭证或接口权限不足") from None
-        if status == 429:
-            raise ExactDailyError("quota_unavailable", "来源调用额度暂不可用") from None
-        raise ExactDailyError("upstream_failure", "来源日线请求失败") from None
+        raise ExactDailyError(classify_provider_failure(error), "来源请求未完成，请核对权限或调用限制") from None
     except (requests.RequestException, ValueError):
         raise ExactDailyError("upstream_failure", "来源日线请求失败") from None
     if not isinstance(value, dict):

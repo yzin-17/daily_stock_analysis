@@ -19,6 +19,12 @@ HITHINK_ETF_NATIVE_FIELD_CONTRACT_V2 = "dsa-hithink-etf-native-field-units-v2"
 
 
 _CN_LISTING_FACTS_V3: dict[str, dict[str, str]] = {
+    "510300.SH": {
+        "firstTradingDate": "2012-05-28",
+        "source": "https://www.hkexnews.hk/listedco/listconews/sehk/2025/0804/2025080402003_c.pdf",
+        "revision": "hkex-csop-csi300-kfs-20250804-listing-510300",
+        "knownAt": "2025-08-04T00:00:00+08:00",
+    },
     "000995.SZ": {
         "firstTradingDate": "2000-08-07",
         "source": "https://static.cninfo.com.cn/finalpage/2021-04-28/1209836916.PDF",

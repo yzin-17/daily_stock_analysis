@@ -8,7 +8,7 @@ from .security_lot_size import LotSizeError
 from .futu_market import RESULT_PREFIX, FutuMarketError, read_futu_quote
 from .futu_daily import read_futu_daily
 from .futu_minute import read_futu_minute
-from .futu_static_info import read_futu_static_info
+from .futu_static_info import read_futu_static_info, find_futu_instrument
 from .exact_daily_contract import ExactDailyError
 
 
@@ -17,6 +17,8 @@ def _read(request):
     import futu
     if request.get("operation") == "quote":
         result = read_futu_quote(futu, host, port, request.get("symbol"), request.get("instrumentType"))
+    elif request.get("operation") == "instrument-search":
+        result = {"items": find_futu_instrument(futu, host, port, request.get("symbol"))}
     elif request.get("operation") == "static-info":
         result = read_futu_static_info(futu, host, port, request.get("symbol"), request.get("instrumentType"))
     elif request.get("operation") == "daily":

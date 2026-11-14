@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 import shutil
@@ -11,9 +12,10 @@ import subprocess
 import sys
 import tempfile
 
-UPSTREAM = "https://github.com/longbridge/openapi.git"
-REVISION = "68080b64ee02836e2fec625e9605dc5389abdb17"
-TAG = "v4.5.0"
+SDK_SOURCE = json.loads(Path(__file__).with_name("sdk-source.json").read_text(encoding="utf-8"))
+UPSTREAM = SDK_SOURCE["upstream"]
+REVISION = SDK_SOURCE["revision"]
+TAG = SDK_SOURCE["tag"]
 ROOT = Path(__file__).resolve().parents[1]
 PATCHES = ROOT / "patches" / "longbridge-sdk"
 
@@ -98,7 +100,7 @@ def main() -> None:
         python, "-m", "pip", "wheel", "--no-deps", "--wheel-dir", str(output),
         "--config-settings=build-args=--locked", str(source / "python"),
     ], cwd=work, env=env, log=log)
-    wheels = sorted(output.glob("longbridge-4.5.0+thesisledger.1-*.whl"))
+    wheels = sorted(output.glob(SDK_SOURCE["wheelPattern"]))
     if not wheels:
         raise RuntimeError(f"未生成预期版本的 wheel；详情见 {log}")
     run([python, "-m", "pip", "install", "--no-deps", str(wheels[-1])], cwd=work, env=env, log=log)

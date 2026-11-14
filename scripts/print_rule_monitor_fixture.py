@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 
 from src.services.rule_monitor_runtime import RuleMonitorRuntime, VERSION
 from src.services.rule_monitor_store import RuleMonitorStore
+from src.services.rule_monitor_history import RuleMonitorHistory
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", type=Path, required=True)
@@ -38,5 +39,12 @@ with TemporaryDirectory(prefix="rule-monitor-contract-") as directory:
     versions = {"version": VERSION, "kind": "document", "identity": document["identity"],
         "versions": runtime.observations.versions("document", document["identity"])}
     result = {"fixtureKind": "受控网络与时钟，无外部读取", "request": request,
-        "queued": queued, "status": first, "changedStatus": changed, "versions": versions}
+        "queued": queued, "status": first, "changedStatus": changed, "versions": versions,
+        "history": RuleMonitorHistory(runtime.store).read()}
+    task = {"version": VERSION, "expectedRevision": 0, "sourceIds": selected}
+    result["taskRequest"] = task
+    result["taskResponse"] = {"version": VERSION, "config": runtime.store.create_task(0, selected)}
+    result["scheduleRequest"] = {"version": VERSION, "expectedRevision": 1, "cron": "0 9 * * *", "timezone": "Asia/Shanghai"}
+    result["scheduleResponse"] = {"version": VERSION, "config": runtime.store.set_schedule(1, "0 9 * * *", "Asia/Shanghai")}
+    result["scheduledStatus"] = runtime.status()
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")

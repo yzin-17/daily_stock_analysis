@@ -67,7 +67,11 @@ def load_record(store, snapshot, level):
 
 def write_record(connection, snapshot, level, report):
     persisted = deepcopy(report)
-    persisted.update(credentialContext="current", configVersion=snapshot.config_version, persisted=True, accountLevel=level)
+    persisted.update(credentialContext="current", configVersion=snapshot.config_version, persisted=True)
+    if level is not None:
+        persisted["accountLevel"] = level
+    else:
+        persisted.pop("accountLevel", None)
     persisted.pop("validUntil", None)
     for route in persisted["routes"]:
         route["access"].pop("validUntil", None)
@@ -87,7 +91,9 @@ def save_record(store, snapshot, level, report):
     source = CAPABILITY_SOURCES.source(snapshot.provider_id)
     with store._schema_lock, store._connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        current = source.account_access_snapshot(store.provider_credential_snapshot(snapshot.provider_id))
+        current = store.provider_credential_snapshot(snapshot.provider_id)
+        if source.account_access_snapshot is not None:
+            current = source.account_access_snapshot(current)
         if current != snapshot or configured_level(store, snapshot.provider_id) != level:
             raise ControlContractError("PROVIDER_CREDENTIAL_CHANGED", "账号配置变化，权限记录未采用")
         persisted = write_record(connection, snapshot, level, report)

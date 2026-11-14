@@ -136,11 +136,13 @@ def test_identity_and_empty_failures_remain_classified(failure, code):
     assert error.value.code == code
 
 
-def test_rate_limit_fails_without_http_or_wait(monkeypatch, store):
+def test_upstream_rate_limit_is_preserved_without_local_wait(monkeypatch, store):
     adapter = ThesisLedgerProviderRuntime(store)._adapter('tushare', snapshot(), cache=False)
-    adapter._call_count = adapter.rate_limit_per_minute
+    adapter._call_count = 1_000_000
     adapter._minute_start = time.time()
-    monkeypatch.setattr('data_provider.tushare_fetcher.requests.post', lambda *a, **kw: pytest.fail('限流不应请求'))
+    from data_provider.tushare_http_client import TushareApiError
+    monkeypatch.setattr('data_provider.tushare_fetcher.requests.post', lambda *a, **kw: SimpleNamespace(status_code=429))
     monkeypatch.setattr('data_provider.tushare_fetcher.time.sleep', lambda *a: pytest.fail('精确读取不应等待额度'))
-    with pytest.raises(RateLimitError):
+    with pytest.raises(TushareApiError) as error:
         SOURCE.bindings[0].read(DailyQuery.from_request(request()), ReadContext(adapter))
+    assert error.value.status_code == 429

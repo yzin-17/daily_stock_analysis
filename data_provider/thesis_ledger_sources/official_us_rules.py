@@ -41,7 +41,7 @@ def exact_probe(context):
 
 SOURCE = SourceDefinition('official-us-rules', manifest, factory, tuple(
     QueryBinding(CONTRACT if capability == 'HISTORICAL_PUBLIC_FEES' else LEGACY_CONTRACT, ExactKey(market, 'STOCK', capability), source,
-        'bounded-multimarket-rules-adapter-v1', filename + ':v1', read_fees if capability == 'HISTORICAL_PUBLIC_FEES' else read_status, admission_required=False)
+        'bounded-public-fees-adapter-v2' if capability == 'HISTORICAL_PUBLIC_FEES' else 'bounded-multimarket-rules-adapter-v1', filename + ':v1', read_fees if capability == 'HISTORICAL_PUBLIC_FEES' else read_status, admission_required=False)
     for (market, capability, provider, source), filename in SOURCES.items()
     if provider == 'official-us-rules'
 ) + bindings('official-us-rules'), ('src.services.thesis_ledger_multimarket_rules', 'MultimarketRuleProvider'), factory_scope='provider', exact_probe_read=exact_probe, catalog_readiness=catalog_readiness)

@@ -110,11 +110,8 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
         初始化 TushareFetcher
 
         Args:
-            rate_limit_per_minute: 每分钟最大请求数（默认80，Tushare免费配额）
+            rate_limit_per_minute: 兼容参数，不再执行本地频次限制
         """
-        self.rate_limit_per_minute = rate_limit_per_minute
-        self._call_count = 0  # 当前分钟内的调用次数
-        self._minute_start: Optional[float] = None  # 当前计数周期开始时间
         self._api: Optional[object] = None  # Tushare API 实例
         self._explicit_token = token is not None
         self._token = (token or "").strip() if self._explicit_token else None
@@ -205,49 +202,10 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
         return self._api is not None
 
     def _check_rate_limit(self) -> None:
-        """
-        检查并执行速率限制
-        
-        流控策略：
-        1. 检查是否进入新的一分钟
-        2. 如果是，重置计数器
-        3. 如果当前分钟调用次数超过限制，强制休眠
-        """
-        current_time = time.time()
-        
-        # 检查是否需要重置计数器（新的一分钟）
-        if self._minute_start is None:
-            self._minute_start = current_time
-            self._call_count = 0
-        elif current_time - self._minute_start >= 60:
-            # 已经过了一分钟，重置计数器
-            self._minute_start = current_time
-            self._call_count = 0
-            logger.debug("速率限制计数器已重置")
-        
-        # 检查是否超过配额
-        if self._call_count >= self.rate_limit_per_minute:
-            # 计算需要等待的时间（到下一分钟）
-            elapsed = current_time - self._minute_start
-            sleep_time = max(0, 60 - elapsed) + 1  # +1 秒缓冲
-            
-            logger.warning(
-                f"Tushare 达到速率限制 ({self._call_count}/{self.rate_limit_per_minute} 次/分钟)，"
-                f"等待 {sleep_time:.1f} 秒..."
-            )
-            
-            time.sleep(sleep_time)
-            
-            # 重置计数器
-            self._minute_start = time.time()
-            self._call_count = 0
-        
-        # 增加调用计数
-        self._call_count += 1
-        logger.debug(f"Tushare 当前分钟调用次数: {self._call_count}/{self.rate_limit_per_minute}")
+        """兼容旧调用入口；频次由上游或 SDK 处理，不主动等待。"""
 
     def _call_api_with_rate_limit(self, method_name: str, **kwargs) -> pd.DataFrame:
-        """统一通过速率限制包装 Tushare API 调用。"""
+        """统一调用 Tushare API，由上游返回频次及权限结果。"""
         if self._api is None:
             raise DataFetchError("Tushare API 未初始化，请检查 Token 配置")
 

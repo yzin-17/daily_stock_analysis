@@ -1,0 +1,6 @@
+{
+  "upstream": "https://github.com/longbridge/openapi.git",
+  "revision": "68080b64ee02836e2fec625e9605dc5389abdb17",
+  "tag": "v4.5.0",
+  "wheelPattern": "longbridge-4.5.0+thesisledger.1-*.whl"
+}

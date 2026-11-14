@@ -15,8 +15,10 @@ from urllib.parse import urlsplit
 import httpx
 
 from src.services.rule_monitor_registry import allowed_document_url
+from src.services.rule_monitor_snapshot import pdf_snapshot, readable_text, text_snapshot
 
 MAX_BYTES = 2 * 1024 * 1024
+BLOCKS = {"p", "div", "section", "article", "main", "h1", "h2", "h3", "h4", "li", "tr", "blockquote"}
 
 
 class DocumentError(ValueError):
@@ -37,6 +39,8 @@ class _Text(HTMLParser):
         self.primary_links = []
 
     def handle_starttag(self, tag, attrs):
+        if tag in BLOCKS or tag == "br":
+            self.handle_data("\n")
         if tag in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}:
             return
         values = dict(attrs)
@@ -61,6 +65,8 @@ class _Text(HTMLParser):
         self.primary_depth += int(primary)
 
     def handle_endtag(self, tag):
+        if tag in BLOCKS:
+            self.handle_data("\n")
         for index in range(len(self.stack) - 1, -1, -1):
             if self.stack[index][0] == tag:
                 removed = self.stack[index:]
@@ -84,7 +90,8 @@ def document_digest(body, content_type):
     if body.startswith(b"%PDF-"):
         if len(body) < 100:
             raise DocumentError("document_invalid")
-        return {"kind": "pdf", "rawHash": raw_hash, "contentHash": raw_hash}
+        return {"kind": "pdf", "rawHash": raw_hash, "contentHash": raw_hash,
+            "snapshot": pdf_snapshot(body)}
     if body.startswith(b"PK"):
         try:
             archive = zipfile.ZipFile(io.BytesIO(body))
@@ -92,6 +99,8 @@ def document_digest(body, content_type):
                 raise DocumentError("document_too_large")
             tree = ElementTree.fromstring(archive.read("word/document.xml"))
             text = " ".join(tree.itertext())
+            snapshot_text = readable_text("\n".join(" ".join(part.itertext()) for part in tree.iter()
+                if part.tag.endswith("}p")))
         except (KeyError, ValueError, zipfile.BadZipFile, ElementTree.ParseError) as error:
             raise DocumentError("document_invalid") from error
         kind = "docx"
@@ -111,6 +120,8 @@ def document_digest(body, content_type):
         kind = "html"
     else:
         raise DocumentError("document_invalid")
+    if kind == "html":
+        snapshot_text = readable_text(text)
     text = re.sub(r"\s+", " ", text).strip()
     if len(text) < 80 or any(term in text.lower() for term in
             ("access denied", "captcha", "verify you are human", "request unsuccessful", "验证码",
@@ -119,7 +130,10 @@ def document_digest(body, content_type):
     content = kind + ":" + text
     if kind == "html":
         content += "\n引用:" + references
-    return {"kind": kind, "rawHash": raw_hash, "contentHash": sha256(content.encode()).hexdigest()}
+        if links:
+            snapshot_text += "\n\n引用链接：\n" + "\n".join(sorted(set(links)))
+    return {"kind": kind, "rawHash": raw_hash, "contentHash": sha256(content.encode()).hexdigest(),
+        "snapshot": text_snapshot(kind, snapshot_text)}
 
 
 async def fetch_document(url, *, client=None, budget_seconds=15):
@@ -137,6 +151,6 @@ async def fetch_document(url, *, client=None, budget_seconds=15):
                     body.extend(chunk)
                     if len(body) > MAX_BYTES:
                         raise DocumentError("document_too_large")
-                return document_digest(bytes(body), response.headers.get("Content-Type", ""))
+                return await asyncio.to_thread(document_digest, bytes(body), response.headers.get("Content-Type", ""))
     except (httpx.HTTPError, TimeoutError) as error:
         raise DocumentError("document_unavailable") from error

@@ -14,8 +14,9 @@ TEXT = "受控官方收费规则正文，用于验证摘要变化和导航隔离
 
 def test_finite_registry_and_canonical_content_ignore_navigation_noise():
     registry = sources()
-    assert len(registry) == 9
-    assert len({doc["url"] for source in registry.values() for doc in source.documents}) <= 24
+    assert len(registry) == 10
+    # 目录可增长；单批 24 份文档的运行预算仍由实际选中范围强制执行。
+    assert all(len(source.documents) <= 24 for source in registry.values())
     first = document_digest(f"<nav>随机123</nav><main>{TEXT}</main>".encode(), "text/html")
     same = document_digest(f"<nav>随机456</nav><main>{TEXT}</main><script>noise()</script>".encode(), "text/html")
     assert first["rawHash"] != same["rawHash"]

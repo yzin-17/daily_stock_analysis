@@ -1,11 +1,10 @@
-"""验证 V3 共用执行面的真实来源熔断隔离。"""
+"""验证 V3 共用执行面按来源隔离失败，且历史熔断不阻断后续尝试。"""
 
 from datetime import datetime, timezone
 
 import pytest
 
 from src.services.thesis_ledger_provider_runtime import (
-    NoEligibleProviderError,
     ProviderCallError,
     RouteTarget,
     ThesisLedgerProviderRuntime,
@@ -70,6 +69,7 @@ def test_failed_source_does_not_block_or_reset_sibling_source(error_code, restar
     assert store.states[("akshare", "DAILY_BAR", "ETF", "sina")]["state"] == "healthy"
     assert store.states[failed_key]["circuit"] == "open"
 
-    with pytest.raises(NoEligibleProviderError):
+    with pytest.raises(ProviderCallError) as failure:
         _execute(runtime, "eastmoney", fail)
-    assert calls == ["eastmoney"] * 3 + ["sina"]
+    assert failure.value.code == error_code
+    assert calls == ["eastmoney"] * 3 + ["sina", "eastmoney"]

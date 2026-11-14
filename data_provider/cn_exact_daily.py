@@ -15,7 +15,7 @@ def read_cn_exact_daily(provider_id, adapter, request):
         from .thesis_ledger_sources.baostock import read_daily_frame
         return read_daily_frame(adapter, request)
     if provider_id == "tickflow":
-        from .thesis_ledger_sources.tickflow import read_frame
+        from .tickflow_daily import read_frame
         return read_frame(adapter, request)
     if provider_id == "pytdx":
         from .thesis_ledger_sources.pytdx import read_frame

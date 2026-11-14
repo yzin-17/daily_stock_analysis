@@ -68,11 +68,16 @@ def test_market_feed_keeps_real_pinned_source_without_security_associations(runt
     with pytest.raises(ValidationError): NewsFeedResponse.model_validate(bad)
 
 
-@pytest.mark.parametrize("changes", [{"providerId":"unconfigured"}, {"cursor":"next"}, {"requestBudgetMs":1},
-                                    {"publishedStart":"2020-01-01T00:00:00Z","publishedEnd":"2020-01-02T00:00:00Z"}])
+@pytest.mark.parametrize("changes", [{"providerId":"unconfigured"}, {"cursor":"next"}, {"requestBudgetMs":1}])
 def test_unconfigured_scope_cursor_and_budget_reject_before_upstream(runtime, changes):
     result = execute_news_request(runtime[0], query(**changes))
     assert result.status == "unavailable" and result.upstreamAttempts == 0 and result.items == []
+
+
+def test_past_window_first_use_preserves_missing_coverage(runtime):
+    result = execute_news_request(runtime[0], query(publishedStart="2020-01-01T00:00:00Z", publishedEnd="2020-01-02T00:00:00Z"))
+    assert result.status == "partial" and result.upstreamAttempts == 1 and result.items == []
+    assert result.coverage.complete is False
 
 
 @pytest.mark.parametrize("action", ["disable", "revoke"])

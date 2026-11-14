@@ -4,6 +4,12 @@
 
 ## 系统与接口架构
 
+- [精确能力首次使用与验证记录](thesis-ledger-capability-verification.md)
+
+- [股票与 ETF 复权日线适配边界](thesis-ledger-adjusted-daily-capabilities.md)
+
+- [Yahoo 日线完整窗口](thesis-ledger-yahoo-daily-window.md)
+
 - [ThesisLedger 公告获取维护](thesis-ledger-announcements.md)
 - [ThesisLedger 基础报价的可空量额合同](thesis-ledger-basic-quote.md)
 - [ThesisLedger 数据能力适配接入](thesis-ledger-capability-adapters.md)

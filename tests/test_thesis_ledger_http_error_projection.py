@@ -5,6 +5,8 @@ import pytest
 
 from api.middlewares.error_handler import add_error_handlers
 from api.thesis_ledger_market_errors import market_data_error_v3
+from src.services.thesis_ledger_market_errors_v3 import market_runtime_error
+from src.services.thesis_ledger_provider_runtime import ProviderCallError, classify_provider_exception
 
 
 def test_existing_daily_data_error_through_global_handler():
@@ -20,6 +22,14 @@ def test_existing_daily_data_error_through_global_handler():
     assert response.json() == {'detail': {'contractVersion': 3, 'requestId': 'daily-request',
                                          'error': {'code': 'insufficient_coverage',
                                                    'message': '请求区间的数据覆盖不足'}}}
+
+
+@pytest.mark.parametrize('code,status', [('rate_limited', 503), ('quota_unavailable', 503),
+                                      ('permission_denied', 403), ('authentication_failed', 403)])
+def test_source_restriction_is_not_lost_in_http_projection(code, status):
+    error = ProviderCallError(code, 'private upstream message')
+    assert market_runtime_error(error) == (code, status)
+    assert classify_provider_exception(error) == code
 
 
 @pytest.mark.parametrize('detail,expected', [

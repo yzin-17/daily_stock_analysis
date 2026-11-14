@@ -17,7 +17,6 @@ import os
 import secrets
 import sqlite3
 import threading
-import time
 import uuid
 from contextlib import AbstractContextManager
 from datetime import date, datetime, timedelta, timezone
@@ -91,7 +90,7 @@ def _credential_state(
     manifest: dict[str, Any],
     config: sqlite3.Row | None,
 ) -> tuple[str, dict[str, bool], bool, str | None]:
-    if not manifest.get("requiresCredential", False):
+    if not manifest.get("requiresCredential", False) and not manifest.get("credentialSchema", {}).get("methods"):
         return "built_in", {}, bool(config and config["credential_ciphertext"]), None
     provider_id = str(manifest["providerId"])
     if config and config["credential_ciphertext"]:
@@ -1141,15 +1140,10 @@ class ThesisLedgerControlStore:
         )
         if admission_reason is not None:
             return admission_reason
-        health = self._health(
-            connection,
-            provider_id,
-            capability,
-            asset_type,
-            upstream_source=upstream_source,
-        )
-        if health and str(health["circuit"] or "closed") == "open":
-            return "upstream_failure"
+        # 历史健康/熔断状态只用于观测，不能把来源从候选中摘除：否则一旦某次
+        # 瞬时失败把 circuit 写为 open，该来源就再也不会被调用，也就永远
+        # 没有机会写回 closed。来源是否可用由每次请求的真实调用结果决定，
+        # 顺序始终按 Control 策略里的配置顺序（主来源在前、后备在后）。
         return None
 
     def _effective_v3(
@@ -1393,73 +1387,9 @@ class ThesisLedgerControlStore:
         now: float | None = None,
         budget_seconds: int = PROVIDER_REQUEST_BUDGET_SECONDS,
     ) -> dict[str, Any]:
-        """Atomically reserve one upstream attempt for a durable request key.
-
-        The reservation is written before the caller invokes an adapter.  A
-        process crash therefore leaves the same key in cooldown after restart.
-        The minimum is deliberately enforced here rather than delegated to
-        environment configuration or callers.
-        """
-        normalized_provider = str(provider_id).strip().lower()
-        normalized_capability = str(capability).strip().upper()
-        normalized_type = str(instrument_type).strip().upper()
-        normalized_symbol = str(symbol).strip().upper()
-        normalized_source = str(upstream_source or "").strip().lower()
-        if not all((normalized_provider, normalized_capability, normalized_type, normalized_symbol)):
-            raise ValueError("Provider request budget key fields must be non-empty")
-        current = time.time() if now is None else float(now)
-        duration = max(PROVIDER_REQUEST_BUDGET_SECONDS, int(budget_seconds))
-        expires_at = current + duration
-        request_key = ":".join(
-            (CONSUMER_NAMESPACE, normalized_provider, normalized_capability,
-             normalized_type, normalized_symbol, normalized_source)
-        )
-        with self._schema_lock, self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            existing = connection.execute(
-                "SELECT attempted_at, expires_at FROM thesis_ledger_provider_request_budget "
-                "WHERE request_key = ?",
-                (request_key,),
-            ).fetchone()
-            if existing is not None and float(existing["expires_at"]) > current:
-                connection.rollback()
-                return {
-                    "allowed": False,
-                    "requestKey": request_key,
-                    "attemptedAt": float(existing["attempted_at"]),
-                    "expiresAt": float(existing["expires_at"]),
-                    "remainingSeconds": max(0, int(float(existing["expires_at"]) - current)),
-                }
-            connection.execute(
-                """
-                INSERT INTO thesis_ledger_provider_request_budget
-                (request_key, provider_id, capability, instrument_type, symbol,
-                 request_id, attempted_at, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(request_key) DO UPDATE SET
-                  request_id=excluded.request_id,
-                  attempted_at=excluded.attempted_at,
-                  expires_at=excluded.expires_at
-                """,
-                (
-                    request_key,
-                    normalized_provider,
-                    normalized_capability,
-                    normalized_type,
-                    normalized_symbol,
-                    request_id,
-                    current,
-                    expires_at,
-                ),
-            )
-            connection.commit()
-        return {
-            "allowed": True,
-            "requestKey": request_key,
-            "attemptedAt": current,
-            "expiresAt": expires_at,
-            "remainingSeconds": duration,
-        }
+        """兼容旧内部调用；不再计数、持久化或阻断来源请求。"""
+        return {"allowed": True, "requestKey": "", "attemptedAt": now,
+                "expiresAt": now, "remainingSeconds": 0}
 
     def provider_registry(self) -> list[dict[str, Any]]:
         from src.services.thesis_ledger_provider_capability_projection import exact_provider_manifests

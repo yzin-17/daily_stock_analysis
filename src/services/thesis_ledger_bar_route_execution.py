@@ -22,7 +22,7 @@ def execute_bar_route(
     if (
         not ((request.capability == "DAILY_BAR" and request.timeframe == "1d")
              or (request.capability == "MINUTE_BAR" and request.timeframe in {"1m", "5m", "15m", "30m", "60m"}
-                 and request.adjustment == "none" and request.parameters == {"interactive_chart": True}))
+                 and request.adjustment == "none" and request.parameters in ({"interactive_chart": True}, {"historical_reconstruction": True})))
         or request.start is None
         or request.end is None
         or request.adjustment not in {"none", "qfq", "hfq"}

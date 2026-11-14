@@ -50,8 +50,8 @@ def test_both_pinned_sources_report_outside_coverage(configured_client):
         payload["range"]["start"] = "2023-08-21"
         payload["routeTarget"] = {**target, "routeIndex": index}
         response = client.post(DATA_URL, json=payload, headers=DATA_HEADERS)
-        assert response.status_code == 503
-        assert response.json()["detail"]["code"] == "insufficient_coverage"
+        assert response.status_code == 422
+        assert response.json()["detail"]["error"]["code"] == "insufficient_coverage"
 
 
 def test_catalog_two_targets_and_no_implicit_provider_switch(configured_client):
@@ -65,11 +65,13 @@ def test_catalog_two_targets_and_no_implicit_provider_switch(configured_client):
         headers={"Authorization": "Bearer fees-control-test-token"},
     ).json()
     assert {item["target"]["upstreamSource"] for item in catalog["entries"] if item["key"] == KEY} == {
-        TARGET["upstreamSource"], fees.ARCHIVE_SOURCE,
+        TARGET["upstreamSource"], fees.ARCHIVE_SOURCE, "local-materials",
     }
     payload = wire_request()
     payload["range"]["start"] = "2023-08-22"
-    assert client.post(DATA_URL, json=payload, headers=DATA_HEADERS).status_code == 503
+    uncovered = client.post(DATA_URL, json=payload, headers=DATA_HEADERS)
+    assert uncovered.status_code == 422
+    assert uncovered.json()["detail"]["error"]["code"] == "insufficient_coverage"
     payload["routeTarget"] = {**ARCHIVE_TARGET, "routeIndex": 1}
     response = client.post(DATA_URL, json=payload, headers=DATA_HEADERS)
     assert response.status_code == 200

@@ -6,6 +6,7 @@ import pandas as pd
 
 from .exact_daily_contract import ExactDailyError
 from .futu_market import futu_security
+from src.services.thesis_ledger_provider_errors import classify_provider_failure
 
 
 def read_futu_history(sdk, host, port, request, *, timeframe):
@@ -20,15 +21,22 @@ def read_futu_history(sdk, host, port, request, *, timeframe):
             raise ValueError("inverted window")
     except (KeyError, TypeError, ValueError):
         raise ExactDailyError("invalid_request", "富途历史 K 线需要有效的起止日期") from None
-    if market in {"SH", "SZ"} and timeframe == "1d":
-        raise ExactDailyError("invalid_request", "富途当前日线绑定仅支持港美市场")
+    if market in {"SH", "SZ"} and timeframe == "1d" and asset == "STOCK":
+        if not code.startswith(("SH.6", "SZ.0", "SZ.3")):
+            raise ExactDailyError("invalid_request", "富途股票日线仅接入沪深 A 股")
+    if market in {"SH", "SZ"} and timeframe == "1d" and asset == "ETF":
+        from src.services.thesis_ledger_dependency_facts import DependencyFactError, validate_cn_stock
+        try:
+            validate_cn_stock(request['symbol'], 'CN', asset, lambda symbol: symbol)
+        except DependencyFactError:
+            raise ExactDailyError('invalid_request', '富途 ETF 日线需要沪深 ETF 证券身份') from None
     context = None
     try:
         context = sdk.OpenQuoteContext(host=host, port=port)
         status, static = context.get_stock_basicinfo(getattr(sdk.Market, market),
             stock_type=getattr(sdk.SecurityType, asset), code_list=[code])
         if status != sdk.RET_OK:
-            raise ExactDailyError("upstream_failure", "富途静态资料读取失败")
+            raise ExactDailyError(classify_provider_failure(static), "富途静态资料读取失败")
         if (not isinstance(static, pd.DataFrame) or len(static) != 1
                 or static.iloc[0].get("code") != code or static.iloc[0].get("stock_type") != asset):
             raise ExactDailyError("invalid_response", "富途历史 K 线证券或资产类型不匹配")
@@ -42,7 +50,7 @@ def read_futu_history(sdk, host, port, request, *, timeframe):
                 autype=autype, max_count=1000, page_req_key=cursor, extended_time=False,
             )
             if status != sdk.RET_OK:
-                raise ExactDailyError("upstream_failure", "富途历史 K 线读取失败，请检查权限与历史额度")
+                raise ExactDailyError(classify_provider_failure(frame), "富途历史 K 线读取失败，请核对来源状态")
             if (not isinstance(frame, pd.DataFrame) or frame.empty or "code" not in frame
                     or not frame["code"].eq(code).all() or "time_key" not in frame):
                 raise ExactDailyError("invalid_response", "富途历史 K 线分页缺失或证券身份无效")

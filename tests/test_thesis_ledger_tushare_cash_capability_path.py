@@ -39,7 +39,7 @@ def test_actual_provider_cache_reuses_snapshot_then_rotates_constructor(state, m
     call(state)
     first = state.runtime.adapters['tushare']
     call(state)
-    assert state.runtime.adapters['tushare'] is first and first._call_count == 2
+    assert state.runtime.adapters['tushare'] is first and not hasattr(first, '_call_count')
     constructor.assert_called_once()
     state.config.tushare_token = 'synthetic-rotated-cache-token'
     snapshot = state.store.provider_credential_snapshot('tushare')
@@ -49,7 +49,7 @@ def test_actual_provider_cache_reuses_snapshot_then_rotates_constructor(state, m
     call(state)
     assert state.runtime.adapters['tushare'] is not first
     assert constructor.call_count == 2 and state.source.call_count == 3
-    assert state.runtime.adapters['tushare']._call_count == 1
+    assert not hasattr(state.runtime.adapters['tushare'], '_call_count')
 
 
 @pytest.mark.parametrize('value', ['1970-01-01T00:00:00Z', '1969-12-31T23:59:59.1Z',

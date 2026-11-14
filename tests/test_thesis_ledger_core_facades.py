@@ -287,16 +287,8 @@ def _policy_store_with_provider_state(tmp_path, *, enabled=True, circuit="closed
     return store
 
 
-@pytest.mark.parametrize(
-    ("enabled", "circuit"),
-    [(False, "closed"), (True, "open")],
-)
-def test_gateway_does_not_invoke_disabled_or_circuit_open_provider(
-    tmp_path,
-    enabled,
-    circuit,
-):
-    """Effective Policy 不 eligible 时 adapter 不应收到上游请求。"""
+def test_gateway_does_not_invoke_disabled_provider(tmp_path):
+    """Provider 被禁用时，adapter 不应收到上游请求。"""
 
     class _Adapter:
         """记录不应发生的 Provider 调用。"""
@@ -311,11 +303,7 @@ def test_gateway_does_not_invoke_disabled_or_circuit_open_provider(
     adapter = _Adapter()
     gateway = ThesisLedgerDataGateway(
         ThesisLedgerProviderRuntime(
-            _policy_store_with_provider_state(
-                tmp_path,
-                enabled=enabled,
-                circuit=circuit,
-            ),
+            _policy_store_with_provider_state(tmp_path, enabled=False),
             adapters={"akshare": adapter},
         )
     )
@@ -326,6 +314,35 @@ def test_gateway_does_not_invoke_disabled_or_circuit_open_provider(
     assert raised.value.code == "NO_ELIGIBLE_PROVIDER"
     assert raised.value.request_id == "state-request"
     assert adapter.calls == 0
+
+
+def test_gateway_still_calls_primary_provider_after_open_circuit(tmp_path):
+    """历史熔断状态只用于观测，不能阻止本次请求再次尝试主来源。"""
+
+    class _Adapter:
+        """记录被真实调用的 Provider。"""
+
+        calls = 0
+
+        def _get_stock_realtime_quote_em(self, _symbol):
+            """返回可用行情并计数。"""
+            self.calls += 1
+            return _Quote()
+
+    adapter = _Adapter()
+    store = _policy_store_with_provider_state(tmp_path, circuit="open")
+    gateway = ThesisLedgerDataGateway(
+        ThesisLedgerProviderRuntime(store, adapters={"akshare": adapter})
+    )
+
+    result = gateway.quote("600519.SH", request_id="state-request")
+
+    assert result.provider == "akshare"
+    assert result.value.price == 100.0
+    assert adapter.calls == 1
+    assert store.health(
+        "akshare", "REALTIME_QUOTE", "STOCK", upstream_source="eastmoney",
+    )["circuit"] == "closed"
 
 
 def test_gateway_does_not_invoke_unconfigured_provider(tmp_path, monkeypatch):

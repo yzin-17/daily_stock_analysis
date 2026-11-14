@@ -80,4 +80,5 @@ SOURCE = SourceDefinition("finnhub", manifest, factory, (*INTRADAY_BINDINGS,
 ), ("data_provider.finnhub_fetcher", "FinnhubFetcher"),
     credentials=(("api_key", ("apiKey",)),), dependency_modules=("requests",), factory_scope="provider",
     probe_policy=SourceProbePolicy(probe_daily, capabilities=('DAILY_BAR',), adapter_required=True),
+    upstream_groups=(('finnhub', 'finnhub'),),
     environment_credential_policy=EnvironmentCredentialPolicy(environment_credentials))

@@ -149,9 +149,9 @@ def test_catalog_adds_basic_tencent_prices_to_exact_reviewed_admissions():
     assert len(reviewed) == 6
     assert any(entry["key"] == ROUTE_KEY for entry in reviewed)
     basic = [entry for entry in ready if entry["target"]["providerId"] == "tencent"]
-    assert len(ready) == 17
+    assert len(ready) == 18
     assert {(entry["key"]["assetType"], entry["key"]["adjustment"]) for entry in basic} == {
-        ("ETF", "none"), ("ETF", "qfq"), ("ETF", "hfq"), ("STOCK", "none"), ("STOCK", "qfq"),
+        ("ETF", "none"), ("ETF", "qfq"), ("ETF", "hfq"), ("STOCK", "none"), ("STOCK", "qfq"), ("STOCK", "hfq"),
     }
 
 
@@ -215,7 +215,7 @@ def test_revision_resolver_fails_closed_for_unknown_or_credentialed_adapter():
     )["credentialRevision"] == "7"
 
 
-def test_tencent_etf_hfq_has_a_separate_revision_and_stock_hfq_stays_unadapted():
+def test_tencent_stock_and_etf_hfq_have_separate_revisions():
     target = {"providerId": "tencent", "upstreamSource": "tencent"}
     hfq_key = {**ROUTE_KEY, "adjustment": "hfq"}
     hfq = market_v3_current_route_revisions(
@@ -234,7 +234,9 @@ def test_tencent_etf_hfq_has_a_separate_revision_and_stock_hfq_stays_unadapted()
     assert hfq is not None and qfq is not None and none is not None
     assert hfq["adapterRevision"] == "dsa-v3-etf-tencent-hfq-newfqkline-adapter-v1"
     assert len({hfq["adapterRevision"], qfq["adapterRevision"], none["adapterRevision"]}) == 3
-    assert stock_hfq is None
+    assert stock_hfq is not None
+    assert stock_hfq["adapterRevision"] == "dsa-v3-stock-tencent-hfq-newfqkline-adapter-v1"
+    assert stock_hfq["adapterRevision"] != hfq["adapterRevision"]
 
 
 @pytest.mark.parametrize(

@@ -193,10 +193,12 @@ def request(**updates):
         "publishedStart": "2026-10-18T00:00:00Z", "publishedEnd": "2026-10-21T19:00:00Z", **updates})
 
 
-def test_runtime_admission_and_exact_binding(runtime):
+def test_first_use_and_exact_binding_preserve_public_identity(runtime):
     app, store = runtime
     pending = execute_news_request(app, request())
     assert pending.status == "unavailable" and pending.upstreamAttempts == 0
+    from src.services.thesis_ledger_capability_verification import VerificationCatalog
+    assert VerificationCatalog(store).read(KEY, TARGET) == {"state": "unverified"}
     admit(store)
     applied = store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "local-policy",
                                     "revision": 1, "enabled": True,
@@ -206,7 +208,9 @@ def test_runtime_admission_and_exact_binding(runtime):
     assert result.status == "partial" and result.upstreamAttempts == 1 and len(result.items) == 1
     assert not result.coverage.complete and "search_first_page_not_exhaustive" in result.coverage.missingReasons
     assert result.route.providerId == "akshare" and result.route.upstreamSource == "eastmoney"
-    rejected = execute_news_request(app, request(instrument={"symbol": "000001.SZ", "market": "CN", "assetType": "STOCK"}))
+    other = execute_news_request(app, request(instrument={"symbol": "000001.SZ", "market": "CN", "assetType": "STOCK"}))
+    assert other.status == "partial" and other.upstreamAttempts == 1
+    rejected = execute_news_request(app, request(instrument={"symbol": "999999.SH", "market": "CN", "assetType": "STOCK"}))
     assert rejected.status == "unavailable" and rejected.upstreamAttempts == 0
 
 

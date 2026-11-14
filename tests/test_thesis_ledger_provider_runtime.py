@@ -112,6 +112,21 @@ def _quote_log_events(caplog, request_id):
     ]
 
 
+@pytest.mark.parametrize('code', ['rate_limited', 'quota_unavailable', 'permission_denied'])
+def test_source_restriction_is_not_retried_and_only_uses_configured_backup(tmp_path, code):
+    class Adapter:
+        calls = 0
+        def get_fund_nav_history(self, symbol):
+            self.calls += 1
+            raise ProviderCallError(code, '安全类别', retryable=True)
+    adapter = Adapter()
+    runtime = ThesisLedgerProviderRuntime(_store(tmp_path, {'FUND_NAV_HISTORY': {'MUTUAL_FUND': ['akshare']}}),
+                                         adapters={'akshare': adapter})
+    with pytest.raises(ProviderCallError) as error:
+        runtime.execute_request(ThesisLedgerDataRequest('FUND_NAV_HISTORY', '000001.OF'))
+    assert error.value.code == code and adapter.calls == 1
+
+
 def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
     """Control 注册表列出全部精确接入及需要独立证据的来源。"""
     registry = {
@@ -120,14 +135,14 @@ def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
     }
 
     assert set(registry) == {
-        "official-rules", "official-states", "official-dividends",
+        "local-materials",
+        "official-rules", "official-states", "official-dividends", "local-materials",
         "official-hk-rules", "official-us-rules",
         "akshare",
         "efinance",
         "tencent",
         "tushare",
         "tickflow",
-        "tickflow-free",
         "pytdx",
         "baostock",
         "yfinance",
@@ -137,16 +152,16 @@ def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
         "alphavantage",
         "hithink",
         "rqdata",
-        "tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng", "cls", "wallstreetcn", "nvidia-news",
+        "tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng", "cls", "wallstreetcn",
     }
     assert all("routeEligible" not in manifest for manifest in registry.values())
-    news = {"tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng", "cls", "wallstreetcn", "nvidia-news"}
-    assert set(_PROVIDER_ADAPTER_IMPORTS) == set(registry) - {"hithink", "rqdata", "tickflow-free"} - news
+    news = {"tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng", "cls", "wallstreetcn"}
+    assert set(_PROVIDER_ADAPTER_IMPORTS) == set(registry) - {"hithink", "rqdata", "local-materials"} - news
     assert all(registry[provider]["enabled"] is False for provider in news)
     from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
-    free = CAPABILITY_SOURCES.source("tickflow-free")
-    assert free.adapter_import is None and callable(free.factory)
-    assert registry["tickflow-free"]["capabilities"] == {"DAILY_BAR": ["STOCK"]}
+    assert CAPABILITY_SOURCES.source("tickflow-free") is None
+    assert registry["tickflow"]["accountAccessSupported"] is True
+    assert registry["tickflow"]["requiresCredential"] is False
     assert registry["hithink"]["capabilities"] == {
         "DAILY_BAR": ["ETF", "STOCK"],
         "REALTIME_QUOTE": ["ETF", "STOCK"],
@@ -331,29 +346,10 @@ def test_chip_summary_rejects_non_stock_route_before_provider_call(tmp_path):
     assert rejected.value.code == "unsupported_capability"
 
 
-@pytest.mark.parametrize(
-    ("enabled", "circuit"),
-    [(False, "closed"), (True, "open")],
-)
-def test_chip_summary_skips_disabled_or_circuit_open_provider(
-    tmp_path,
-    enabled,
-    circuit,
-):
-    """CHIP_SUMMARY 的非 eligible Provider 不得收到适配器请求。"""
+def test_chip_summary_skips_disabled_provider(tmp_path):
+    """CHIP_SUMMARY 的禁用 Provider 不得收到适配器请求。"""
     store = ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db"))
-    store.save_provider_config("akshare", {"enabled": enabled, "settings": {}})
-    if circuit != "closed":
-        store.record_health(
-            "akshare",
-            "CHIP_SUMMARY",
-            "STOCK",
-            state="degraded",
-            circuit=circuit,
-            consecutive_failures=3,
-            error_code="transient_failure",
-            upstream_source="eastmoney",
-        )
+    store.save_provider_config("akshare", {"enabled": False, "settings": {}})
     store.apply_policy_v3(
         {
             "contractVersion": 3,
@@ -388,6 +384,58 @@ def test_chip_summary_skips_disabled_or_circuit_open_provider(
     assert raised.value.code == "NO_ELIGIBLE_PROVIDER"
     assert raised.value.request_id == "chip-state-request"
     assert adapter.calls == 0
+
+
+def test_chip_summary_still_calls_provider_after_open_circuit(tmp_path):
+    """历史熔断状态只用于观测，本次请求仍应真实调用主来源。"""
+    store = ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db"))
+    store.save_provider_config("akshare", {"enabled": True, "settings": {}})
+    store.record_health(
+        "akshare",
+        "CHIP_SUMMARY",
+        "STOCK",
+        state="degraded",
+        circuit="open",
+        consecutive_failures=3,
+        error_code="transient_failure",
+        upstream_source="eastmoney",
+    )
+    store.apply_policy_v3(
+        {
+            "contractVersion": 3,
+            "consumer": "thesis-ledger",
+            "requestId": "chip-state-test",
+            "revision": 1,
+            "enabled": True,
+            "routes": [{
+                "key": {"kind": "data", "market": "CN", "assetType": "STOCK",
+                        "capability": "CHIP_SUMMARY"},
+                "targets": [{"providerId": "akshare", "upstreamSource": "eastmoney"}],
+            }],
+        }
+    )
+
+    class _Adapter:
+        """记录真实发生的摘要调用。"""
+
+        calls = 0
+
+        def get_chip_distribution(self, _symbol):
+            self.calls += 1
+            return _Chip()
+
+    adapter = _Adapter()
+    gateway = ThesisLedgerDataGateway(
+        ThesisLedgerProviderRuntime(store, adapters={"akshare": adapter})
+    )
+
+    result = gateway.chip_summary("600519.SH", request_id="chip-state-request")
+
+    assert result.provider == "akshare"
+    assert adapter.calls == 1
+    assert store.health(
+        "akshare", "CHIP_SUMMARY", "STOCK", upstream_source="eastmoney",
+    )["circuit"] == "closed"
 
 
 def test_quote_uses_one_call_per_exact_target_then_complete_fallback(tmp_path):
@@ -446,7 +494,7 @@ def test_etf_effective_policy_includes_exact_akshare_single_symbol_route(tmp_pat
     assert akshare["reason"] is None
 
 
-def test_etf_quote_uses_single_adapter_once_and_persists_cooldown_after_reopen(tmp_path, caplog):
+def test_etf_quote_remains_single_symbol_without_local_cooldown_after_reopen(tmp_path, caplog):
     """ETF Quote 只调用单标 adapter，资格记录跨 store 重开仍生效。"""
 
     class _SingleSymbolAdapter:
@@ -493,22 +541,12 @@ def test_etf_quote_uses_single_adapter_once_and_persists_cooldown_after_reopen(t
         adapters={"efinance": adapter, "akshare": object()},
     )
     with caplog.at_level(logging.INFO, logger="src.services.thesis_ledger_provider_runtime"):
-        with pytest.raises(ThesisLedgerGatewayError) as raised:
-            second_runtime.execute_request(
-                ThesisLedgerDataRequest("REALTIME_QUOTE", "510300.SH", request_id="etf-2")
-            )
-
-    assert raised.value.code == "request_budget_cooldown"
-    assert raised.value.detail()["diagnostics"]["budgetSeconds"] == 600
-    assert raised.value.detail()["diagnostics"]["provider"] == "efinance"
-    assert adapter.calls == 1
-    assert adapter.full_market_calls == 0
-    cooldown_events = _quote_log_events(caplog, "etf-2")
-    assert cooldown_events[0]["stage"] == "provider-qualification"
-    assert cooldown_events[0]["status"] == "rejected"
-    assert cooldown_events[0]["errorCode"] == "request_budget_cooldown"
-    assert cooldown_events[0]["provider"] == "efinance"
-    assert cooldown_events[0]["durationMs"] >= 0
+        result = second_runtime.execute_request(
+            ThesisLedgerDataRequest("REALTIME_QUOTE", "510300.SH", request_id="etf-2")
+        )
+    assert result.provider == "efinance"
+    assert adapter.calls == 2 and adapter.full_market_calls == 0
+    assert [event["status"] for event in _quote_log_events(caplog, "etf-2")] == ["started", "success"]
 
 
 def test_quote_no_eligible_provider_logs_request_and_does_not_call_adapter(tmp_path, caplog):

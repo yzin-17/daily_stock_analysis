@@ -13,6 +13,7 @@ from src.services.thesis_ledger_exact_probe_read import read_exact_probe
 from src.services.thesis_ledger_probe_execution import run_probe
 from src.services.thesis_ledger_account_access_store import configured_level
 from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+from src.services.thesis_ledger_capability_verification import begin_verification, publish_verified
 
 
 def _check_baseline(runtime, baseline, catalog):
@@ -90,11 +91,13 @@ def check_provider(runtime, provider_id, value, *, fixture=False):
                 attempted = False
                 try:
                     _check_baseline(runtime, baseline, catalog)
+                    verification = begin_verification(runtime.store, key, target) if 'credentials' not in value else None
                     # 独立事件证据在精确读取器中检查；普通读取不要求人工记录。
                     attempted = True
                     sample = run_probe(lambda probe_key=key, probe_target=target, credential=snapshot:
                                        read_exact_probe(runtime, probe_key, probe_target, credential))
                     _check_baseline(runtime, baseline, catalog)
+                    publish_verified(runtime.store, verification, evidence={'requestId': value['requestId'], 'sample': sample})
                     result = {"status": "healthy", "readOnly": True, "attempted": True,
                               "latencyMs": max(0, int((time.monotonic() - started) * 1000))}
                     entry["sample"] = sample

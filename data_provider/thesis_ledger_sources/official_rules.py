@@ -42,7 +42,7 @@ def exact_probe(context):
 
 SOURCE = SourceDefinition('official-rules', build_public_fee_manifest, factory, tuple(
     QueryBinding(CONTRACT, ExactKey('CN', 'STOCK', 'HISTORICAL_PUBLIC_FEES'), source,
-        'official-public-fees-adapter-v1', revision, read_fees, admission_required=False)
+        'official-public-fees-adapter-v2', revision, read_fees, admission_required=False)
     for source, revision in ((UPSTREAM_SOURCE, 'cn-stock-auction-fees-2023-08-v1'),
                              (ARCHIVE_SOURCE, 'cn-stock-auction-fees-archive-2023-08-v1'))
 ) + bindings('official-rules'), ('src.services.thesis_ledger_public_fees', 'OfficialPublicFeeProvider'), factory_scope='provider', exact_probe_read=exact_probe, catalog_readiness=catalog_readiness)

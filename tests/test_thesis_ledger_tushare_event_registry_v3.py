@@ -63,6 +63,7 @@ def test_inventory_preserves_existing_routes_with_exact_tushare_and_hithink_cash
         (EVENT_KEY, TUSHARE_TARGET, True),
         (HITHINK_DIVIDEND_KEY, HITHINK_DIVIDEND_TARGET, True),
         (EVENT_KEY, {"providerId": "official-dividends", "upstreamSource": "cn-etf-cash-notices"}, True),
+        (EVENT_KEY, {"providerId": "local-materials", "upstreamSource": "local-materials"}, True),
     ], key=identity)
     assert event_adapter_matches(EVENT_KEY, {**TUSHARE_TARGET, "routeIndex": 0})
     assert event_adapter_revisions(EVENT_KEY, {**TUSHARE_TARGET, "routeIndex": 0},

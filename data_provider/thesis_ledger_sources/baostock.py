@@ -21,6 +21,7 @@ from data_provider.baostock_query_process import (
 )
 from src.services.thesis_ledger_status_query_support_v1 import TradingSupport, RiskSupport, DatesSupport
 from src.services.thesis_ledger_status_acquisition import StatusAcquisitionKey
+from src.services.thesis_ledger_dependency_facts import cn_research_calendar_eligible, validate_cn_stock, DependencyFactError
 
 STATUS_SOURCE_REVISION = "baostock-query-history-status-v1"
 DATES_SOURCE_REVISION = "baostock-query-stock-basic-v1"
@@ -29,7 +30,7 @@ DAILY_PROTOCOL = "dsa-baostock-exact-daily-single-response-v1"
 
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
-    capabilities = {"MINUTE_BAR": ("STOCK", "ETF"), "DAILY_BAR": ("STOCK",), "HISTORICAL_TRADING_STATUS": ("STOCK",)}
+    capabilities = {"MINUTE_BAR": ("STOCK", "ETF"), "DAILY_BAR": ("STOCK", "ETF"), "HISTORICAL_TRADING_STATUS": ("STOCK",)}
     capabilities.update({binding.key.capability: ("STOCK",) for binding in BINDINGS})
     return reference_manifest(build_provider_manifest("baostock", "BaoStock", capabilities, markets=("CN",), configuration_mode="built_in"), REFERENCE_BINDINGS)
 
@@ -39,27 +40,58 @@ def factory(context):
     return BaostockFetcher()
 
 
+def research_calendar_eligible(context):
+    return cn_research_calendar_eligible(context) and context.symbol.endswith(('.SH', '.SZ'))
+
+
+def require_etf_identity(sdk, identity):
+    response = sdk.query_stock_basic(code=identity)
+    if response.error_code != "0":
+        raise ExactDailyError("upstream_failure", "BaoStock ETF 身份查询未通过")
+    rows = []
+    while response.next():
+        rows.append(dict(zip(response.fields, response.get_row_data())))
+    if response.error_code != "0":
+        raise ExactDailyError("upstream_failure", "BaoStock ETF 身份响应未完成")
+    if len(rows) != 1 or rows[0].get("code") != identity or rows[0].get("type") != "5":
+        raise ExactDailyError("invalid_response", "BaoStock 未确认唯一 ETF 证券身份")
+
+
 def read_daily_frame(adapter, query):
     code, exchange = query.symbol.split(".", 1)
     if exchange not in {"SH", "SZ", "BJ"} or len(code) != 6 or not code.isdigit():
         raise ExactDailyError("invalid_request", "中国内地日线需要完整证券代码")
     if exchange == "BJ":
         raise ExactDailyError("not_covered", "BaoStock 当前精确接入仅覆盖沪深市场")
+    etf = query.instrument_type == "ETF"
+    if etf:
+        try:
+            validate_cn_stock(query.symbol, "CN", "ETF", lambda symbol: symbol)
+        except DependencyFactError as error:
+            raise ExactDailyError(error.code, str(error)) from None
+    identity = exchange.lower() + "." + code
+    flag = {"none": "3", "qfq": "2", "hfq": "1"}[query.adjustment]
     with adapter._baostock_session() as sdk:
+        if etf:
+            require_etf_identity(sdk, identity)
         response = sdk.query_history_k_data_plus(
-            code=exchange.lower() + "." + code,
-            fields="date,code,open,high,low,close,volume,amount",
+            code=identity,
+            fields="date,code,open,high,low,close,volume,amount" + (",adjustflag" if etf else ""),
             start_date=query.start, end_date=query.end, frequency="d",
-            adjustflag={"none": "3", "qfq": "2", "hfq": "1"}[query.adjustment],
+            adjustflag=flag,
         )
         if response.error_code != "0":
             raise ExactDailyError("upstream_failure", "BaoStock 日线查询未通过")
         rows = []
         while response.next():
             rows.append(response.get_row_data())
+        if etf and response.error_code != "0":
+            raise ExactDailyError("upstream_failure", "BaoStock ETF 日线响应未完成")
         raw = pd.DataFrame(rows, columns=response.fields)
-        if not raw.empty and not raw["code"].eq(exchange.lower() + "." + code).all():
+        if not raw.empty and not raw["code"].eq(identity).all():
             raise ExactDailyError("invalid_response", "BaoStock 日线标的身份不一致")
+        if etf and ("adjustflag" not in raw or not raw["adjustflag"].eq(flag).all()):
+            raise ExactDailyError("invalid_response", "BaoStock ETF 日线复权口径不一致")
     return normalize_exact_daily(raw, start=query.start, end=query.end, source="baostock")
 
 
@@ -193,8 +225,10 @@ SOURCE = SourceDefinition("baostock", manifest, factory, (*INTRADAY_BINDINGS,
     QueryBinding(LEGACY_CONTRACT, ExactKey('CN','STOCK','HISTORICAL_TRADING_STATUS'), 'baostock',
         'baostock-daily-flags-v1', 'baostock-query-history-status-v1', read_legacy_status, admission_required=False),
     *BINDINGS,
-    *(DailyBinding(ExactKey("CN", "STOCK", "DAILY_BAR", adjustment), "baostock",
-                   f"dsa-v3-cn-stock-baostock-{adjustment}-exact-daily-v1",
-                   DAILY_PROTOCOL, DAILY_PROTOCOL, None, daily, gated=True)
-      for adjustment in ("none", "qfq", "hfq")),
-), ("data_provider.baostock_fetcher", "BaostockFetcher"), dependency_modules=("baostock",))
+    *(DailyBinding(ExactKey("CN", asset, "DAILY_BAR", adjustment), "baostock",
+                   f"dsa-v3-cn-{asset.lower()}-baostock-{adjustment}-exact-daily-v1",
+                   DAILY_PROTOCOL, DAILY_PROTOCOL, None, daily, gated=True,
+                   research_calendar_eligible=research_calendar_eligible)
+      for asset in ("STOCK", "ETF") for adjustment in ("none", "qfq", "hfq")),
+), ("data_provider.baostock_fetcher", "BaostockFetcher"), dependency_modules=("baostock",),
+    upstream_groups=(('baostock', 'baostock'),))

@@ -3,7 +3,7 @@
 import math
 import time
 
-from .base import DataFetchError, RateLimitError
+from .base import DataFetchError
 
 
 class TushareHistoryRequest:
@@ -15,20 +15,12 @@ class TushareHistoryRequest:
             raise ValueError("invalid Tushare request timeout")
         if not fetcher._token or fetcher._api is None:
             raise DataFetchError("Tushare credential unavailable")
-        self.fetcher = fetcher
         self.deadline = time.monotonic() + timeout_seconds
         self.client = fetcher._build_api_client(fetcher._token)
         self.client._source_pinned = True
 
     def before_call(self):
         self.check_complete()
-        fetcher = self.fetcher
-        if (
-            fetcher._minute_start is not None and time.time() - fetcher._minute_start < 60
-            and fetcher._call_count >= fetcher.rate_limit_per_minute
-        ):
-            raise RateLimitError("Tushare history rate limit exceeded")
-        fetcher._check_rate_limit()
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("Tushare history deadline exceeded")

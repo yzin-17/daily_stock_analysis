@@ -113,6 +113,15 @@ def execute_event_request(
     runtime: Any, payload: Any, *, reader: Callable[..., dict[str, Any]] | None = None, check_security=None,
 ) -> dict[str, Any]:
     request = parse_event_request(payload)
+    from src.services.thesis_ledger_verification_request import VerificationRequest
+    verification = None
+
+    def checked_state():
+        nonlocal verification
+        state = _admitted_state(runtime, request)
+        if verification is None:
+            verification = VerificationRequest(runtime, request['routeKey'])
+        return state
     binding = CAPABILITY_SOURCES.resolve(request['routeKey'], request['routeTarget'])
     if isinstance(binding, EventBinding):
         source = CAPABILITY_SOURCES.source(request['routeTarget']['providerId'])
@@ -133,12 +142,16 @@ def execute_event_request(
             )
         context = EventExecutionContext(
             lambda: source.factory(ReadContext(None, database_path=runtime.store.database_path)),
-            lambda: _admitted_state(runtime, request), check_security, reader, credentials,
+            checked_state, check_security, reader, credentials,
             database_path=getattr(runtime.store, 'database_path', None),
         )
         try:
             result = CAPABILITY_SOURCES.query(binding.contract, request, request['routeKey'], request['routeTarget'], context)
-            return binding.wire_project(result)
+            response = binding.wire_project(result)
+            if verification is not None:
+                verification.accept(response, provider=request['routeTarget']['providerId'],
+                                    source=request['routeTarget']['upstreamSource'])
+            return response
         except CapabilityContractError as error:
             raise EventV3Error(error.code) from None
     raise EventV3Error('not_adapted')

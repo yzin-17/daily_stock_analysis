@@ -8,11 +8,14 @@ from types import MappingProxyType
 from src.services.thesis_ledger_capability_contracts import PolicyAdmissionContext
 from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from src.services.thesis_ledger_capability_registry import QueryBinding, EventBinding
+from src.services.thesis_ledger_route_credentials import route_requires_credential
 
 
 def configured_data_route(key, target):
     binding = CAPABILITY_SOURCES.resolve(key, target)
-    if isinstance(binding, (QueryBinding, EventBinding)):
+    if isinstance(binding, QueryBinding):
+        return True
+    if isinstance(binding, EventBinding):
         if binding.admission_required is not None:
             return not binding.admission_required
         return not binding.gated
@@ -42,7 +45,9 @@ def basic_price_route_configured(store, key, target):
     from src.services.thesis_ledger_provider_dependencies import provider_dependency_ready
     if not provider_dependency_ready(target["providerId"], key, target):
         return False
-    if not manifest.get("requiresCredential"):
+    if query_verification_block(store, key, target) is not None:
+        return False
+    if not route_requires_credential(key, target, manifest):
         return True
     from src.services.thesis_ledger_control import ControlContractError
 
@@ -68,6 +73,8 @@ def price_route_admission(read_admission, request, key, target, *, credential_sn
 def policy_route_admission_reason(store, connection, key, target, consumer, manifest):
     """基础价格与本地历史规则按配置调用，其余能力保留既有状态。"""
     if basic_market_price_route(key, target) or configured_data_route(key, target):
+        if reason := query_verification_block(store, key, target):
+            return reason
         from src.services.thesis_ledger_provider_dependencies import provider_dependency_ready
         if not provider_dependency_ready(target["providerId"], key, target):
             return "dependency_missing"
@@ -83,8 +90,10 @@ def policy_route_admission_reason(store, connection, key, target, consumer, mani
     payload = store._route_admission_payload_v3(row) if row else None
     state = store._route_admission_state_v3(payload)
     if reader := event_admission_reader(key, target):
-        if reader(store, key, target, manifest) is None:
+        payload = reader(store, key, target, manifest)
+        if payload is None:
             return 'not_admitted'
+        state = store._route_admission_state_v3(payload)
     source = CAPABILITY_SOURCES.source(provider_id)
     if source is not None and source.policy_admission_guard is not None:
         context = PolicyAdmissionContext(
@@ -98,3 +107,15 @@ def policy_route_admission_reason(store, connection, key, target, consumer, mani
     if state == "pending":
         return "not_admitted"
     return None if state == "admitted" else f"admission_{state}"
+
+
+def query_verification_block(store, key, target):
+    """已适配的普通查询可首次使用；保留显式撤销或无效记录。"""
+    binding = CAPABILITY_SOURCES.resolve(key, target)
+    if not isinstance(binding, QueryBinding) or binding.admission_required is not True:
+        return None
+    read = getattr(store, 'get_route_admission_v3', None)
+    record = read(key=dict(key), target=dict(target)) if callable(read) else None
+    if record and record.get('status') in {'revoked', 'invalid'}:
+        return 'admission_' + record['status']
+    return None

@@ -37,7 +37,7 @@ def test_catalog_policy_and_http_use_real_pack_without_credentials_or_admission(
         "/api/v3/thesis-ledger/control/routes/capabilities?contractVersion=3", headers=CONTROL_HEADERS,
     ).json()
     entry = next(row for row in catalog["entries"] if row["key"] == states.ROUTE_KEY and row["target"] == TARGET)
-    assert entry == {"key": states.ROUTE_KEY, "target": TARGET, "state": "ready"}
+    assert entry == {"key": states.ROUTE_KEY, "target": TARGET, "state": "ready", "verification": {"state": "unverified"}}
     providers = client.get("/api/v3/thesis-ledger/control/providers", headers=CONTROL_HEADERS).json()["providers"]
     source = next(row for row in providers if row["providerId"] == states.PROVIDER_ID)
     assert source["configurationMode"] == "built_in"
@@ -82,15 +82,15 @@ def test_unconfigured_or_disabled_policy_does_not_read(configured_client):
             store.apply_policy_v3(configured)
         response = client.post(DATA_URL, json=wire_request(), headers=DATA_HEADERS)
         assert response.status_code == 503
-        assert response.json()["detail"]["code"] == "no_eligible_provider"
+        assert response.json()["detail"]["error"]["code"] == "upstream_failure"
 
 
 @pytest.mark.parametrize("change,status,code", [
-    ({"routeTarget": {**TARGET, "routeIndex": 1}}, 503, "no_eligible_provider"),
-    ({"routeTarget": {**TARGET, "upstreamSource": "not-configured", "routeIndex": 0}}, 503, "no_eligible_provider"),
-    ({"routeTarget": {**TARGET, "upstreamSource": "not-configured"}}, 422, "bad_request"),
-    ({"symbol": "600000.SH"}, 503, "not_covered"),
-    ({"range": {"start": "2023-08-21", "end": "2023-08-16"}}, 422, "bad_request"),
+    ({"routeTarget": {**TARGET, "routeIndex": 1}}, 503, "upstream_failure"),
+    ({"routeTarget": {**TARGET, "upstreamSource": "not-configured", "routeIndex": 0}}, 503, "upstream_failure"),
+    ({"routeTarget": {**TARGET, "upstreamSource": "not-configured"}}, 422, "invalid_request"),
+    ({"symbol": "600000.SH"}, 422, "insufficient_coverage"),
+    ({"range": {"start": "2023-08-21", "end": "2023-08-16"}}, 422, "invalid_request"),
     ({"routeKey": {**states.ROUTE_KEY, "capability": "HISTORICAL_PUBLIC_FEES"}}, 422, "unsupported_capability"),
 ])
 def test_bad_identity_pin_and_range_do_not_change_source(configured_client, change, status, code):
@@ -98,7 +98,7 @@ def test_bad_identity_pin_and_range_do_not_change_source(configured_client, chan
     store.apply_policy_v3(policy())
     response = client.post(DATA_URL, json={**deepcopy(wire_request()), **change}, headers=DATA_HEADERS)
     assert response.status_code == status
-    assert response.json()["detail"]["code"] == code
+    assert response.json()["detail"]["error"]["code"] == code
 
 
 def test_policy_change_during_read_rejects_late_response(configured_client):
@@ -114,7 +114,7 @@ def test_policy_change_during_read_rejects_late_response(configured_client):
     runtime.adapters[states.PROVIDER_ID] = ChangedPolicySource()
     response = client.post(DATA_URL, json=wire_request(), headers=DATA_HEADERS)
     assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "not_admitted"
+    assert response.json()["detail"]["error"]["code"] == "upstream_failure"
 
 
 def test_missing_package_is_not_ready_or_silently_replaced(configured_client, monkeypatch, tmp_path):
@@ -127,7 +127,7 @@ def test_missing_package_is_not_ready_or_silently_replaced(configured_client, mo
     store.apply_policy_v3(policy())
     response = client.post(DATA_URL, json=wire_request(), headers=DATA_HEADERS)
     assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "upstream_failure"
+    assert response.json()["detail"]["error"]["code"] == "upstream_failure"
 
 
 def test_single_day_http_does_not_return_future_resume(configured_client):

@@ -160,7 +160,8 @@ class _Store:
         self.health_updates = []
 
     def provider_credential_snapshot(self, provider_id):
-        assert provider_id == "hithink"
+        if provider_id != 'hithink':
+            raise ValueError('本隔离样本只提供 HiThink 凭证')
         self.snapshot_reads += 1
         if self.snapshot_reads == 2:
             if self.on_second_snapshot:

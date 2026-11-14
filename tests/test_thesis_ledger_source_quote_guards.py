@@ -85,8 +85,7 @@ def test_new_provider_guard_uses_original_query_and_snapshot(tmp_path, monkeypat
     original_claim = store.claim_provider_request_budget
 
     def claim(*args, **kwargs):
-        events.append('budget')
-        return original_claim(*args, **kwargs)
+        pytest.fail('报价不得调用本地频次预算')
     monkeypatch.setattr(store, 'claim_provider_request_budget', claim)
     request = ThesisLedgerDataRequest('REALTIME_QUOTE', '510300.SH', instrument_type='ETF')
     runtime = ThesisLedgerProviderRuntime(store)
@@ -99,4 +98,4 @@ def test_new_provider_guard_uses_original_query_and_snapshot(tmp_path, monkeypat
         assert error.value.code == 'not_admitted'
         assert str(error.value) == ('隔离来源拒绝' if phase == 'prepare-rejected' else '隔离来源变化')
     assert events == (['prepare'] if phase == 'prepare-rejected'
-                      else ['prepare', 'budget', 'factory', 'read', 'verify'])
+                      else ['prepare', 'factory', 'read', 'verify'])

@@ -87,8 +87,10 @@ def test_factory_keeps_environment_error_mode_and_probe_cache_isolation(monkeypa
         {'api_key': 'synthetic', 'strict_errors': True}, {'api_key': 'synthetic', 'strict_errors': True}]
 
 
-@pytest.mark.parametrize('payload,code', [({'Note': 'fixture'}, 'quota_unavailable'),
-    ({'Information': 'fixture'}, 'quota_unavailable'), ({}, 'not_covered'),
+@pytest.mark.parametrize('payload,code', [({'Note': 'too many requests'}, 'rate_limited'),
+    ({'Information': 'daily quota exhausted'}, 'quota_unavailable'),
+    ({'Information': 'premium required'}, 'permission_denied'),
+    ({'Information': 'unrecognized notice'}, 'upstream_failure'), ({}, 'not_covered'),
     ({'Time Series (Daily)': []}, 'not_covered'), ([], 'invalid_response')])
 def test_payload_failure_remains_classified(monkeypatch, payload, code):
     monkeypatch.setattr('data_provider.multimarket_exact_daily.requests.get', lambda *args, **kwargs:
@@ -98,8 +100,8 @@ def test_payload_failure_remains_classified(monkeypatch, payload, code):
     assert error.value.code == code
 
 
-@pytest.mark.parametrize('status,code', [(401, 'permission_denied'), (403, 'permission_denied'),
-    (429, 'quota_unavailable'), (503, 'upstream_failure')])
+@pytest.mark.parametrize('status,code', [(401, 'authentication_failed'), (403, 'permission_denied'),
+    (429, 'rate_limited'), (503, 'upstream_failure')])
 def test_http_failure_uses_original_error_boundary(monkeypatch, status, code):
     calls = []
     def get(*args, **kwargs):

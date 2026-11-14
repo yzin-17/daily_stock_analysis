@@ -2,10 +2,13 @@
 
 from collections.abc import Mapping
 from typing import Any, Callable
+from uuid import uuid4
 
 from fastapi import APIRouter, Body, Depends
 
-from api.thesis_ledger_auth import _error, require_contract_token
+from api.thesis_ledger_auth import require_contract_token
+from api.thesis_ledger_market_errors import market_data_error_v3
+from src.services.thesis_ledger_market_errors_v3 import market_runtime_error
 from src.services.thesis_ledger_provider_runtime import (
     ProviderCallError, ThesisLedgerDataRequest, get_thesis_ledger_runtime,
 )
@@ -21,17 +24,17 @@ def build_rule_data_router(capability: str, path: str, label: str,
     def read_rules(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         request_id = payload.get("requestId")
         if not isinstance(request_id, str) or not request_id.strip():
-            _error("bad_request", f"{label}请求缺少 requestId", 422)
+            market_data_error_v3("invalid_request", 422, str(uuid4()))
         if payload.get("contractVersion") != 3:
-            _error("unsupported_data_contract_version", f"{label}只支持 Data Contract V3", 422, request_id)
+            market_data_error_v3("unsupported_data_contract_version", 422, request_id)
         if payload.get("consumer") != "thesis-ledger":
-            _error("bad_request", f"{label}请求 consumer 不匹配", 422, request_id)
+            market_data_error_v3("invalid_request", 422, request_id)
         key, target, window = (payload.get(field) for field in ("routeKey", "routeTarget", "range"))
         if not all(isinstance(value, Mapping) for value in (key, target, window)):
-            _error("bad_request", f"{label}请求缺少路由或日期区间", 422, request_id)
+            market_data_error_v3("invalid_request", 422, request_id)
         assets = ("STOCK", "ETF") if capability == FEES_CAPABILITY else ("STOCK",)
         if key.get("kind") != "data" or key.get("capability") != capability or key.get("assetType") not in assets:
-            _error("unsupported_capability", f"{label}请求能力不匹配", 422, request_id)
+            market_data_error_v3("unsupported_capability", 422, request_id)
         try:
             request = ThesisLedgerDataRequest(
                 capability, payload.get("symbol"), instrument_type=key["assetType"],
@@ -40,16 +43,10 @@ def build_rule_data_router(capability: str, path: str, label: str,
             )
             return get_runtime().execute_request(request).value
         except ProviderCallError as exc:
-            code, status = exc.code, 503
-            if code == "NO_ELIGIBLE_PROVIDER":
-                code = "no_eligible_provider"
-            elif code == "invalid_request":
-                code, status = "bad_request", 422
-            elif code == "unsupported_capability":
-                status = 422
-            elif code == "invalid_response":
-                status = 502
-            _error(code, str(exc), status, request_id)
+            if exc.code == "unsupported_capability":
+                market_data_error_v3("unsupported_capability", 422, request_id)
+            code, status = market_runtime_error(exc)
+            market_data_error_v3(code, status, request_id)
 
     return router
 

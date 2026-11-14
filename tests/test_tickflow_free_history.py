@@ -6,8 +6,9 @@ from types import SimpleNamespace
 import pytest
 
 from data_provider.thesis_ledger_sources.tickflow_free_history import (
-    BASE_URL, SOURCE, UPSTREAM, FreeHistoryConnection, daily,
+    BASE_URL, UPSTREAM, FreeHistoryConnection, daily, probe_daily,
 )
+from data_provider.thesis_ledger_sources.tickflow import SOURCE
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError, DailyQuery, ReadContext
 from tests.test_configured_market_routes import store, apply, no_admissions
 
@@ -41,20 +42,18 @@ def adapter(payload):
     return value, calls, closed
 
 
-def test_free_target_has_only_three_stock_daily_bindings():
+def test_unified_target_retains_three_anonymous_daily_bindings():
     from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
-    from data_provider.thesis_ledger_sources.tickflow import SOURCE as PAID
-    assert SOURCE.credentials == () and SOURCE.manifest()["requiresCredential"] is False
-    assert SOURCE.manifest()["displayName"] == "TickFlow 免费历史"
-    assert len(SOURCE.bindings) == 3 and len([binding for binding in PAID.bindings if binding.key.capability != "MINUTE_BAR"]) == 4
-    assert len([binding for binding in PAID.bindings if binding.key.capability == "MINUTE_BAR"]) == 10
-    assert PAID.manifest()["requiresCredential"] is True
-    for binding in SOURCE.bindings:
+    assert SOURCE.manifest()["requiresCredential"] is False
+    assert SOURCE.manifest()["displayName"] == "TickFlow"
+    assert len(SOURCE.bindings) == 14
+    daily_bindings = [binding for binding in SOURCE.bindings if binding.key.capability == "DAILY_BAR"]
+    assert len(daily_bindings) == 3
+    for binding in daily_bindings:
         assert CAPABILITY_SOURCES.resolve(binding.key.route_key(), {
-            "providerId": "tickflow-free", "upstreamSource": UPSTREAM,
+            "providerId": "tickflow", "upstreamSource": "tickflow",
         }) is binding
         assert binding.maximum_rows == 10000
-    assert not any(b.key.capability != "DAILY_BAR" or b.key.asset_type != "STOCK" for b in SOURCE.bindings)
 
 
 def test_sdk_free_connection_never_inherits_environment_key(monkeypatch):
@@ -153,23 +152,23 @@ def test_connection_probe_uses_same_daily_handler_instead_of_legacy_fetcher(monk
     calls = []
     monkeypatch.setattr(source, "daily", lambda query, context: calls.append((query, context)))
     context = SimpleNamespace(sample_symbol="600519", adapter=object(), snapshot=None)
-    SOURCE.probe_policy.read(context)
+    probe_daily(context)
     query, read_context = calls[0]
     assert query.symbol == "600519.SH" and query.adjustment == "none" and query.instrument_type == "STOCK"
     assert read_context.adapter is context.adapter and read_context.probe
-    assert SOURCE.probe_policy.capabilities == ("DAILY_BAR",)
 
 
-def test_runtime_consumes_selected_free_route_without_credentials_or_window_admission(store):
+def test_runtime_consumes_unified_daily_route_without_credentials_or_window_admission(store, monkeypatch):
     from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest, ThesisLedgerProviderRuntime
     key = SOURCE.bindings[0].key.route_key()
-    target = {"providerId": "tickflow-free", "upstreamSource": UPSTREAM}
+    target = {"providerId": "tickflow", "upstreamSource": "tickflow"}
     assert apply(store, key, target)["effective"]["routes"][0]["targets"][0]["eligible"]
     value, calls, closed = adapter(raw())
+    monkeypatch.setattr("data_provider.thesis_ledger_sources.tickflow_free_history.factory", lambda context: value)
     request = ThesisLedgerDataRequest("DAILY_BAR", "600519.SH", instrument_type="STOCK",
                                      timeframe="1d", adjustment="none", start="2025-06-23", end="2025-07-04")
-    result = ThesisLedgerProviderRuntime(store, adapters={"tickflow-free": value}).execute_market_bars_v3(request, key)
-    assert result.provider == "tickflow-free" and result.upstream_source == UPSTREAM
+    result = ThesisLedgerProviderRuntime(store, adapters={"tickflow": value}).execute_market_bars_v3(request, key)
+    assert result.provider == "tickflow" and result.upstream_source == "tickflow"
     assert result.value["close"].tolist() == [1401, 1402]
     assert result.value.attrs["thesis_ledger_v3_pagination"]["pagesFetched"] == 1
     assert len(calls) == 1 and closed == [True]

@@ -318,7 +318,8 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     assert catalog["catalogRevision"] > 0
     assert catalog["catalogRevision"] == repeated.json()["catalogRevision"]
     for entry in catalog["entries"]:
-        fields = {"key", "target", "state"}
+        fields = {"key", "target", "state", "verification"}
+        assert entry["verification"] == {"state": "unverified"}
         if "barQuery" in entry:
             fields.add("barQuery")
             assert entry["key"]["capability"] == "DAILY_BAR"
@@ -342,8 +343,15 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
             from src.services.thesis_ledger_account_access_contract import AccountAccessResult
             fields.add("accountAccess")
             access = AccountAccessResult.model_validate(entry["accountAccess"])
-            assert entry["target"]["providerId"] == "tushare"
+            assert entry["target"]["providerId"] in {"tushare", "tickflow"}
             assert access.attempted is False and access.state in {"unknown", "credential_missing"}
+        if 'credentialRequired' in entry:
+            fields.add('credentialRequired')
+            assert isinstance(entry['credentialRequired'], bool)
+        if 'recommendation' in entry:
+            fields.add('recommendation')
+            assert entry['recommendation']['reason']
+            assert set(entry['recommendation']) <= {'reason', 'upstreamGroup', 'priority', 'readEvidence'}
         assert set(entry) == fields
     assert any("barQuery" in entry for entry in catalog["entries"])
     bars = [entry for entry in catalog["entries"] if entry["key"]["capability"] == "DAILY_BAR"]
@@ -391,7 +399,10 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
         else:
             assert entry["state"] in {"credential_missing", "not_admitted"}
     event_identity = lambda entry: (entry['key']['capability'], entry['target']['providerId'], entry['target']['upstreamSource'])
-    assert sorted(events, key=event_identity) == sorted([{
+    assert sorted([{k: v for k, v in entry.items() if k not in {'recommendation', 'verification'}} for entry in events], key=event_identity) == sorted([{
+        "key": {"kind": "data", "market": "CN", "assetType": "ETF", "capability": "CASH_DISTRIBUTION"},
+        "target": {"providerId": "local-materials", "upstreamSource": "local-materials"}, "state": "not_admitted",
+    }, {
         "key": {"kind": "data", "market": "CN", "assetType": "ETF", "capability": "CASH_DISTRIBUTION"},
         "target": {"providerId": "akshare", "upstreamSource": "eastmoney"}, "state": "not_admitted",
     }, {
@@ -446,9 +457,8 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     expected |= {
         (asset_type, adjustment, "tencent", "tencent")
         for asset_type in ("STOCK", "ETF")
-        for adjustment in ("none", "qfq")
+        for adjustment in ("none", "qfq", "hfq")
     }
-    expected.add(("ETF", "hfq", "tencent", "tencent"))
     expected.add(("ETF", "qfq", "hithink", "fund-market-historical"))
     expected.add(("ETF", "none", "tushare", "tushare"))
     expected |= {
@@ -457,11 +467,12 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     }
     expected |= {(asset, adjustment, "efinance", "eastmoney") for asset in ("STOCK", "ETF") for adjustment in ("none", "qfq", "hfq")}
     expected |= {("STOCK", adjustment, provider, provider) for provider in ("baostock", "tickflow") for adjustment in ("none", "qfq", "hfq")}
-    expected |= {("STOCK", adjustment, "tickflow-free", "tickflow-free-history") for adjustment in ("none", "qfq", "hfq")}
+    expected |= {("ETF", adjustment, "baostock", "baostock") for adjustment in ("none", "qfq", "hfq")}
+    expected |= {(asset, adjustment, 'futu', 'futu') for asset in ('STOCK', 'ETF') for adjustment in ('none', 'qfq', 'hfq')}
     expected |= {("STOCK", "none", provider, provider) for provider in ("pytdx", "tushare")}
     expected |= {(asset, "qfq", "yfinance", "yfinance") for asset in ("STOCK", "ETF")}
     assert set(rows) == expected
-    assert len(rows) == 41
+    assert len(rows) == 48
     foreign_rows = {
         (entry["key"]["market"], entry["key"]["assetType"], entry["key"]["adjustment"],
          entry["target"]["providerId"], entry["target"]["upstreamSource"])
@@ -484,13 +495,13 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
         ("US", "STOCK", "none", "alphavantage", "alphavantage"),
     }
     assert foreign_rows == foreign_expected
-    assert len(bars) == 71
+    assert len(bars) == 78
     assert [entry["key"] for entry in bars if entry["target"]["upstreamSource"] == "yahoo-gme-share-window"] == [{
         "kind": "bar", "market": "US", "assetType": "STOCK", "capability": "DAILY_BAR", "timeframe": "1d", "adjustment": "none",
     }]
     assert len(catalog["entries"]) > len(bars) + len(events)
     # 本例显式提供 TickFlow 合成凭据，日线就绪预期与报价采用同一配置。
-    basic_ready = {key for key in expected if key[2] != "tushare"}
+    basic_ready = {key for key in expected if key[2] not in {'tushare', 'futu'}}
     assert {key for key, state in rows.items() if state == "ready"} == basic_ready
     assert all(state in {"credential_missing", "not_admitted"} for key, state in rows.items() if key not in basic_ready)
     assert {entry["key"]["market"] for entry in catalog["entries"]} == {"CN", "HK", "US"}
@@ -588,7 +599,7 @@ def test_v3_unsupported_adjustment_after_old_contract_rejected(monkeypatch, tmp_
                     "adjustment": "hfq",
                 },
                 "targets": [
-                    {"providerId": "tencent", "upstreamSource": "tencent"}
+                    {"providerId": "yfinance", "upstreamSource": "yfinance"}
                 ],
             }
         ]

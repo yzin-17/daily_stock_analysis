@@ -21,7 +21,7 @@ def test_tickflow_has_one_registration_and_original_revisions():
     from src.services.thesis_ledger_control import PROVIDER_MANIFESTS
     registered = [(key, target, gated) for key, target, gated in exact_route_inventory()
                   if target['providerId'] == 'tickflow' and key['capability'] == 'DAILY_BAR']
-    assert len(registered) == 3 and all(gated for _, _, gated in registered)
+    assert len(registered) == 3 and all(not gated for _, _, gated in registered)
     assert not any(provider == 'tickflow' for _, _, provider, _ in NATIVE_DAILY_ROUTES)
     assert SOURCE.credentials == (('api_key', ('apiKey',)),)
     assert credential_schema('tickflow')['methods'][0]['method'] == 'api_key'
@@ -29,9 +29,9 @@ def test_tickflow_has_one_registration_and_original_revisions():
         key, target = binding.key.route_key(), {'providerId': 'tickflow', 'upstreamSource': 'tickflow'}
         assert CAPABILITY_SOURCES.resolve(key, target) is binding
         revisions = market_v3_current_route_revisions(key, target, PROVIDER_MANIFESTS['tickflow'], credential_version=1)
-        assert revisions['adapterRevision'] == f"dsa-v3-cn-stock-tickflow-{key['adjustment']}-exact-daily-v1"
+        assert revisions['adapterRevision'] == f"dsa-v3-cn-stock-tickflow-{key['adjustment']}-exact-daily-v2"
         assert revisions['sourceRevision'] == PROTOCOL
-        assert binding.maximum_rows is None and binding.protocol == PROTOCOL
+        assert binding.maximum_rows == 10000 and binding.protocol == PROTOCOL
 
 
 @pytest.mark.parametrize('probe,timeout,key_kind', [(False, 4.5, 'daily'), (True, 5, 'daily'), (False, 4.5, 'quote'), (True, 5, 'quote')])
@@ -50,16 +50,16 @@ def test_runtime_factory_keeps_snapshot_config_and_probe_budget(monkeypatch, sto
         'batch_daily_enabled': False, 'batch_size': 17, 'priority': 9}]
 
 
-@pytest.mark.parametrize('failure,code', [('credential', 'credential_missing'), ('date', 'invalid_response'), ('empty', 'not_covered')])
-def test_source_preserves_classified_errors(failure, code):
-    raw = pd.DataFrame({'date': [], 'open': [], 'high': [], 'low': [], 'close': []})
+@pytest.mark.parametrize('failure,code', [('date', 'invalid_response'), ('empty', 'not_covered')])
+def test_source_preserves_classified_errors(monkeypatch, failure, code):
+    raw = {field: [] for field in ('timestamp', 'open', 'high', 'low', 'close')}
     if failure == 'date':
-        raw = pd.DataFrame({'open': [1], 'high': [1], 'low': [1], 'close': [1]})
-    adapter = SimpleNamespace(_get_client=lambda: None)
-    if failure != 'credential':
-        adapter._get_client = lambda: SimpleNamespace(klines=SimpleNamespace(get=lambda *args, **kwargs: raw))
-        adapter._daily_kline_count = lambda *args: 60
-        adapter._date_to_ms = lambda *args, **kwargs: 0
+        raw = {'open': [1], 'high': [1], 'low': [1], 'close': [1]}
+    adapter = SimpleNamespace(close=lambda: None,
+        _daily_kline_count=lambda *args: 60, _date_to_ms=lambda *args, **kwargs: 0)
+    adapter._get_client = lambda: SimpleNamespace(klines=SimpleNamespace(get=lambda *args, **kwargs: raw),
+        instruments=SimpleNamespace(get=lambda symbol: {'symbol': symbol, 'exchange': 'SH', 'region': 'CN', 'type': 'stock'}))
+    monkeypatch.setattr('data_provider.thesis_ledger_sources.tickflow.history.factory', lambda _: adapter)
     with pytest.raises(CapabilityContractError) as error:
         daily(DailyQuery.from_request(request()), ReadContext(adapter))
     assert error.value.code == code

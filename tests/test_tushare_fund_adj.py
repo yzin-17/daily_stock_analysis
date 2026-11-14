@@ -121,7 +121,7 @@ def test_http_factor_json_is_parsed_as_decimal_before_dataframe_conversion():
         )
     assert result.iloc[0]["adj_factor"] == "1.01234567890123456789"
     assert post.call_args.kwargs["json"]["api_name"] == "fund_adj"
-    assert fetcher._call_count == 1
+    assert not hasattr(fetcher, '_call_count')
 
 
 def test_window_partition_does_not_overflow_maximum_date():

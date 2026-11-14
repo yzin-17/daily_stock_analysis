@@ -16,6 +16,23 @@ def key(asset='STOCK'):
     return {'kind': 'data', 'market': 'CN', 'assetType': asset, 'capability': 'REALTIME_QUOTE'}
 
 
+@pytest.mark.parametrize('asset,symbol', [('STOCK', '600519.SH'), ('ETF', '510300.SH')])
+@pytest.mark.parametrize('status,code', [(429, 'rate_limited'), (401, 'authentication_failed'), (403, 'permission_denied')])
+def test_efinance_restrictions_keep_original_code_with_one_call(monkeypatch, store, asset, symbol, status, code):
+    import efinance as ef
+    import requests
+    from unittest.mock import Mock
+    read = Mock(side_effect=requests.HTTPError('private fixture', response=SimpleNamespace(status_code=status)))
+    monkeypatch.setattr(ef.stock, 'get_quote_snapshot', read)
+    monkeypatch.setattr('data_provider.efinance_fetcher._realtime_snapshot_cache', {})
+    monkeypatch.setattr('data_provider.efinance_fetcher.EfinanceFetcher._set_random_user_agent', lambda _: None)
+    apply(store, key(asset), {'providerId': 'efinance', 'upstreamSource': 'eastmoney'})
+    with pytest.raises(ProviderCallError) as error:
+        ThesisLedgerProviderRuntime(store).execute_request(ThesisLedgerDataRequest('REALTIME_QUOTE', symbol, instrument_type=asset))
+    assert error.value.code == code and read.call_count == 1
+    assert 'private fixture' not in str(error.value)
+
+
 @pytest.mark.parametrize('asset,symbol,code', [('STOCK', '600519.SH', '600519'), ('ETF', '510300.SH', '510300')])
 def test_efinance_actual_snapshot_factory_and_cache_do_not_read_universe(monkeypatch, store, asset, symbol, code):
     import efinance as ef
@@ -33,14 +50,7 @@ def test_efinance_actual_snapshot_factory_and_cache_do_not_read_universe(monkeyp
     runtime = ThesisLedgerProviderRuntime(store)
     request = ThesisLedgerDataRequest('REALTIME_QUOTE', symbol, instrument_type=asset)
     first = runtime.execute_request(request)
-    if asset == 'ETF':
-        with pytest.raises(ProviderCallError) as error:
-            runtime.execute_request(request)
-        assert error.value.code == 'request_budget_cooldown'
-        adapter = runtime._adapter('efinance')
-        second = SimpleNamespace(value=adapter.get_realtime_quote_single_symbol(code))
-    else:
-        second = runtime.execute_request(request)
+    second = runtime.execute_request(request)
     assert calls == [code] and first.value.price == second.value.price == 10
     assert first.value.volume is None and first.value.amount is None
     assert first.provider == 'efinance' and first.upstream_source == 'eastmoney'

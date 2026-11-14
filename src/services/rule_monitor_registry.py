@@ -20,7 +20,7 @@ PACKS = {
 }
 HOSTS = frozenset({"www.hengqin.gov.cn", "shanghai.chinatax.gov.cn", "english.www.gov.cn",
     "www.ndrc.gov.cn", "jrj.wuhan.gov.cn", "shanxi.chinatax.gov.cn", "www.sse.com.cn",
-    "jrj.sh.gov.cn", "www.hkex.com.hk", "www.finra.org", "www.govinfo.gov"})
+    "jrj.sh.gov.cn", "www.hkex.com.hk", "www.finra.org", "www.govinfo.gov", "www.sec.gov"})
 CURRENT_REFERENCES = {
     "CN": {"id": "current-fee-guide", "title": "上交所收费规则现行状态及附件",
         "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/charge/c/c_20250610_10781461.shtml"},
@@ -48,6 +48,7 @@ class Source:
     dataset: str
     digest: str
     documents: tuple
+    snapshot: dict | None = None
 
     def public(self):
         return {"identity": self.identity, "market": self.market, "name": self.name,
@@ -70,5 +71,10 @@ def sources():
         current = CURRENT_REFERENCES[market]
         if all(document["url"] != current["url"] for document in references):
             references.append(current)
-        result[identity] = Source(identity, market, name, pack["datasetId"], sha256(raw).hexdigest(), tuple(references))
+        from src.services.rule_monitor_snapshot import text_snapshot
+        snapshot = text_snapshot("json", json.dumps(pack, ensure_ascii=False, sort_keys=True, indent=2))
+        result[identity] = Source(identity, market, name, pack["datasetId"], sha256(raw).hexdigest(), tuple(references), snapshot)
+    from src.services.us_live_rules_refresh import registered_source
+    current_us = registered_source()
+    result[current_us.identity] = current_us
     return result

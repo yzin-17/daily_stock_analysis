@@ -26,8 +26,6 @@ Tushare 股票列表获取脚本
 import argparse
 import os
 import sys
-import time
-import random
 import re
 from pathlib import Path
 from datetime import datetime
@@ -53,8 +51,6 @@ load_dotenv()
 TUSHARE_TOKEN = os.getenv('TUSHARE_TOKEN')
 OUTPUT_DIR = Path(__file__).parent.parent / "data"
 PAGE_SIZE = 5000  # 美股每页读取数量（API 最大6000，设置5000留余量）
-SLEEP_MIN = 5     # 最小睡眠时间（秒）
-SLEEP_MAX = 10    # 最大睡眠时间（秒）
 A_RK_BATCH_SIZE = 200
 A_RK_FIELDS = "ts_code,name,close,pre_close,trade_time"
 A_RK_NAME_PREFIX_RE = re.compile(r"^(XD|XR|DR|N|C)")
@@ -84,19 +80,6 @@ def get_tushare_api() -> Optional[ts.pro_api]:
         print("  1. TUSHARE_TOKEN 是否正确")
         print("  2. 账号积分是否足够（A股/港股需要2000积分）")
         return None
-
-
-def random_sleep(min_seconds: int = SLEEP_MIN, max_seconds: int = SLEEP_MAX):
-    """
-    随机睡眠，避免频繁请求
-
-    Args:
-        min_seconds: 最小睡眠时间
-        max_seconds: 最大睡眠时间
-    """
-    sleep_time = random.uniform(min_seconds, max_seconds)
-    print(f"  ⏱  休息 {sleep_time:.1f} 秒...")
-    time.sleep(sleep_time)
 
 
 def fetch_a_stock_list(api: ts.pro_api) -> Optional[pd.DataFrame]:
@@ -203,9 +186,6 @@ def fetch_rt_k_names(api: ts.pro_api, ts_codes: List[str]) -> Dict[str, str]:
             name = str(name_value).strip()
             if code and name and code.lower() not in {"nan", "none"} and name.lower() not in {"nan", "none"}:
                 name_map[code] = name
-
-        if index < len(batches):
-            random_sleep(1, 2)
 
     print(f"[rt_k] 成功获取 {len(name_map)} 条名称映射")
     return name_map
@@ -335,7 +315,6 @@ def fetch_us_stock_list(api: ts.pro_api) -> Optional[pd.DataFrame]:
             page += 1
 
             # 随机休息（最后一页不需要休息）
-            random_sleep()
 
         if all_data:
             result_df = pd.concat(all_data, ignore_index=True)
@@ -625,13 +604,11 @@ def main(argv: Optional[List[str]] = None):
         save_to_csv(a_df, a_filename, a_market_name)
 
     # 3. 获取港股数据
-    random_sleep()  # 休息后再获取港股
     hk_df = fetch_hk_stock_list(api)
     if hk_df is not None:
         save_to_csv(hk_df, 'stock_list_hk.csv', '港股')
 
     # 4. 获取美股数据（分页）
-    random_sleep()  # 休息后再获取美股
     us_df = fetch_us_stock_list(api)
     if us_df is not None:
         save_to_csv(us_df, 'stock_list_us.csv', '美股')

@@ -79,4 +79,5 @@ SOURCE = SourceDefinition("pytdx", manifest, factory, (*INTRADAY_BINDINGS,
                  None, daily, gated=True),
     QuoteBinding(ExactKey("CN", "STOCK", "REALTIME_QUOTE"), "pytdx",
         "pytdx-stock-quote-v2", "pytdx-direct-v1", quote),
-) + REFERENCE_BINDINGS, ("data_provider.pytdx_fetcher", "PytdxFetcher"), dependency_modules=("pytdx",))
+) + REFERENCE_BINDINGS, ("data_provider.pytdx_fetcher", "PytdxFetcher"), dependency_modules=("pytdx",),
+    upstream_groups=(('pytdx', 'tdx'),))

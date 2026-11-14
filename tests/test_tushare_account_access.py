@@ -78,12 +78,12 @@ def test_mixed_rights_use_six_exact_endpoints_without_admission_or_writes(runtim
     assert next(e for e in entries if e["key"]["capability"] == "CASH_DISTRIBUTION")["state"] != "ready"
 
 
-def test_draft_is_not_published_and_current_cache_expires_or_rotates(runtime, monkeypatch):
+def test_draft_is_not_published_and_current_record_survives_time_or_rotates(runtime, monkeypatch):
     clock = [0.0]
     runtime.clock = lambda: clock[0]
     monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", lambda *a, **k: response())
     before = db_state(runtime)
-    check_provider(runtime, "tushare", envelope(purpose="account_access"))
+    current = check_provider(runtime, "tushare", envelope(purpose="account_access"))
     from src.services.thesis_ledger_account_access import _CACHES
     cached = _CACHES[runtime]["reports"]["tushare"]
     assert isinstance(cached[0], bytes) and len(cached[0]) == 32  # 缓存不保留凭证快照副本。
@@ -92,9 +92,8 @@ def test_draft_is_not_published_and_current_cache_expires_or_rotates(runtime, mo
     assert draft["accountAccess"]["credentialContext"] == "draft" and db_state(runtime) == before
     clock[0] = 301
     entries = [e for e in runtime.market_route_catalog_v3()["entries"] if e["target"]["providerId"] == "tushare"]
-    assert all(e["accountAccess"]["state"] == "unknown" for e in entries)
-    assert all(e["accountAccess"]["errorCode"] == "permission_check_expired" for e in entries)
-    assert _CACHES[runtime]["reports"]["tushare"][2] is None
+    assert [e["accountAccess"]["state"] for e in entries] == [r["access"]["state"] for r in current["accountAccess"]["routes"]]
+    assert all(e["accountAccess"]["persisted"] and "validUntil" not in e["accountAccess"] for e in entries)
     monkeypatch.setenv("TUSHARE_HTTP_URL", "https://changed.example/api")
     entry = next(e for e in runtime.market_route_catalog_v3()["entries"] if e["target"]["providerId"] == "tushare")
     assert entry["accountAccess"]["errorCode"] == "permission_not_checked"

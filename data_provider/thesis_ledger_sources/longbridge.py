@@ -129,4 +129,5 @@ SOURCE = SourceDefinition("longbridge", manifest, factory, tuple(
 ) + INTRADAY_BINDINGS, ("data_provider.longbridge_fetcher", "LongbridgeFetcher"),
     credentials=(("legacy", ("appKey", "appSecret", "accessToken")), ("oauth", ("clientId", "tokenJson"))),
     dependency_modules=("longbridge",), factory_scope="provider", allow_empty_environment_credentials=True,
+    upstream_groups=(('longbridge', 'longbridge'),),
     environment_credential_policy=EnvironmentCredentialPolicy(environment_credentials, select_method=environment_method))

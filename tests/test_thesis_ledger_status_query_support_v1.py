@@ -38,7 +38,7 @@ def test_catalog_and_binding_have_one_parameter_fact_source(monkeypatch):
                  for manifest in PROVIDER_MANIFESTS.values()]
     catalog = build_market_route_catalog_v3(providers, lambda *args: True)
     projected = [entry for entry in catalog['entries'] if 'querySupport' in entry]
-    assert len(projected) == 10
+    assert len(projected) == 14
     for entry in projected:
         binding = CAPABILITY_SOURCES.resolve(entry['key'], entry['target'])
         assert entry['querySupport'] == binding.query_support.model_dump()

@@ -134,7 +134,8 @@ def test_hithink_disabled_policy_prevents_call_despite_ready_basic_catalog(
         if entry["target"] == TARGET and entry["key"] == ROUTE_KEY
     ]
     assert catalog["integrity"] == "complete"
-    assert hithink_entries == [{"key": ROUTE_KEY, "target": TARGET, "state": "ready", 'barQuery': {
+    assert hithink_entries == [{"key": ROUTE_KEY, "target": TARGET, "state": "ready",
+                               "verification": {"state": "unverified"}, 'barQuery': {
         'contractVersion': 3, 'operation': 'query', 'adjustment': 'qfq', 'priceBasis': 'provider-native',
         'readScope': 'single-target-whole-window', 'coverageValidation': 'per-request',
         'transportProtocol': HITHINK_ETF_LOCAL_PAGINATION_PROTOCOL_V1,

@@ -895,41 +895,8 @@ def market_data_capabilities_v3() -> dict[str, Any]:
 def market_bars_v3(
     request: Request, payload: Any = Body(...)
 ) -> dict[str, Any] | JSONResponse:
-    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
-    try:
-        request_data = _market_data_v3_request(payload, request_id)
-        coverage_context = _market_data_v3_coverage_context(request_data)
-        if coverage_context is None:
-            _market_data_v3_error("insufficient_coverage", 422, request_data["requestId"])
-        try:
-            from src.services.thesis_ledger_provider_runtime import (
-                DAILY_BAR_TARGET_TIMEOUT_SECONDS,
-                get_thesis_ledger_runtime,
-            )
-            from api.thesis_ledger_multi_window_v3 import execute_market_window_v3, try_daily_multi_window_v3
-            runtime = get_thesis_ledger_runtime()
-            multi_window = try_daily_multi_window_v3(
-                request_data, coverage_context, runtime,
-                _market_data_v3_response, _market_data_v3_coverage_context,
-                max_requests=8, timeout_seconds=DAILY_BAR_TARGET_TIMEOUT_SECONDS,
-            )
-            if multi_window is not None:
-                return multi_window
-            execution = execute_market_window_v3(request_data, runtime)
-        except HTTPException:
-            raise
-        except Exception as exc:
-            code = str(getattr(exc, "code", ""))
-            logger.warning(
-                "ThesisLedger Data V3 failed requestId=%s code=%s",
-                request_data["requestId"],
-                code or "upstream_failure",
-            )
-            mapped, status = market_runtime_error(exc)
-            _market_data_v3_error(mapped, status, request_data["requestId"])
-        return _market_data_v3_response(request_data, execution, coverage_context)
-    except HTTPException as error:
-        return JSONResponse(status_code=error.status_code, content=error.detail)
+    from api.thesis_ledger_bar_read_v3 import read_bar_window
+    return read_bar_window(request, payload)
 
 
 @router_v3.get("/market/indicators/capabilities", dependencies=[Depends(require_contract_token)])

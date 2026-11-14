@@ -43,7 +43,7 @@ def test_http_exact_raw_partitions_preserve_evidence_and_cached_client(fetcher):
     with patch("data_provider.tushare_fetcher.requests.post", side_effect=response_for_request) as post:
         result = read(fetcher)
     assert post.call_count == 2
-    assert fetcher._call_count == 2
+    assert not hasattr(fetcher, '_call_count')
     assert fetcher._api is cached and cached._timeout == 30
     assert result["volume"].tolist() == [1200, 1200]
     assert result["amount"].tolist() == [23000, 23000]
@@ -68,14 +68,13 @@ def test_invalid_exact_requests_make_no_http_calls(fetcher, change):
     post.assert_not_called()
 
 
-def test_exhausted_rate_quota_fails_without_sleep_or_network(fetcher):
+def test_legacy_local_counter_does_not_block_or_delay_upstream(fetcher):
     fetcher._minute_start = time.time()
-    fetcher._call_count = fetcher.rate_limit_per_minute
-    with patch("time.sleep") as sleep, patch("data_provider.tushare_fetcher.requests.post") as post:
-        with pytest.raises(RateLimitError):
-            read(fetcher)
+    fetcher._call_count = 1_000_000
+    with patch("time.sleep") as sleep, patch("data_provider.tushare_fetcher.requests.post", side_effect=response_for_request) as post:
+        read(fetcher)
     sleep.assert_not_called()
-    post.assert_not_called()
+    assert post.call_count == 2
 
 
 def test_deadline_prevents_second_partition(fetcher):

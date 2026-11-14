@@ -211,9 +211,12 @@ def test_exact_news_binding_preserves_old_market_sources():
     assert source.BINDING.gated and source.BINDING.admission_required
 
 
-def test_admission_scope_revisions_dates_cursor_and_disable_prevent_network(runtime):
+def test_first_use_keeps_revision_cursor_identity_and_disable_boundaries(runtime):
     app, store = runtime
-    assert execute_news_request(app, request()).upstreamAttempts == 0
+    first_use = execute_news_request(app, request())
+    assert first_use.status == "unavailable" and first_use.upstreamAttempts == 0
+    from src.services.thesis_ledger_capability_verification import VerificationCatalog
+    assert VerificationCatalog(store).read(KEY, TARGET) == {"state": "unverified"}
     now = datetime.now(timezone.utc)
     store.record_route_admission_v3(
         key=KEY, target=TARGET, evidence_ref="controlled-yahoo-news", evidence_sha256="e" * 64,
@@ -234,8 +237,12 @@ def test_admission_scope_revisions_dates_cursor_and_disable_prevent_network(runt
     assert source.admission_current(SimpleNamespace(**context, payload=admission))
     for field in ["adapterRevision", "sourceRevision", "credentialRevision"]:
         assert not source.admission_current(SimpleNamespace(**context, payload={**admission, field: "stale"}))
-    for change in [{"instrument": {"symbol": "AAPL.US", "market": "US", "assetType": "STOCK"}},
-                   {"cursor": "next"}, {"publishedStart": "2020-01-01T00:00:00Z", "publishedEnd": "2020-01-02T00:00:00Z"}]:
+    for change in [{"instrument": {"symbol": "UNKNOWN.US", "market": "US", "assetType": "STOCK"}},
+                   {"cursor": "next"}]:
         assert execute_news_request(app, request(**change)).upstreamAttempts == 0
+    other = execute_news_request(app, request(instrument={"symbol": "AAPL.US", "market": "US", "assetType": "STOCK"}))
+    assert other.status == "partial" and other.upstreamAttempts == 1
+    historical = execute_news_request(app, request(publishedStart="2020-01-01T00:00:00Z", publishedEnd="2020-01-02T00:00:00Z"))
+    assert historical.status == "partial" and historical.upstreamAttempts == 1 and historical.items == []
     store.save_provider_config("yfinance", {"requestId": "yahoo-disable", "enabled": False})
     assert execute_news_request(app, request()).upstreamAttempts == 0

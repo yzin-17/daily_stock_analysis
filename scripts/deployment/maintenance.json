@@ -1,0 +1,5 @@
+{
+  "commands": [
+    { "path": "scripts/deployment/prune-bytecode.mjs", "idle": true }
+  ]
+}

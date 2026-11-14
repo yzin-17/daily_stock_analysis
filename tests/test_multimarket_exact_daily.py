@@ -22,6 +22,7 @@ def test_yahoo_exact_market_symbol_inclusive_end_and_missing_amount(monkeypatch,
     def download(**options):
         calls.append(options)
         raw = frame().drop(columns="amount").rename(columns={"date": "Date", "open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"})
+        raw['Adj Close'] = raw['Close']
         return raw.assign(Date=lambda df: pd.to_datetime(df.Date)).set_index("Date")
     monkeypatch.setattr(yfinance, "download", download)
     key = {"kind": "bar", "market": market, "assetType": asset, "capability": "DAILY_BAR", "timeframe": "1d", "adjustment": "qfq"}
@@ -30,10 +31,10 @@ def test_yahoo_exact_market_symbol_inclusive_end_and_missing_amount(monkeypatch,
     request = ThesisLedgerDataRequest("DAILY_BAR", symbol, instrument_type=asset, timeframe="1d", adjustment="qfq", start="2026-05-18", end="2026-05-18")
     result = ThesisLedgerProviderRuntime(store).execute_market_bars_v3(request, key)
     assert result.value.iloc[0]["amount"] is None
-    assert calls[0]["tickers"] == ticker and calls[0]["auto_adjust"] is True
+    assert calls[0]["tickers"] == ticker and calls[0]["auto_adjust"] is False
     assert calls[0]["end"] == "2026-05-19"
     assert calls == [{'tickers': ticker, 'start': '2026-05-18', 'end': '2026-05-19',
-        'auto_adjust': True, 'progress': False, 'threads': False, 'timeout': 4.5, 'multi_level_index': False}]
+        'auto_adjust': False, 'progress': False, 'threads': False, 'timeout': 4.5, 'multi_level_index': False}]
     no_admissions(store)
 
 
@@ -82,14 +83,14 @@ def test_http_daily_is_source_pinned_and_never_estimates_amount(monkeypatch, sto
     no_admissions(store)
 
 
-def test_information_message_keeps_existing_error_classification(monkeypatch):
+def test_premium_information_preserves_permission_error(monkeypatch):
     import data_provider.multimarket_exact_daily as native
     from data_provider.exact_daily_contract import ExactDailyError
     monkeypatch.setattr(native.requests, "get", lambda *args, **kwargs: SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"Information": "premium required"}))
     request = ThesisLedgerDataRequest("DAILY_BAR", "AAPL.US", instrument_type="STOCK", timeframe="1d", adjustment="none", start="2026-05-18", end="2026-05-18")
     with pytest.raises(ExactDailyError) as error:
         read_multimarket_exact_daily("alphavantage", SimpleNamespace(_api_key="synthetic"), request, "US")
-    assert error.value.code == "quota_unavailable"
+    assert error.value.code == "permission_denied"
 
 
 def test_distinct_http_payloads_project_to_same_daily_contract(monkeypatch):

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from data_provider.thesis_ledger_sources.yfinance import SOURCE, PROTOCOL
+from data_provider.thesis_ledger_sources.yfinance import SOURCE, PROTOCOL, ONLINE_PROTOCOL
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError, ReadContext
 from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest, ThesisLedgerProviderRuntime
@@ -31,8 +31,10 @@ def test_nine_exact_targets_keep_revisions_and_bounded_windows():
         assert CAPABILITY_SOURCES.resolve(key, target) is binding
         assert (key['market'], key['assetType'], 'yfinance', binding.upstream_source) not in NATIVE_DAILY_ROUTES
         revisions = market_v3_current_route_revisions(key, target, PROVIDER_MANIFESTS['yfinance'])
-        assert revisions['adapterRevision'] == f"dsa-v3-{key['market'].lower()}-{key['assetType'].lower()}-yfinance-{key['adjustment']}-exact-daily-v1"
-        assert revisions['sourceRevision'] == PROTOCOL and revisions['credentialRevision'] == 'not-required'
+        version = 2 if key['adjustment'] == 'qfq' else 1
+        assert revisions['adapterRevision'] == f"dsa-v3-{key['market'].lower()}-{key['assetType'].lower()}-yfinance-{key['adjustment']}-exact-daily-v{version}"
+        assert revisions['sourceRevision'] == (ONLINE_PROTOCOL if version == 2 else PROTOCOL)
+        assert revisions['credentialRevision'] == 'not-required'
     remaining = {key: value for key, value in NATIVE_DAILY_ROUTES.items() if key[2] == 'yfinance'}
     assert remaining == {}
     assert {source['sourceId']: source['capabilities'] for source in SOURCE.manifest()['upstreamSources']
@@ -44,8 +46,8 @@ def test_nine_exact_targets_keep_revisions_and_bounded_windows():
 @pytest.mark.parametrize('ticker,empty,code', [('AAPL', False, None), ('OTHER', False, 'invalid_response'),
     ('AAPL', True, 'not_covered')])
 def test_multiindex_preserves_identity_and_empty_errors(monkeypatch, ticker, empty, code):
-    raw = pd.DataFrame([[1., 1.2, .9, 1.1, 100.]], columns=pd.MultiIndex.from_product([
-        ['Open', 'High', 'Low', 'Close', 'Volume'], [ticker]]), index=pd.DatetimeIndex(['2026-05-18'], name='Date'))
+    raw = pd.DataFrame([[1., 1.2, .9, 1.1, 1.1, 100.]], columns=pd.MultiIndex.from_product([
+        ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'], [ticker]]), index=pd.DatetimeIndex(['2026-05-18'], name='Date'))
     if empty:
         raw = raw.iloc[0:0]
     calls = []
@@ -105,7 +107,7 @@ def test_existing_us_index_runs_through_control_factory_and_binding(monkeypatch,
     calls = []
     def download(**kwargs):
         calls.append(kwargs)
-        return pd.DataFrame({'Open': [1.], 'High': [1.2], 'Low': [.9], 'Close': [1.1], 'Volume': [100.]},
+        return pd.DataFrame({'Open': [1.], 'High': [1.2], 'Low': [.9], 'Close': [1.1], 'Adj Close': [1.1], 'Volume': [100.]},
             index=pd.DatetimeIndex(['2026-05-18'], name='Date'))
     monkeypatch.setattr('yfinance.download', download)
     binding = next(binding for binding in SOURCE.bindings if binding.key.asset_type == 'INDEX')
@@ -116,8 +118,8 @@ def test_existing_us_index_runs_through_control_factory_and_binding(monkeypatch,
     result = ThesisLedgerProviderRuntime(store).execute_market_bars_v3(query, key)
     assert result.value['date'].tolist() == ['2026-05-18'] and result.value.iloc[0]['amount'] is None
     assert calls == [{'tickers': '^GSPC', 'start': '2026-05-18', 'end': '2026-05-19',
-        'auto_adjust': True, 'progress': False, 'threads': False, 'timeout': 4.5, 'multi_level_index': False}]
-    assert result.value.attrs['thesis_ledger_v3_pagination']['protocol'] == PROTOCOL
+        'auto_adjust': False, 'progress': False, 'threads': False, 'timeout': 4.5, 'multi_level_index': False}]
+    assert result.value.attrs['thesis_ledger_v3_pagination']['protocol'] == ONLINE_PROTOCOL
     no_admissions(store)
 
 

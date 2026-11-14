@@ -36,7 +36,7 @@ def test_planner_limits_each_window_and_requires_real_overlap_before_calls():
 
 @pytest.mark.parametrize('mode', ['complete', 'conflict', 'failure', 'missing_bar', 'pending_page', 'late'])
 @pytest.mark.parametrize('provider', ['hithink', 'test-window-source'])
-def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, mode, provider):
+def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, mode, provider, unknown_listing=False):
     monkeypatch.setenv('THESIS_LEDGER_DSA_TOKEN', 'synthetic-token')
     fixture = json.loads((Path(__file__).parent / 'fixtures/thesis-ledger-multi-window-hash.json').read_text())['response']
     key = fixture['routeKey']
@@ -67,6 +67,8 @@ def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, 
         monkeypatch.setitem(PROVIDER_MANIFESTS, provider, manifest())
     request = {'contractVersion': 3, 'requestId': 'synthetic-multi-window', 'symbol': '159516.SZ',
                'routeKey': key, 'routeTarget': target, 'start': SESSIONS[0], 'end': SESSIONS[-1]}
+    if unknown_listing:
+        request['tradabilityMode'] = 'assume-untradable-no-bar'
 
     def coverage(data):
         proof = deepcopy(fixture['coverageProof'])
@@ -74,6 +76,8 @@ def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, 
         proof['calendar'].update(source='synthetic-calendar', revision='synthetic-v1',
                                   supportedRange={'start': SESSIONS[0], 'end': SESSIONS[-1]}, expectedSessionDates=dates)
         proof['listing']['firstTradingDate'] = SESSIONS[0]
+        if unknown_listing:
+            proof['listing'] = {'symbol': request['symbol'], 'status': 'unknown'}
         proof['window'].update(requestedStart=data['start'], requestedEnd=data['end'])
         return {**{k: proof[k] for k in ['calendar', 'listing', 'window']}, 'expectedPostListingSessionDates': dates}
 
@@ -99,7 +103,7 @@ def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, 
         if mode == 'pending_page' and len(calls) == 2:
             frame.attrs['thesis_ledger_v3_pagination']['continuationPending'] = True
         return SimpleNamespace(value=frame, provider=provider, upstream_source=target['upstreamSource'],
-                               route_index=0, effective_revision=17)
+                               route_index=0, effective_revision=17, provider_revision='synthetic-daily-v1')
 
     monkeypatch.setattr('api.thesis_ledger._market_data_v3_coverage_context', coverage)
     monkeypatch.setattr('src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime',
@@ -125,9 +129,17 @@ def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, 
         assert value['inputFingerprint'] == multi_window_content_hash(value)
         assert value['coverageProof']['pagination']['pagesFetched'] == 3
         assert len(calls) == 3
+        if unknown_listing:
+            assert value['coverageProof']['listing'] == {'symbol': request['symbol'], 'status': 'unknown'}
+            assert all(window['listing']['status'] == 'unknown' for window in value['historicalTradabilityWindows'])
     else:
         expected_status = {'conflict': 502, 'failure': 403, 'missing_bar': 422, 'pending_page': 502, 'late': 503}
         assert response.status_code == expected_status[mode], response.json()
         if mode == 'failure':
             assert response.json()['error'] == {'code': 'permission_denied', 'message': '来源权限不足'}
         assert len(calls) == (1 if mode == 'late' else 2)
+
+
+@pytest.mark.parametrize('provider', ['hithink', 'test-window-source'])
+def test_multi_window_research_preserves_unknown_listing(monkeypatch, provider):
+    test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, 'complete', provider, unknown_listing=True)

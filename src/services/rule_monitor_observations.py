@@ -7,7 +7,8 @@ class RuleMonitorObservations:
     def __init__(self, store):
         self.store = store
 
-    def record(self, job, owner, *, kind, identity, name, digest=None, raw_digest=None, dataset=None, error=None):
+    def record(self, job, owner, *, kind, identity, name, digest=None, raw_digest=None, dataset=None, error=None,
+            snapshot=None):
         with self.store.connection(True) as db:
             active = db.execute("SELECT 1 FROM runs WHERE id=? AND status='running' AND attempt=1 "
                 "AND owner=? AND lease>?", (job, owner, self.store.clock())).fetchone()
@@ -35,12 +36,21 @@ class RuleMonitorObservations:
             else:
                 db.execute("INSERT INTO versions VALUES(?,?,?,?,?,?,?) ON CONFLICT(kind,identity,digest) "
                     "DO UPDATE SET last_seen=excluded.last_seen", (kind, identity, digest, raw_digest, dataset, now, now))
+                if snapshot is not None:
+                    db.execute("INSERT INTO version_snapshots VALUES(?,?,?,?,?,?,?) "
+                        "ON CONFLICT(kind,identity,digest) DO UPDATE SET format=excluded.format,body=excluded.body,"
+                        "reason=excluded.reason,captured=excluded.captured "
+                        "WHERE version_snapshots.body IS NULL AND excluded.body IS NOT NULL",
+                        (kind, identity, digest, snapshot["format"], snapshot["text"], snapshot["reason"], now))
             db.execute("INSERT INTO latest VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(kind,identity) DO UPDATE SET "
                 "name=excluded.name,digest=excluded.digest,raw_digest=excluded.raw_digest,dataset=excluded.dataset,"
                 "checked=excluded.checked,succeeded=excluded.succeeded,changed=excluded.changed,status=excluded.status,error=excluded.error",
                 (kind, identity, name, digest, raw_digest, dataset, now, succeeded, last_change, status, error))
             db.execute("UPDATE runs SET documents=documents+?,changed=changed+?,unavailable=unavailable+? WHERE id=?",
                 (int(kind == "document"), int(status == "changed"), int(error is not None), job))
+            if error:
+                db.execute("INSERT INTO run_failures VALUES(?,?,?,?,?) ON CONFLICT(job_id,kind,identity) "
+                    "DO UPDATE SET name=excluded.name,error=excluded.error", (job, kind, identity, name, error))
             return True
 
     def status(self):

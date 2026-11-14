@@ -11,6 +11,8 @@ MARKET_ERROR_MESSAGES = {
     "invalid_request": "来源拒绝请求参数",
     "permission_denied": "来源权限不足",
     "authentication_failed": "来源凭据未通过认证",
+    "rate_limited": "来源请求频率受限，请稍后重试",
+    "quota_unavailable": "来源调用额度暂不可用",
 }
 
 _RUNTIME_ERRORS = {
@@ -23,6 +25,9 @@ _RUNTIME_ERRORS = {
     "invalid_request": ("invalid_request", 422),
     "permission_denied": ("permission_denied", 403),
     "authentication_failed": ("authentication_failed", 403),
+    "rate_limited": ("rate_limited", 503),
+    "rate_limited_global": ("rate_limited", 503),
+    "quota_unavailable": ("quota_unavailable", 503),
 }
 
 

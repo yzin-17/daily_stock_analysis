@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from api.thesis_ledger_auth import require_contract_token
 from src.services.thesis_ledger_cache_context_v3 import read_cache_context, CacheContextError
+from src.services.thesis_ledger_bar_cache_context_v3 import read_bar_cache_context
 from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_runtime
 
 router = APIRouter(prefix='/thesis-ledger', tags=['ThesisLedger Market Contract V3'])
@@ -20,6 +21,8 @@ def cache_context(payload: Any = Body(...)):
     if not isinstance(request_id, str) or not request_id.strip():
         request_id = str(uuid4())
     try:
+        if isinstance(payload, dict) and payload.get('capability') in {'DAILY_BAR', 'MINUTE_BAR'}:
+            return read_bar_cache_context(get_thesis_ledger_runtime(), payload)
         return read_cache_context(get_thesis_ledger_runtime(), payload)
     except ValidationError:
         code, status, message = 'invalid_request', 422, '来源拒绝请求参数'

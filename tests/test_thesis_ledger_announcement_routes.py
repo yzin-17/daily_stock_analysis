@@ -28,7 +28,9 @@ def test_new_symbol_reads_without_admission_and_missing_days_remain_unknown(conf
     assert client.get("/api/v3/thesis-ledger/market/announcements", headers=CONTROL_HEADERS).status_code == 401
     assert client.get("/api/v3/thesis-ledger/market/announcements?pageSize=101", headers=DATA_HEADERS).status_code == 422
     (repo.root / "123.pdf").write_bytes(b"corrupt")
-    assert client.post(DATA_URL, json=request, headers=DATA_HEADERS).json()["detail"]["code"] == "invalid_response"
+    corrupt = client.post(DATA_URL, json=request, headers=DATA_HEADERS)
+    assert corrupt.status_code == 502
+    assert corrupt.json()["detail"]["error"]["code"] == "invalid_response"
 
 
 def test_partial_seed_window_returns_known_state_and_unknown_dates(configured_client):

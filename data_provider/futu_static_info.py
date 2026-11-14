@@ -30,6 +30,39 @@ def _text(value):
     return value.strip()
 
 
+def find_futu_instrument(sdk, host, port, symbol):
+    code, market, _ = futu_security(symbol)
+    if market not in {"HK", "US"}:
+        raise FutuMarketError("invalid_request", "仅支持精确港美股代码")
+    context = sdk.OpenQuoteContext(host=host, port=port)
+    try:
+        # SDK 设置 code_list 后仅发送代码；stock_type 由 OpenD 返回。
+        status, rows = context.get_stock_basicinfo(getattr(sdk.Market, market), code_list=[code])
+        if status != sdk.RET_OK:
+            raise FutuMarketError("upstream_failure", "富途证券检索失败")
+        required = {"code", "stock_type", "name", "delisting"}
+        if not hasattr(rows, "columns") or not required.issubset(rows.columns) or len(rows) > 1:
+            raise FutuMarketError("invalid_response", "富途精确身份响应无效")
+        if rows.empty:
+            return []
+        row = rows.iloc[0]
+        delisted = row["delisting"]
+        if hasattr(delisted, "item"):
+            delisted = delisted.item()
+        kind = row["stock_type"]
+        if (row["code"] != code or not isinstance(delisted, bool) or not isinstance(kind, str)
+                or not kind or kind == "N/A"):
+            raise FutuMarketError("invalid_response", "富途证券标识无效")
+        if delisted or kind not in {"STOCK", "ETF"}:
+            return []
+        name = _text(row["name"])
+        if not name:
+            raise FutuMarketError("invalid_response", "富途证券名称为空")
+        return [{"canonicalCode": code[3:], "market": market, "instrumentType": kind, "displayName": name}]
+    finally:
+        context.close()
+
+
 def read_futu_static_info(sdk, host, port, symbol, asset_type):
     code, market = static_identity(symbol, asset_type)
     context = None

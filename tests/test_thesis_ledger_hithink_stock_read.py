@@ -43,7 +43,7 @@ def fake_source(monkeypatch, dates):
     monkeypatch.setattr(stock.requests, "get", lambda *args, **kwargs: SimpleNamespace(status_code=200, json=lambda: data))
 
 
-@pytest.mark.parametrize("adjustment", ["none", "qfq"])
+@pytest.mark.parametrize("adjustment", ["none", "qfq", "hfq"])
 def test_exact_hithink_stock_research_gets_calendar_with_unknown_listing(adjustment):
     p = payload(); p["routeKey"]["adjustment"] = adjustment
     c = research_market_coverage_context(p)
@@ -52,13 +52,13 @@ def test_exact_hithink_stock_research_gets_calendar_with_unknown_listing(adjustm
     assert c["calendar"]["source"] == "exchange-calendars/XSHG"
 
 
-@pytest.mark.parametrize("change", ["mode", "ETF", "source", "hfq"])
+@pytest.mark.parametrize("change", ["mode", "ETF", "source", "unsupported-adjustment"])
 def test_unselected_paths_do_not_gain_research_scope(change):
     p = payload()
     if change == "mode": p.pop("tradabilityMode")
     elif change == "ETF": p["routeKey"]["assetType"] = "ETF"; p["symbol"] = "510300.SH"
     elif change == "source": p["routeTarget"]["upstreamSource"] = "fund-market-historical"
-    else: p["routeKey"]["adjustment"] = "hfq"
+    else: p["routeKey"]["adjustment"] = "unsupported"
     assert research_market_coverage_context(p) is None
 
 

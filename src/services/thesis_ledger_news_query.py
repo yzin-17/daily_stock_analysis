@@ -11,7 +11,9 @@ from src.services.thesis_ledger_current_data_route import select_current_data_ta
 from src.services.thesis_ledger_feature_policy import feature_provider_epoch
 from src.services.thesis_ledger_news_cache import news_cache_key, news_replay_cache
 from src.services.thesis_ledger_news_instruments import resolve_public_news_instrument
+from src.services.thesis_ledger_news_pagination import NEWS_CURSORS
 from src.services.thesis_ledger_news_scope import news_scope
+from src.services.thesis_ledger_price_route_access import configured_data_route
 
 
 @dataclass
@@ -45,9 +47,18 @@ def build_news_operation(runtime, query, trace, error_type):
     providers = [provider for provider, _, _ in targets]
     epochs = feature_provider_epoch(runtime.store, providers)
     snapshots = {provider: runtime.store.provider_credential_snapshot(provider) for provider in providers}
+    cursor_target = None
+    if query.cursor is not None:
+        try:
+            cursor = NEWS_CURSORS.get(query.cursor)
+            cursor_target = (cursor.provider, cursor.source)
+        except CapabilityContractError as error:
+            raise error_type(error.code, str(error)) from None
     cache = news_replay_cache(runtime)
 
     def operation(provider, adapter, source):
+        if cursor_target is not None and cursor_target != (provider, source):
+            raise error_type("invalid_request", "新闻分页不能更换来源，请重新查询")
         remaining = math.floor((trace.deadline - time.monotonic()) * 1000)
         if remaining <= 0:
             raise error_type("timeout", "新闻总请求预算已耗尽")
@@ -59,7 +70,7 @@ def build_news_operation(runtime, query, trace, error_type):
                 or runtime.store.provider_credential_snapshot(provider) != snapshot):
             raise error_type("not_admitted", "新闻执行前控制或凭据已变化")
         admission = runtime._current_market_v3_admission(key, target, credential_snapshot=snapshot)
-        if not admission or admission.get("admissionState") != "admitted":
+        if not configured_data_route(key, target) and (not admission or admission.get("admissionState") != "admitted"):
             raise error_type("not_admitted", "新闻精确来源尚未准入")
         binding = CAPABILITY_SOURCES.resolve(key, target)
         if binding is None:

@@ -75,7 +75,7 @@ def configure(name):
         chart = {**body, "purpose": "interactive-chart",
                  "routeTarget": {"providerId": "tencent", "upstreamSource": "tencent", "routeIndex": 0}}
         cases.append(post_case("marketChartBarsV3", "/market/chart-bars", chart))
-        cases.append(post_case("marketBarsV3", "/market/bars", {**body, "symbol": "510300.SH"}, status=422))
+        cases.append(post_case("marketBarsV3", "/market/bars", {**body, "symbol": "600519.SH"}, status=422))
     elif name == "events":
         from tests.test_thesis_ledger_events_v3 import state
         import data_provider.eastmoney_cash_capability as source
@@ -116,7 +116,7 @@ def configure(name):
         patches.setattr(runtime_module, "get_thesis_ledger_runtime", lambda: runtime)
         cases.append(post_case("marketPublicFeesV3", "/market/public-fees", body))
         cases.append(post_case("marketPublicFeesV3", "/market/public-fees",
-                               {**body, "range": {"start": "2023-08-22", "end": "2023-08-29"}}, status=503))
+                               {**body, "range": {"start": "2023-08-22", "end": "2023-08-29"}}, status=422))
     elif name == "reference":
         from src.services.thesis_ledger_control import ThesisLedgerControlStore
         from src.services.thesis_ledger_provider_runtime import ThesisLedgerProviderRuntime

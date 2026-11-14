@@ -138,6 +138,7 @@ def controlled_worker(connection, _settings, _query, _limit, _days, _deadline):
     page = news.parse_hithink_page(body(), max_results=5)
     connection.send(("attempt", None))
     connection.send(("result", {"records": page.records, "success": True, "truncated": page.has_more,
+                                "next_cursor": page.offset,
                                 "examined_count": len(page.records), "partial": False}))
     connection.close()
 
@@ -184,9 +185,12 @@ def request(**updates):
         "publishedStart": "2026-10-19T00:00:00Z", "publishedEnd": "2026-10-23T00:00:00Z", **updates})
 
 
-def test_formal_hmac_admission_and_credential_change_make_no_unapproved_attempt(runtime):
+def test_first_use_and_credential_change_keep_cursor_and_identity_boundaries(runtime):
     app, store = runtime
-    assert execute_news_request(app, request()).upstreamAttempts == 0
+    first_use = execute_news_request(app, request())
+    assert first_use.status == "unavailable" and first_use.upstreamAttempts == 0
+    from src.services.thesis_ledger_capability_verification import VerificationCatalog
+    assert VerificationCatalog(store).read(KEY, TARGET) == {"state": "unverified"}
     now = datetime.now(timezone.utc)
     revision = _provider_credential_revision_from_snapshot(store.provider_credential_snapshot("hithink"))
     assert revision.startswith("hmac-sha256-v1:")
@@ -202,10 +206,55 @@ def test_formal_hmac_admission_and_credential_change_make_no_unapproved_attempt(
                            "routes": [{"key": KEY, "targets": [TARGET], "enabled": True}]})
     value = execute_news_request(app, request())
     assert value.status == "partial" and value.upstreamAttempts == 1 and len(value.items) == 1, value.model_dump()
-    assert value.route.providerId == "hithink" and "timeline_window_not_exhaustive" in value.coverage.missingReasons
+    assert value.route.providerId == "hithink" and value.nextCursor.startswith("news-page-v1:")
     assert TEST_KEY not in value.model_dump_json()
-    for change in [{"instrument": {"symbol": "000001.SZ", "market": "CN", "assetType": "STOCK"}}, {"cursor": "next"}]:
+    for change in [{"instrument": {"symbol": "999999.SH", "market": "CN", "assetType": "STOCK"}}, {"cursor": "next"}]:
         assert execute_news_request(app, request(**change)).upstreamAttempts == 0
     configure(store, "controlled-new-credential")
-    denied = execute_news_request(app, request())
+    denied = execute_news_request(app, request(cursor=value.nextCursor))
     assert denied.status == "unavailable" and denied.upstreamAttempts == 0
+    retried = execute_news_request(app, request())
+    assert retried.status == "partial" and retried.upstreamAttempts == 1
+    assert VerificationCatalog(store).read(KEY, TARGET) == {"state": "unverified"}
+
+
+def test_formal_pages_bind_scope_keep_every_row_and_allow_retry(runtime, monkeypatch):
+    from src.services.thesis_ledger_news_records import RawNewsRead, RawNewsRecord
+    app, store = runtime
+    now = datetime.now(timezone.utc)
+    store.record_route_admission_v3(
+        key=KEY, target=TARGET, evidence_ref="controlled-pagination", evidence_sha256="d" * 64,
+        scope_symbols=["600519.SH"], scope_date_from="2026-10-19", scope_date_to="2026-10-29",
+        adapter_revision=source.ADAPTER_REVISION, source_revision=source.SOURCE_REVISION,
+        credential_revision=_provider_credential_revision_from_snapshot(store.provider_credential_snapshot("hithink")),
+        valid_from=(now - timedelta(minutes=1)).isoformat(), valid_until=(now + timedelta(hours=1)).isoformat(),
+        recorded_by="controlled-test",
+    )
+    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-pagination",
+                           "revision": 1, "enabled": True, "routes": [{"key": KEY, "targets": [TARGET], "enabled": True}]})
+    calls = []
+    def execute(_settings, _symbol, **kwargs):
+        calls.append(kwargs)
+        first = kwargs["cursor"] is None
+        identifiers = range(1, 6) if first else range(6, 9)
+        return RawNewsRead(
+            records=tuple(RawNewsRecord(f"新闻{i}", f"https://news.10jqka.com.cn/{i}", source_item_id=str(i),
+                                       published_at="2026-10-22T00:00:00Z") for i in identifiers),
+            success=True, upstream_attempts=1, truncated=first,
+            next_cursor="literal+source/offset" if first else None, examined_count=len(identifiers),
+        )
+    monkeypatch.setattr(source, "execute_news_search", execute)
+    first = execute_news_request(app, request(limit=5))
+    assert len(first.items) == 5 and first.nextCursor and "literal+source" not in first.nextCursor
+    for change in [{"limit": 3}, {"publishedStart": "2026-10-20T00:00:00Z"}]:
+        denied = execute_news_request(app, request(limit=5, cursor=first.nextCursor).model_copy(update=change))
+        assert denied.status == "unavailable" and denied.upstreamAttempts == 0
+    assert len(calls) == 1
+    for identifier in ["second-page", "retry-second-page"]:
+        last = execute_news_request(app, request(limit=5, requestId=identifier, cursor=first.nextCursor))
+        assert last.status == "available" and last.nextCursor is None
+        assert {item.title for item in last.items} == {"新闻6", "新闻7", "新闻8"}
+    assert calls[-1]["cursor"] == "literal+source/offset"
+    configure(store, "controlled-rotated-key")
+    denied = execute_news_request(app, request(limit=5, cursor=first.nextCursor))
+    assert denied.upstreamAttempts == 0 and len(calls) == 3

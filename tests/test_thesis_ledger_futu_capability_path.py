@@ -46,7 +46,7 @@ def worker_transport(monkeypatch, sdk):
     return calls
 
 
-def test_twelve_bindings_have_one_registration_and_unchanged_revisions():
+def test_eighteen_bindings_have_one_registration_and_keep_existing_revisions():
     from src.services.thesis_ledger_exact_route_inventory import exact_route_inventory
     from src.services.thesis_ledger_native_daily import NATIVE_DAILY_ROUTES
     from src.services.thesis_ledger_market_v3_revisions import market_v3_current_route_revisions
@@ -54,7 +54,7 @@ def test_twelve_bindings_have_one_registration_and_unchanged_revisions():
     targets = [(k, t, gated) for k, t, gated in exact_route_inventory()
         if t['providerId'] == 'futu' and k['capability'] == 'DAILY_BAR']
     daily_bindings = [b for b in SOURCE.bindings if b.key.capability == 'DAILY_BAR']
-    assert len(targets) == len(daily_bindings) == 12 and all(gated for _, _, gated in targets)
+    assert len(targets) == len(daily_bindings) == 18 and all(gated for _, _, gated in targets)
     assert not NATIVE_DAILY_ROUTES
     assert SOURCE.credentials == (('opend', ('host', 'port')),)
     assert SOURCE.dependency_modules == ('futu',) and SOURCE.factory_scope == 'provider'
@@ -64,14 +64,20 @@ def test_twelve_bindings_have_one_registration_and_unchanged_revisions():
         revisions = market_v3_current_route_revisions(key, target, PROVIDER_MANIFESTS['futu'], credential_version=1)
         assert revisions['adapterRevision'] == f"dsa-v3-{key['market'].lower()}-{key['assetType'].lower()}-futu-{key['adjustment']}-exact-daily-v1"
         assert revisions['sourceRevision'] == PROTOCOL
+        if key['market'] == 'CN':
+            assert key['assetType'] in {'STOCK', 'ETF'}
+            assert callable(binding.research_calendar_eligible)
+            assert binding.research_instrument_policy is None
 
 
 @pytest.mark.parametrize('market,asset,symbol', [('HK', 'STOCK', '00700.HK'), ('HK', 'ETF', '02800.HK'),
-    ('US', 'STOCK', 'AAPL.US'), ('US', 'ETF', 'SPY.US')])
+    ('US', 'STOCK', 'AAPL.US'), ('US', 'ETF', 'SPY.US'),
+    ('CN', 'STOCK', '600519.SH'), ('CN', 'STOCK', '000001.SZ'),
+    ('CN', 'ETF', '510300.SH'), ('CN', 'ETF', '159919.SZ')])
 @pytest.mark.parametrize('adjustment', ['none', 'qfq', 'hfq'])
-def test_twelve_targets_run_original_factory_worker_and_two_sdk_pages(monkeypatch, store, market, asset, symbol, adjustment):
+def test_registered_targets_run_original_factory_worker_and_two_sdk_pages(monkeypatch, store, market, asset, symbol, adjustment):
     configure(store)
-    code, _, _ = futu_security(symbol)
+    code, sdk_market, _ = futu_security(symbol)
     sdk, ctx = sdk_for([(0, pd.DataFrame([row(code=code)]), b'next'),
         (0, pd.DataFrame([row('2026-05-19', code=code)]), None)])
     ctx.get_stock_basicinfo.return_value = 0, pd.DataFrame([{'code': code, 'stock_type': asset}])
@@ -82,7 +88,7 @@ def test_twelve_targets_run_original_factory_worker_and_two_sdk_pages(monkeypatc
     result = ThesisLedgerProviderRuntime(store).execute_market_bars_v3(query(symbol, asset, adjustment), key)
     assert result.value['date'].tolist() == ['2026-05-18', '2026-05-19']
     assert result.value['volume'].tolist() == [0, 0] and result.value['amount'].tolist() == [None, None]
-    ctx.get_stock_basicinfo.assert_called_once_with(market, stock_type=asset, code_list=[code])
+    ctx.get_stock_basicinfo.assert_called_once_with(sdk_market, stock_type=asset, code_list=[code])
     assert result.provider == result.upstream_source == 'futu'
     assert len(calls) == 1 and ctx.request_history_kline.call_count == 2
     command, options = calls[0]
@@ -103,7 +109,7 @@ def test_twelve_targets_run_original_factory_worker_and_two_sdk_pages(monkeypatc
 
 
 @pytest.mark.parametrize('failure,code', [
-    ('permission', 'upstream_failure'), ('cursor', 'invalid_response'),
+    ('permission', 'permission_denied'), ('cursor', 'invalid_response'),
     ('identity', 'invalid_response'), ('window', 'invalid_response'), ('ceiling', 'insufficient_coverage'),
 ])
 def test_late_sdk_failure_releases_and_returns_original_error_without_prefix(monkeypatch, store, failure, code):
@@ -211,7 +217,7 @@ def test_exact_probe_preserves_later_page_error_and_releases(monkeypatch, store)
     with pytest.raises(ProviderCallError) as error:
         read_exact_probe(runtime, SOURCE.bindings[0].key.route_key(),
             {'providerId': 'futu', 'upstreamSource': 'futu'}, snapshot)
-    assert error.value.code == 'upstream_failure' and len(calls) == 1
+    assert error.value.code == 'permission_denied' and len(calls) == 1
     assert not runtime.adapters
     ctx.close.assert_called_once()
     assert store.provider_credential_snapshot('futu') == snapshot

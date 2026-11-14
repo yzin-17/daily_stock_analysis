@@ -1,8 +1,6 @@
 """Yahoo 既有在线日线与两项有界参考窗口，分别保留原读取语义。"""
 
-from datetime import date, datetime, timedelta, timezone
-
-import pandas as pd
+from datetime import datetime, timezone
 
 from data_provider.exact_daily_contract import ExactDailyError, normalize_exact_daily
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError, DailyRead, provider_symbol_for_contract
@@ -10,8 +8,11 @@ from src.services.thesis_ledger_capability_registry import DailyBinding, QuoteBi
 from data_provider.yfinance_research_frame import project_normalized, project_hk_share_window
 from src.services.thesis_ledger_research_instrument_contract import ResearchInstrumentFact, ResearchInstrumentPolicy
 from data_provider.thesis_ledger_sources.yahoo_news import BINDING as NEWS_BINDING, UPSTREAM as NEWS_SOURCE, admission_current
+from src.services.thesis_ledger_dependency_facts import cn_research_calendar_eligible
+from data_provider.yfinance_daily_window import read_daily_window, verify_daily_transport
 
 PROTOCOL = "dsa-yfinance-exact-daily-single-response-v1"
+ONLINE_PROTOCOL = "dsa-yfinance-exact-daily-bounded-window-v2"
 
 
 def manifest():
@@ -40,6 +41,8 @@ def factory(context):
 
 
 def normalized_research_calendar_eligible(context):
+    if context.market == 'CN':
+        return cn_research_calendar_eligible(context)
     from src.services.thesis_ledger_reference_identity import reference_identity
     return reference_identity(context.symbol, context.market) is not None
 
@@ -69,7 +72,7 @@ def research_instrument_fact(request):
         raise CapabilityContractError(error.code, str(error)) from None
 
 
-def read_frame(adapter, request, market):
+def read_frame(adapter, request, market, timeout_seconds=4.5):
     import yfinance as yf
     symbol = request.symbol
     if market == "CN":
@@ -80,12 +83,8 @@ def read_frame(adapter, request, market):
         ticker = adapter._convert_stock_code(symbol.removesuffix(".US"))
     if request.instrument_type == "INDEX" and (market != "US" or not ticker.startswith("^")):
         raise ExactDailyError("invalid_request", "Yahoo 指数需要已登记的精确指数代码")
-    raw = yf.download(tickers=ticker, start=request.start, end=(date.fromisoformat(request.end) + timedelta(days=1)).isoformat(),
-                      auto_adjust=True, progress=False, threads=False, timeout=4.5, multi_level_index=False)
-    if isinstance(raw.columns, pd.MultiIndex):
-        if ticker not in raw.columns.get_level_values(-1):
-            raise ExactDailyError("invalid_response", "Yahoo 日线标的身份不匹配")
-        raw = raw.xs(ticker, axis=1, level=-1)
+    raw = read_daily_window(yf.download, ticker=ticker, start=request.start, end=request.end,
+                            timeout_seconds=timeout_seconds)
     raw = raw.reset_index().rename(columns={"Date": "date", "Open": "open", "High": "high", "Low": "low",
                                            "Close": "close", "Volume": "volume"})
     timezone = {"CN": "Asia/Shanghai", "HK": "Asia/Hong_Kong", "US": "America/New_York"}[market]
@@ -96,7 +95,15 @@ def daily(query, context):
     from src.services.thesis_ledger_current_data_route import current_data_route_key
     market = current_data_route_key(query.capability, query.instrument_type, query.symbol)["market"]
     try:
-        return DailyRead(read_frame(context.adapter, query, market), 1)
+        frame = read_frame(context.adapter, query, market, context.timeout_seconds)
+        return DailyRead(frame, len(frame.attrs['yahooDailyRetrieval']['responses']))
+    except ExactDailyError as error:
+        raise CapabilityContractError(error.code, str(error)) from None
+
+
+def verify_transport(frame, start, end, adjustment):
+    try:
+        return verify_daily_transport(frame, start, end, adjustment)
     except ExactDailyError as error:
         raise CapabilityContractError(error.code, str(error)) from None
 
@@ -133,9 +140,9 @@ INTRADAY_BINDINGS = intraday_bindings(read_native_intraday, 'yfinance', markets=
 
 SOURCE = SourceDefinition("yfinance", manifest, factory, tuple(
     DailyBinding(ExactKey(market, asset, "DAILY_BAR", "qfq"), "yfinance",
-                 f"dsa-v3-{market.lower()}-{asset.lower()}-yfinance-qfq-exact-daily-v1", PROTOCOL, PROTOCOL,
-                 None, daily, gated=True,
-                 research_calendar_eligible=normalized_research_calendar_eligible if market in {'HK', 'US'} and asset == 'STOCK' else None,
+                 f"dsa-v3-{market.lower()}-{asset.lower()}-yfinance-qfq-exact-daily-v2", ONLINE_PROTOCOL, ONLINE_PROTOCOL,
+                 None, daily, gated=True, verify_transport=verify_transport,
+                 research_calendar_eligible=normalized_research_calendar_eligible if market == 'CN' or asset == 'STOCK' else None,
                  research_frame_projection=project_normalized if market in {'HK', 'US'} and asset == 'STOCK' else None)
     for market, asset in (("CN", "STOCK"), ("CN", "ETF"), ("HK", "STOCK"), ("HK", "ETF"),
                          ("US", "STOCK"), ("US", "ETF"), ("US", "INDEX"))
@@ -156,4 +163,4 @@ SOURCE = SourceDefinition("yfinance", manifest, factory, tuple(
     for market, asset in (("CN", "STOCK"), ("CN", "ETF"), ("HK", "STOCK"), ("HK", "ETF"),
                           ("US", "STOCK"), ("US", "ETF"), ("US", "INDEX"))
 ) + INTRADAY_BINDINGS + (NEWS_BINDING,), ("data_provider.yfinance_fetcher", "YfinanceFetcher"), dependency_modules=("yfinance",),
-    factory_scope="provider", policy_admission_guard=admission_current)
+    factory_scope="provider", policy_admission_guard=admission_current, upstream_groups=(('yfinance', 'yahoo'),))

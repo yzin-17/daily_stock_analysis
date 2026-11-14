@@ -24,8 +24,16 @@
 
 ## 当前任务
 
-最近核对：2026-11-05。本仓已无活动 Task；历史数据按需读取的本仓实现与主仓最终验收已对账，记录已[归档](archive/tasks/2026-10-09-history-data-on-demand.md)。纯数据服务和腾讯周期窗口任务亦已完成，见[归档入口](archive/README.md)。
+新闻准入工具残留清理已完成，见[归档任务](archive/tasks/2026-11-14-news-admission-cleanup.md)；当前入口与显式选源要求见[本地运行工具](guides/local-runtime-tools.md)。
+
+基础行情缓存生产者、前置门禁合同收敛及腾讯日线响应窗口修复已完成，见[归档入口](archive/README.md)。现行控制与来源合同仍由specs维护；该结案不认证其他失败来源已恢复。
+
+本地收费日期范围外按需刷新正在实施，见[任务](tasks/2026-11-12-local-rule-demand-refresh.md)和[验证记录](evidence/2026-11-12-local-rule-demand-refresh.md)。完整检查无变更后的覆盖推进与首次新资料待处理分开验收。
+
+复权日线非对称能力核实与适配已完成，见[归档任务](archive/tasks/2026-11-11-adjusted-daily-capability-audit.md)及[上游与窗口证据](evidence/2026-11-11-adjusted-daily-capability-audit.md)。
+
+最近核对：2026-11-11。Yahoo 日线价格缺失排查与修复已完成，见[归档任务](archive/tasks/2026-11-11-yahoo-daily-price-missing.md)及[真实窗口证据](evidence/2026-11-11-yahoo-daily-price-missing.md)。其他执行项见[任务目录](tasks/)。历史数据按需读取的本仓实现与主仓最终验收已对账，记录已[归档](archive/tasks/2026-10-09-history-data-on-demand.md)。纯数据服务和腾讯周期窗口任务亦已完成，见[归档入口](archive/README.md)。
 
 当前合同继续从 [specs/](specs/) 和[架构说明](design/README.md)查阅。`evidence/` 中被跨任务、主仓或 CI 引用的记录保留稳定位置，不作为另一套当前任务状态。
 
-Tushare 真实现金消费、研究价格复核与基金盘中估值的剩余条件仍由[主仓任务](../../thesis-ledger/docs/tasks/README.md)维护；本仓无活动任务不表示这些产品门禁通过。
+Tushare 真实现金消费、研究价格复核与基金盘中估值的剩余条件仍由[主仓任务](../../thesis-ledger/docs/tasks/README.md)维护；本仓任务状态不表示这些产品门禁通过。

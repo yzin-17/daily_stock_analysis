@@ -8,6 +8,14 @@ Spec 按自身适用性独立判断归档：不再作为当前需求合同、且
 
 ## 查阅入口
 
+- [新闻准入工具的来源边界与显式选源](2026-11-14-news-admission-cleanup.md)
+
+- [本地收费规则按需刷新与覆盖推进](2026-11-12-local-rule-demand-refresh.md)
+
+- [竞技场公开网页搜索](2026-11-12-research-public-search.md)
+
+- Yahoo 日线价格缺失调查已[归档](../archive/specs/2026-11-11-yahoo-daily-price-missing.md)，当前合同见[来源窗口设计](../design/thesis-ledger-yahoo-daily-window.md)。
+
 - [腾讯日线完整周期窗口契约](2026-10-05-tencent-period-window.md)
 - [股票历史状态按需读取](2026-10-09-history-data-on-demand.md)
 - [DSA 纯数据服务收敛规格](2026-10-18-data-only-service.md)

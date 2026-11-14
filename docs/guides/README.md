@@ -2,6 +2,8 @@
 
 本目录按文档职责导航，操作与配置以对应正文为准。任务状态和验证材料见[文档中心](../README.md)。
 
+数据来源维护见[本地运行工具](local-runtime-tools.md)、[凭证与授权](provider-credentials.md)和[盘中采样](2026-11-10-intraday-provider-observation.md)。
+
 ## 使用
 
 - [Tushare 股票列表获取工具使用说明](TUSHARE_STOCK_LIST_GUIDE.md)
@@ -14,6 +16,7 @@
 
 ## 维护与部署
 
+- [本地部署准备接口](local-deployment-interface.md)
 - [HiThink 页面凭证与连接测试](thesis-ledger-hithink-credentials.md)
 - [ThesisLedger V3 精确净值生产](thesis-ledger-nav-production.md)
 - [Tushare 账号等级与本地权限记录](tushare-account-access.md)

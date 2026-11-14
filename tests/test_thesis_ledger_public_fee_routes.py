@@ -39,6 +39,12 @@ def policy(revision=1, enabled=True):
 
 @pytest.fixture
 def configured_client(tmp_path, monkeypatch):
+    # API 读取可能按需刷新资料；旧回归禁止出站，新刷新测试显式注入受控 HTTP。
+    from src.services import rule_monitor_runtime
+    from src.services.rule_monitor_fetch import DocumentError
+    async def offline_document(*args, **kwargs):
+        raise DocumentError('document_unavailable')
+    monkeypatch.setattr(rule_monitor_runtime, 'fetch_document', offline_document)
     path = str(tmp_path / "public-fee-control.sqlite")
     monkeypatch.setenv("DATABASE_PATH", path)
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "fees-data-test-token")
@@ -61,7 +67,7 @@ def test_catalog_and_saved_policy_can_read_real_pack_without_admission(configure
     )
     assert catalog.status_code == 200
     entry = next(row for row in catalog.json()["entries"] if row["key"] == KEY)
-    assert entry == {"key": KEY, "target": TARGET, "state": "ready"}
+    assert entry == {"key": KEY, "target": TARGET, "state": "ready", "verification": {"state": "unverified"}}
     providers = client.get("/api/v3/thesis-ledger/control/providers", headers=CONTROL_HEADERS).json()["providers"]
     source = next(item for item in providers if item["providerId"] == PROVIDER_ID)
     assert source["configurationMode"] == "built_in"
@@ -93,18 +99,18 @@ def test_unconfigured_or_disabled_policy_does_not_read_source(configured_client)
     client, _runtime, store = configured_client
     response = client.post(DATA_URL, json=wire_request(), headers=DATA_HEADERS)
     assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "no_eligible_provider"
+    assert response.json()["detail"]["error"]["code"] == "upstream_failure"
     store.apply_policy_v3(policy(enabled=False))
     response = client.post(DATA_URL, json=wire_request(), headers=DATA_HEADERS)
     assert response.status_code == 503
 
 
 @pytest.mark.parametrize("change,status,code", [
-    ({"routeTarget": {**TARGET, "routeIndex": 1}}, 503, "no_eligible_provider"),
-    ({"range": {"start": "2023-08-22", "end": "2023-08-29"}}, 503, "insufficient_coverage"),
-    ({"symbol": "600000.SZ"}, 503, "not_covered"),
-    ({"range": {"start": "2023-08-29", "end": "2023-08-25"}}, 422, "bad_request"),
-    ({"routeKey": {**KEY, "market": "US"}}, 422, "bad_request"),
+    ({"routeTarget": {**TARGET, "routeIndex": 1}}, 503, "upstream_failure"),
+    ({"range": {"start": "2023-08-22", "end": "2023-08-29"}}, 422, "insufficient_coverage"),
+    ({"symbol": "600000.SZ"}, 422, "insufficient_coverage"),
+    ({"range": {"start": "2023-08-29", "end": "2023-08-25"}}, 422, "invalid_request"),
+    ({"routeKey": {**KEY, "market": "US"}}, 422, "invalid_request"),
 ])
 def test_pin_identity_and_window_are_not_silently_changed(configured_client, change, status, code):
     client, _runtime, store = configured_client
@@ -112,7 +118,7 @@ def test_pin_identity_and_window_are_not_silently_changed(configured_client, cha
     payload = {**deepcopy(wire_request()), **change}
     response = client.post(DATA_URL, json=payload, headers=DATA_HEADERS)
     assert response.status_code == status
-    assert response.json()["detail"]["code"] == code
+    assert response.json()["detail"]["error"]["code"] == code
 
 
 def test_policy_change_during_read_is_not_returned_as_current(configured_client):
@@ -128,4 +134,4 @@ def test_policy_change_during_read_is_not_returned_as_current(configured_client)
     runtime.adapters[PROVIDER_ID] = ChangedPolicySource()
     response = client.post(DATA_URL, json=wire_request(), headers=DATA_HEADERS)
     assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "not_admitted"
+    assert response.json()["detail"]["error"]["code"] == "upstream_failure"

@@ -6,6 +6,8 @@
 
 ## 1. 硬规则
 
+- 本仓拥有 Provider、来源准入、数据验证及相应宿主工具、测试和说明，本地维护入口位于 `scripts/local-runtime/`；本仓同时拥有 Dockerfile、SDK 构建与预取命令。infra 负责本地部署编排并消费明确的构建接口，职责见 [infra 项目规则](../thesis-ledger-infra/AGENTS.md#项目定位与职责)。
+- `scripts/local-deployment.sh` 提供构建上下文声明、构建预取和快更准备；`scripts/deployment/` 维护载荷、源码替换、字节码清理及运行快照语义与测试。infra 负责锁、容器和卷编排，通过命令合同消费这些实现，不复制应用目录或 SDK 规则。
 - 在 ThesisLedger 同级工作区执行任何 Docker 操作前，必须读取并遵守 [`../AGENTS.md`](../AGENTS.md) 的「Docker 操作入口强制约束」：状态变更只能通过仓库维护的脚本执行，只读检查除外。目标部署使用同级 infra 的 `sync-code.sh` 或 `update.sh`，不得直接调用 Docker 命令或另建入口绕过预检；本条也适用于子代理和隔离测试。
 - 遵循现有目录边界：
   - 数据逻辑放在 `src/`、`data_provider/`、`api/`，按数据、存储和适配职责维护边界

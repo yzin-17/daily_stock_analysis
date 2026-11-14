@@ -5,7 +5,7 @@ from .thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from .thesis_ledger_public_fees_contract_v1 import CAPABILITY, CONTRACT, FeeRequest
 
 
-def fees_query_operation(request, error_type):
+def fees_query_operation(request, error_type, runtime=None):
     if request.capability != CAPABILITY:
         return None
     try:
@@ -15,8 +15,15 @@ def fees_query_operation(request, error_type):
 
     def operation(provider, adapter, source):
         try:
-            result = CAPABILITY_SOURCES.query(CONTRACT, query, query.routeKey.model_dump(),
-                {'providerId':provider, 'upstreamSource':source}, ReadContext(adapter))
+            context = ReadContext(adapter)
+            if runtime is not None:
+                from .thesis_ledger_current_rule_context import current_rule_context
+                context = current_rule_context(runtime, provider, adapter)
+            result = CAPABILITY_SOURCES.query(
+                CONTRACT, query, query.routeKey.model_dump(), {'providerId': provider, 'upstreamSource': source}, context
+            )
+            if context.publish_guard and not context.publish_guard():
+                raise error_type('not_admitted', '规则读取期间来源控制已变化')
             return result.model_dump(mode='json', exclude_unset=True)
         except CapabilityContractError as error:
             raise error_type(error.code, str(error), retryable=error.retryable, diagnostics=error.diagnostics) from None

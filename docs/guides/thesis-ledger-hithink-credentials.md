@@ -12,6 +12,14 @@ ETF/股票日线、报价和 ETF 分红均消费同一个有效凭证快照。�
 
 HiThink ETF 前复权基础价格按已有共同能力契约检查配置即可；股票日线、报价和事件仍保留各自精确准入及读前读后核验。页面保存成功并不授予其他能力。能力清单与基础价格边界见[来源能力](../design/thesis-ledger-source-capabilities.md)。
 
+## 目录未命中时检索标的
+
+`GET /api/v3/thesis-ledger/instruments/search` 使用 Data Contract Bearer Token，接受 `query`（1–80 字符）以及可选的 `market`、`instrumentType`。返回 `{contractVersion: 3, providerId, items}`，每条包含 `canonicalCode`、`market`、`instrumentType` 和 `displayName`。该请求仅读取当前证券身份，不创建目录代次。
+
+未指定市场的名称和境内代码通过 HiThink 原生检索，涵盖股票、ETF、场外基金，最多 20 条。沪深京及场外基金可通过 `SH`、`SZ`、`BJ`、`OF` 筛选；完整代码支持 `510300.SH` 形式。类型取值为 `STOCK`、`ETF`、`MUTUAL_FUND`。按名称检索不会枚举港美股。
+
+带 `.HK` 或 `.US` 的代码，以及指定 `market=HK|US` 的代码，走富途 OpenD 单代码查询，最多返回 1 条，以源返回的股票／ETF 类型为准。无匹配时返回空列表；不支持的范围、来源失败、凭据缺失及来源关闭均返回错误。两类来源都复用 Control 总开关、Provider 开关及凭据快照。竞技场历史盲评继续单独归档并显示代码。
+
 ## 测试连接
 
 草稿测试使用本次输入，不落库、不修改业务路由或准入，也不写入已保存凭证的健康状态。HiThink 按能力调用现有只读读取器：股票单标快照、单个已知交易日的股票前复权日线，以及 ETF 现金分红接口。每项最多一次来源调用、超时至多 4.5 秒；接口错误映射为稳定脱敏错误码。

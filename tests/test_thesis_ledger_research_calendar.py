@@ -35,13 +35,13 @@ def test_extended_window_uses_real_verified_calendar():
 
 def test_raw_etf_cash_research_uses_verified_calendar_without_listing_fabrication():
     payload = request("2023-01-03", "2023-02-01")
-    payload["symbol"] = "510300.SH"
+    payload["symbol"] = "510050.SH"
     payload["routeKey"].update(assetType="ETF", adjustment="none")
     context = research.research_market_coverage_context(payload, observed_at=NOW)
     assert context is not None
     days = context["calendar"]["expectedSessionDates"]
     assert len(days) == 17 and "2023-01-13" in days and "2023-01-16" in days and "2023-01-19" in days
-    assert context["listing"]["symbol"] == "510300.SH"
+    assert context["listing"]["symbol"] == "510050.SH"
     assert context["listing"].get("firstTradingDate") is None
 
 
@@ -77,7 +77,7 @@ def test_other_requests_do_not_gain_calendar_scope(change, monkeypatch):
     elif change == "timeframe":
         payload["routeKey"]["timeframe"] = "1m"
     else:
-        payload["routeKey"]["adjustment"] = "hfq"
+        payload["routeKey"]["adjustment"] = "unsupported"
 
     def forbidden(*args):
         raise AssertionError("非研究路径不得使用现行覆盖")

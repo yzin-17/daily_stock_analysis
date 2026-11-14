@@ -47,6 +47,11 @@ def read_basic_dates(adapter, symbol: str):
     return _read({'mode': 'basic-dates', 'symbol': symbol})
 
 
+def read_catalog(day: str):
+    date.fromisoformat(day)
+    return _read({'mode': 'history-catalog', 'day': day})
+
+
 def main():
     from data_provider.baostock_fetcher import BaostockFetcher
     from src.services.thesis_ledger_baostock_daily_status import read_baostock_daily_status
@@ -62,6 +67,9 @@ def main():
                     start=date.fromisoformat(payload['start']), end=date.fromisoformat(payload['end']))
             elif payload['mode'] == 'basic-dates':
                 value = read_baostock_lifecycle(adapter, payload['symbol'])
+            elif payload['mode'] == 'history-catalog':
+                from data_provider.baostock_history_catalog import read_history_catalog
+                value = read_history_catalog(adapter, payload['day'])
             else:
                 raise ValueError('不支持的BaoStock独立查询')
             wire = {'result': value}

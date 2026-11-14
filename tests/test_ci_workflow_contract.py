@@ -57,6 +57,7 @@ def test_data_assets_sdk_and_scope_changes_reach_required_gates():
         "scripts/data-runtime-contract.json": (True, True),
         "patches/longbridge-sdk/native.patch": (False, True),
         "scripts/build_thesis_ledger_longbridge_sdk.py": (True, True),
+        "scripts/sdk-source.json": (True, True),
         "docs/example.md": (False, False),
     }
     for path, expected in cases.items():

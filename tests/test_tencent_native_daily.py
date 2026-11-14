@@ -46,6 +46,8 @@ def test_native_amount_and_volume_are_read_from_upstream_fields(monkeypatch):
     )
     assert requests[0][0] == TENCENT_NATIVE_DAILY_URL
     assert requests[0][1]["param"] == "sh510300,day,2025-06-13,2025-06-30,640,"
+    assert requests[0][1]["_var"] == "kline_day2025"
+    assert requests[0][1]["r"] == "0.8205512681390605"
     assert 0 < requests[0][2] <= 4.5
     assert frame.iloc[0]["volume"] == "12300"
     assert frame.iloc[0]["amount"] == "234500.00"
@@ -97,6 +99,7 @@ def test_exact_etf_hfq_uses_native_key_and_matching_pagination_proof(monkeypatch
     assert requests[0][1] == {
         "_var": "kline_dayhfq2026",
         "param": "sz159516,day,2026-07-09,2026-07-10,640,hfq",
+        "r": "0.8205512681390605",
     }
     assert 0 < requests[0][2] <= 4.5
     assert frame["close"].tolist() == [3.89, 3.62]
@@ -147,10 +150,10 @@ def test_native_hfq_rejects_missing_amount(monkeypatch):
         )
 
 
-@pytest.mark.parametrize("asset_type", [None, "STOCK", "MUTUAL_FUND"])
-def test_exact_tencent_hfq_is_restricted_to_etf_routes(monkeypatch, asset_type):
+@pytest.mark.parametrize("asset_type", [None, "INDEX", "MUTUAL_FUND"])
+def test_exact_tencent_hfq_requires_declared_stock_or_etf_route(monkeypatch, asset_type):
     with patch("data_provider.tencent_native_daily.requests.get") as request:
-        with pytest.raises(DataFetchError, match="only for ETF"):
+        with pytest.raises(DataFetchError, match="STOCK or ETF"):
             TencentFetcher().get_daily_data_for_source(
                 "159516", "tencent", start_date="2026-07-09", end_date="2026-07-10",
                 adjustment="hfq", asset_type=asset_type,

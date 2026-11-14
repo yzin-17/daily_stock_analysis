@@ -612,15 +612,7 @@ class BaseFetcher(ABC):
     
     @staticmethod
     def random_sleep(min_seconds: float = 1.0, max_seconds: float = 3.0) -> None:
-        """
-        智能随机休眠（Jitter）
-        
-        防封禁策略：模拟人类行为的随机延迟
-        在请求之间加入不规则的等待时间
-        """
-        sleep_time = random.uniform(min_seconds, max_seconds)
-        logger.debug(f"随机休眠 {sleep_time:.2f} 秒...")
-        time.sleep(sleep_time)
+        """兼容旧调用入口；频次由上游或 SDK 处理，不主动等待。"""
 
 
 class DataFetcherManager:

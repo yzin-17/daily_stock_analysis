@@ -11,6 +11,7 @@ from src.services.thesis_ledger_news_capability import news_capability_contract
 from src.services.thesis_ledger_news_contract_v1 import NewsRoute
 from src.services.thesis_ledger_news_service import NEWS_UPSTREAMS, search_news
 from src.services.thesis_ledger_news_sources import news_settings, PROVIDERS
+from src.services.thesis_ledger_public_search import SEARCH_CONTRACT, read_search
 
 CONTRACT = news_capability_contract()
 ADAPTER_REVISION = "dsa-news-query-v1"
@@ -98,7 +99,7 @@ def read(provider_id, request, context):
 def manifest(provider_id):
     from src.services.provider_manifest import build_provider_manifest
     value = build_provider_manifest(
-        provider_id, f"{provider_id} 新闻检索", {"NEWS_SEARCH": ("STOCK", "ETF", "INDEX", "MUTUAL_FUND")},
+        provider_id, f"{provider_id} 新闻检索", {"NEWS_SEARCH": ("STOCK", "ETF", "INDEX", "MUTUAL_FUND"), "WEB_SEARCH": ("STOCK",)},
         requires_credential=True, upstream_sources=((NEWS_UPSTREAMS[provider_id], f"{provider_id} 搜索"),),
         markets=("CN", "HK", "US"), configuration_mode="dsa_environment",
     )
@@ -116,7 +117,10 @@ def definition(provider_id):
         tuple(QueryBinding(CONTRACT, ExactKey(market, asset, "NEWS_SEARCH"), NEWS_UPSTREAMS[provider_id],
                            ADAPTER_REVISION, SOURCE_REVISION, partial(read, provider_id),
                            gated=True, admission_required=True)
-              for market, asset in MARKET_ASSETS),
+              for market, asset in MARKET_ASSETS) + tuple(QueryBinding(
+                  SEARCH_CONTRACT, ExactKey(market, "STOCK", "WEB_SEARCH"), NEWS_UPSTREAMS[provider_id],
+                  "dsa-public-search-v1", "selected-public-search-v1", partial(read_search, provider_id),
+                  gated=True, admission_required=True) for market in ("CN", "HK", "US")),
         credentials=(("search", (credential_field,)),), dependency_modules=dependencies,
         factory_scope="provider", require_credential_revision_for_cache=True,
         environment_credential_policy=EnvironmentCredentialPolicy(partial(environment_credentials, provider_id)),

@@ -17,10 +17,10 @@ VERSION = "rule-source-monitor-v1"
 
 
 class RuleMonitorRuntime:
-    def __init__(self, store, *, registry=sources, fetch=fetch_document):
+    def __init__(self, store, *, registry=sources, fetch=None):
         self.store = store
         self.observations = RuleMonitorObservations(self.store)
-        self.registry, self.fetch = registry, fetch
+        self.registry, self.fetch = registry, fetch or fetch_document
         self.halt, self.wake = threading.Event(), threading.Event()
         self.thread = None
 
@@ -41,7 +41,7 @@ class RuleMonitorRuntime:
         self.wake.set()
         return result
 
-    async def _execute(self, job, owner):
+    async def _execute(self, job, owner, budget_seconds=300):
         registry = self.registry()
         selected = [registry[identity] for identity in job["sourceIds"]]
         documents = {document["url"]: document["title"] for source in selected for document in source.documents}
@@ -49,9 +49,11 @@ class RuleMonitorRuntime:
             raise ValueError("监测文档超过预算")
         for source in selected:
             if not self.observations.record(job["id"], owner, kind="pack", identity=source.identity,
-                    name=source.name, digest=source.digest, raw_digest=source.digest, dataset=source.dataset):
+                    name=source.name, digest=source.digest, raw_digest=source.digest, dataset=source.dataset,
+                    snapshot=source.snapshot):
                 return
-        deadline = time.monotonic() + 300
+        deadline = time.monotonic() + min(300, budget_seconds)
+        captured = {}
         for url, title in documents.items():
             if self.halt.is_set():
                 self.store.finish(job["id"], owner, "monitor_stopped", interrupted=True)
@@ -67,9 +69,26 @@ class RuleMonitorRuntime:
                     error = failure.code
             if not self.observations.record(job["id"], owner, kind="document", identity=url, name=title,
                     digest=result["contentHash"] if result else None,
-                    raw_digest=result["rawHash"] if result else None, error=error):
+                    raw_digest=result["rawHash"] if result else None, error=error,
+                    snapshot=result.get("snapshot") if result else None):
                 return
-        self.store.finish(job["id"], owner)
+            captured[url] = result
+        return captured if self.store.finish(job["id"], owner) else None
+
+    def inspect_once(self, identity, *, budget_seconds=10):
+        self.validate_sources([identity])
+        owner, job_id = str(uuid.uuid4()), str(uuid.uuid4())
+        job = self.store.start_inline(job_id, owner, [identity])
+        if job is None:
+            raise ValueError('monitor_busy')
+        try:
+            captured = asyncio.run(self._execute(job, owner, budget_seconds))
+            if self.store.job(job_id)['status'] != 'succeeded' or captured is None:
+                raise ValueError('rule_refresh_incomplete')
+            return job_id, captured
+        except BaseException:
+            self.store.finish(job_id, owner, 'rule_refresh_failed')
+            raise
 
     def run_pending_once(self):
         owner = str(uuid.uuid4())

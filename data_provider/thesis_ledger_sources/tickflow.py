@@ -1,12 +1,12 @@
-"""TickFlow 既有三项股票日线；工厂及精确 SDK 参数由来源拥有。"""
+"""TickFlow 统一来源；免凭证日线和账号功能共用精确目录。"""
 
-import pandas as pd
-
-from data_provider.exact_daily_contract import ExactDailyError, normalize_exact_daily
-from src.services.thesis_ledger_capability_contracts import CapabilityContractError, DailyRead, SourceProbePolicy, EnvironmentCredentialPolicy
+from dataclasses import replace
+from data_provider.thesis_ledger_sources import tickflow_free_history as history
+from data_provider.tickflow_account_access import probe_account_access, requires_credential
+from src.services.thesis_ledger_capability_contracts import CapabilityContractError, SourceProbePolicy, EnvironmentCredentialPolicy
 from src.services.thesis_ledger_capability_registry import DailyBinding, QuoteBinding, ExactKey, SourceDefinition
 
-PROTOCOL = "dsa-tickflow-exact-daily-single-response-v1"
+PROTOCOL = "dsa-tickflow-unified-daily-v2"
 
 
 def environment_credentials():
@@ -27,9 +27,9 @@ def probe_quote(context):
 
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
-    return build_provider_manifest("tickflow", "TickFlow", {
+    return {**build_provider_manifest("tickflow", "TickFlow", {
         "MINUTE_BAR": ("STOCK", "ETF"), "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK",),
-    }, requires_credential=True, markets=("CN",), configuration_mode="dsa_environment")
+    }, requires_credential=False, markets=("CN",), configuration_mode="dsa_environment"), "accountAccessSupported": True}
 
 
 def factory(context):
@@ -47,35 +47,8 @@ def factory(context):
     )
 
 
-def read_frame(adapter, request, *, source="tickflow", validate_raw=None):
-    code, exchange = request.symbol.split(".", 1)
-    if exchange not in {"SH", "SZ", "BJ"} or len(code) != 6 or not code.isdigit():
-        raise ExactDailyError("invalid_request", "中国内地日线需要完整证券代码")
-    client = adapter._get_client()
-    if client is None:
-        raise ExactDailyError("credential_missing", "TickFlow API Key 未配置")
-    payload = client.klines.get(
-        request.symbol, period="1d", count=adapter._daily_kline_count(request.start, request.end),
-        start_time=adapter._date_to_ms(request.start), end_time=adapter._date_to_ms(request.end, end_of_day=True),
-        adjust={"none": "none", "qfq": "forward", "hfq": "backward"}[request.adjustment], as_dataframe=False,
-    )
-    if validate_raw is not None:
-        validate_raw(payload, request, adapter._daily_kline_count(request.start, request.end))
-    raw = pd.DataFrame(payload)
-    if "date" not in raw.columns:
-        timestamp = next((field for field in ("timestamp", "time", "ts") if field in raw.columns), None)
-        if timestamp is None:
-            raise ExactDailyError("invalid_response", "TickFlow 日线缺少日期")
-        return normalize_exact_daily(raw.rename(columns={timestamp: "date"}), start=request.start,
-                                     end=request.end, source=source, date_unit="ms")
-    return normalize_exact_daily(raw, start=request.start, end=request.end, source=source)
-
-
 def daily(query, context):
-    try:
-        return DailyRead(read_frame(context.adapter, query), 1)
-    except ExactDailyError as error:
-        raise CapabilityContractError(error.code, str(error)) from None
+    return history.daily(query, replace(context, adapter=history.factory(context)), upstream_source="tickflow")
 
 
 def quote(query, context):
@@ -108,12 +81,16 @@ INTRADAY_BINDINGS = intraday_bindings(read_minute, 'tickflow')
 
 SOURCE = SourceDefinition("tickflow", manifest, factory, tuple(
     DailyBinding(ExactKey("CN", "STOCK", "DAILY_BAR", adjustment), "tickflow",
-                 f"dsa-v3-cn-stock-tickflow-{adjustment}-exact-daily-v1", PROTOCOL, PROTOCOL,
-                 None, daily, gated=True)
+                 f"dsa-v3-cn-stock-tickflow-{adjustment}-exact-daily-v2", PROTOCOL, PROTOCOL,
+                 history.MAXIMUM_ROWS, daily, research_calendar_eligible=history.research_calendar_eligible)
     for adjustment in ("none", "qfq", "hfq")
 ) + INTRADAY_BINDINGS + (QuoteBinding(ExactKey("CN", "STOCK", "REALTIME_QUOTE"), "tickflow",
     "tickflow-cn-stock-exact-quote-v2", "tickflow-direct-quote-v1", quote),),
     ("data_provider.tickflow_fetcher", "TickFlowFetcher"),
     credentials=(("api_key", ("apiKey",)),), dependency_modules=("tickflow",), factory_scope="provider",
     probe_policy=SourceProbePolicy(probe_quote, capabilities=('REALTIME_QUOTE',), adapter_required=True),
+    account_access_probe=probe_account_access,
+    route_requires_credential=requires_credential,
+    account_access_max_requests=14,
+    upstream_groups=(('tickflow', 'tickflow'), ('tickflow-free-history', 'tickflow-free-history')),
     environment_credential_policy=EnvironmentCredentialPolicy(environment_credentials))

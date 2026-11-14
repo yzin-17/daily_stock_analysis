@@ -23,10 +23,11 @@ def key(market='HK', asset='STOCK', adjustment='qfq'):
 @pytest.mark.parametrize('symbol,market,currency', [
     ('00700.HK', 'HK', 'HKD'), ('AAPL.US', 'US', 'USD'),
 ])
-def test_observed_stock_qfq_has_current_calendar_and_unknown_historical_units(symbol, market, currency):
-    route = key(market)
+@pytest.mark.parametrize('adjustment', ['none', 'qfq', 'hfq'])
+def test_observed_stock_has_current_calendar_and_unknown_historical_units(symbol, market, currency, adjustment):
+    route = key(market, adjustment=adjustment)
     validate_instrument_request(symbol, market, 'STOCK', lambda value: value,
-                                identity_only=True, adjustment='qfq',
+                                identity_only=True, adjustment=adjustment,
                                 bar_provider_id='futu', bar_upstream_source='futu')
     context = research_market_coverage_context({
         'symbol': symbol, 'routeKey': route, 'routeTarget': TARGET,
@@ -49,11 +50,15 @@ def test_observed_stock_qfq_has_current_calendar_and_unknown_historical_units(sy
 
 @pytest.mark.parametrize('symbol,market,asset,adjustment', [
     ('00147.HK', 'HK', 'STOCK', 'qfq'),
-    ('00700.HK', 'HK', 'STOCK', 'none'),
-    ('00700.HK', 'HK', 'STOCK', 'hfq'),
+    ('00147.HK', 'HK', 'STOCK', 'hfq'),
+    ('00147.HK', 'HK', 'STOCK', 'none'),
+    ('02800.HK', 'HK', 'ETF', 'none'),
+    ('00700.HK', 'US', 'STOCK', 'none'),
     ('02800.HK', 'HK', 'ETF', 'qfq'),
     ('SPY.US', 'US', 'ETF', 'qfq'),
+    ('SPY.US', 'US', 'ETF', 'hfq'),
     ('00700.HK', 'US', 'STOCK', 'qfq'),
+    ('00700.HK', 'US', 'STOCK', 'hfq'),
 ])
 def test_other_scope_is_not_qualified_by_observed_prices(symbol, market, asset, adjustment):
     with pytest.raises(DependencyFactError):
@@ -62,25 +67,38 @@ def test_other_scope_is_not_qualified_by_observed_prices(symbol, market, asset, 
                                     bar_provider_id='futu', bar_upstream_source='futu')
 
 
-def test_observation_cannot_be_used_before_its_source_clock():
+@pytest.mark.parametrize('adjustment', ['none', 'qfq', 'hfq'])
+def test_observation_cannot_be_used_before_its_source_clock(adjustment):
     before = datetime(2026, 10, 16, 9, 45, tzinfo=timezone.utc)
     with pytest.raises(DependencyFactError):
         instrument_facts_response(
             '00700.HK', before, '2026-08-22', '2026-10-08',
             '2026-09-15', '2026-10-08', [], instrument_type='STOCK', market='HK',
-            identity_only=True, route_key=key(), route_target=TARGET,
+            identity_only=True, route_key=key(adjustment=adjustment), route_target=TARGET,
         )
 
 
-def test_calendar_opt_in_does_not_apply_to_other_price_bases_or_assets():
-    for route in [key(adjustment='none'), key(adjustment='hfq'), key(asset='ETF')]:
+def test_calendar_opt_in_does_not_apply_to_other_assets():
+    for route in [key(asset='ETF', adjustment=adjustment) for adjustment in ('none', 'qfq', 'hfq')]:
         binding = CAPABILITY_SOURCES.resolve(route, TARGET)
         assert binding.research_calendar_eligible is None
         assert binding.research_instrument_policy is None
 
 
+@pytest.mark.parametrize('symbol,market', [('00700.HK', 'HK'), ('AAPL.US', 'US')])
+def test_raw_reference_does_not_grant_strict_coverage_or_actual_share_execution(symbol, market):
+    request = {'symbol': symbol, 'routeKey': key(market, adjustment='none'),
+               'routeTarget': TARGET, 'start': '2026-08-22', 'end': '2026-10-08'}
+    assert research_market_coverage_context(request, observed_at=AFTER_OBSERVATION) is None
+    with pytest.raises(DependencyFactError):
+        validate_instrument_request(symbol, market, 'STOCK', lambda value: value,
+                                    identity_only=False, adjustment='none',
+                                    bar_provider_id='futu', bar_upstream_source='futu')
+
+
+@pytest.mark.parametrize('adjustment', ['none', 'qfq', 'hfq'])
 @pytest.mark.parametrize('mutation', ['currency', 'timezone', 'symbol', 'asset', 'exchange', 'clock', 'receipt', 'duplicate'])
-def test_unverifiable_or_conflicting_identity_does_not_qualify(monkeypatch, tmp_path, mutation):
+def test_unverifiable_or_conflicting_identity_does_not_qualify(monkeypatch, tmp_path, mutation, adjustment):
     from data_provider import futu_research_identity as identity
 
     pack = json.loads(identity.DATA_PATH.read_text())
@@ -109,5 +127,5 @@ def test_unverifiable_or_conflicting_identity_does_not_qualify(monkeypatch, tmp_
         instrument_facts_response(
             '00700.HK', AFTER_OBSERVATION, '2026-08-22', '2026-10-08',
             '2026-09-15', '2026-10-08', [], instrument_type='STOCK', market='HK',
-            identity_only=True, route_key=key(), route_target=TARGET,
+            identity_only=True, route_key=key(adjustment=adjustment), route_target=TARGET,
         )

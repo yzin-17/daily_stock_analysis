@@ -11,7 +11,7 @@ from src.services.thesis_ledger_capability_contracts import CapabilityContractEr
 from src.services.thesis_ledger_capability_registry import DailyBinding, QuoteBinding, QueryBinding, EventBinding, ExactKey, SourceDefinition
 from data_provider.tushare_cash_capability import CONTRACT as CASH_CONTRACT, read_cash, revisions as cash_revisions, wire_project as cash_wire, REVISION_FACTS as CASH_REVISIONS, current_admission as cash_admission
 from src.services.thesis_ledger_chip_summary_contract_v1 import CONTRACT as CHIP_CONTRACT
-from data_provider.tushare_account_access import probe_account_access
+from data_provider.tushare_account_access import probe_account_access, account_access_group
 from data_provider.tushare_account_level import parse_account_level, excluded_access
 from src.services.thesis_ledger_account_access_contract import AccountAccessLevelPolicy
 
@@ -55,7 +55,7 @@ def manifest():
     from src.services.provider_manifest import build_provider_manifest
     return {**build_provider_manifest("tushare", "Tushare Pro", {
         "MINUTE_BAR": ("STOCK", "ETF"), "REALTIME_QUOTE": ("STOCK",), "DAILY_BAR": ("STOCK", "ETF"), "CHIP_SUMMARY": ("STOCK",),
-    }, requires_credential=True, markets=("CN", "HK"), configuration_mode="dsa_environment"), "accountAccessSupported": True}
+    }, requires_credential=True, markets=("CN", "HK"), configuration_mode="dsa_environment"), "accountAccessSupported": True, "accountLevelSupported": True}
 
 
 def factory(context):
@@ -169,6 +169,9 @@ SOURCE = SourceDefinition("tushare", manifest, factory, tuple(
     probe_policy=SourceProbePolicy(
         probe_quote, capabilities=('REALTIME_QUOTE',), adapter_required=True),
     account_access_probe=probe_account_access,
+    account_access_group=account_access_group,
+    upstream_groups=(('tushare', 'tushare'),),
+    account_access_cooldown_seconds=3600,
     account_access_snapshot=account_snapshot,
     account_access_level=AccountAccessLevelPolicy(parse_account_level, excluded_access, "tushare-account-level-v1"),
     environment_credential_policy=EnvironmentCredentialPolicy(environment_credentials, snapshot_values=environment_snapshot))

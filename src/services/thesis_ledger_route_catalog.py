@@ -10,6 +10,8 @@ from src.services.thesis_ledger_provider_dependencies import provider_dependency
 from src.services.thesis_ledger_bar_query_semantics import bar_query_semantics
 from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from src.services.thesis_ledger_event_catalog_v3 import catalog_event_admissions
+from src.services.thesis_ledger_route_credentials import route_requires_credential
+from src.services.thesis_ledger_source_recommendation import source_recommendation
 
 
 def build_market_route_catalog_v3(provider_registry: Any, is_current: Callable[..., bool],
@@ -52,6 +54,7 @@ def build_market_route_catalog_v3(provider_registry: Any, is_current: Callable[.
 
         provider_id = target["providerId"]
         provider = providers.get(provider_id)
+        requires_credential = route_requires_credential(key, target, provider) if provider else None
         if gated and provider is None:
             continue
         state = "not_admitted"
@@ -62,7 +65,7 @@ def build_market_route_catalog_v3(provider_registry: Any, is_current: Callable[.
             integrity = "partial"
         elif provider.get("tombstone") is not None:
             state = "not_admitted"
-        elif provider.get("requiresCredential") is True and provider.get("credentialConfigured") is False:
+        elif requires_credential is True and provider.get("credentialConfigured") is False:
             state = "credential_missing"
         elif provider.get("enabled") is False:
             state = "not_admitted"
@@ -71,10 +74,10 @@ def build_market_route_catalog_v3(provider_registry: Any, is_current: Callable[.
         elif not provider_dependency_ready(provider_id, key, target):
             state = "dependency_missing"
         elif provider.get("configured") is False:
-            state = "credential_missing" if provider.get("requiresCredential") else "not_admitted"
+            state = "credential_missing" if requires_credential else "not_admitted"
         elif provider.get("configured") is not True:
             integrity = "partial"
-        elif provider.get("requiresCredential") is True:
+        elif requires_credential is True:
             credential_configured = provider.get("credentialConfigured")
             if not isinstance(credential_configured, bool):
                 integrity = "partial"
@@ -86,7 +89,7 @@ def build_market_route_catalog_v3(provider_registry: Any, is_current: Callable[.
                 )
             else:
                 state = "credential_missing"
-        elif provider.get("requiresCredential") is False:
+        elif requires_credential is False:
             if is_current(key, target, provider):
                 # Ready means an exact, current admission exists for its
                 # recorded scope. Data V3 checks that scope on every request.
@@ -99,13 +102,20 @@ def build_market_route_catalog_v3(provider_registry: Any, is_current: Callable[.
         semantics = bar_query_semantics(key, target)
         binding = CAPABILITY_SOURCES.resolve(key, target)
         support = getattr(binding, "query_support", None)
-        access = account_access(key, target) if account_access is not None else None
+        access = account_access(key, target) if account_access is not None and provider is not None else None
+        recommendation = source_recommendation(CAPABILITY_SOURCES, key, target)
         entries.append({"key": key, "target": target, "state": state,
+                        **({'credentialRequired': requires_credential} if isinstance(requires_credential, bool)
+                           and CAPABILITY_SOURCES.source(provider_id).route_requires_credential is not None else {}),
+                        **({'recommendation': recommendation} if recommendation else {}),
                         **({"accountAccess": access} if access is not None else {}),
                         **({"querySupport": support.model_dump()} if support is not None else {}),
                         **({"barQuery": semantics} if semantics is not None else {})})
 
     admissions = catalog_event_admissions(entries, current_admission)
+    for entry in entries:
+        if any(record['routeKey'] == entry['key'] and record['target'] == entry['target'] for record in admissions):
+            entry['recommendation'] = source_recommendation(CAPABILITY_SOURCES, entry['key'], entry['target'], read_evidence=True)
     revision_state = {"integrity": integrity, "entries": entries}
     if admissions:
         revision_state['admissions'] = admissions
@@ -132,7 +142,19 @@ def build_market_route_catalog_v3(provider_registry: Any, is_current: Callable[.
 
 def build_runtime_route_catalog(runtime, *, event_admissions=False):
     from src.services.thesis_ledger_account_access import account_access_for
-    return build_market_route_catalog_v3(
+    catalog = build_market_route_catalog_v3(
         runtime.store.provider_registry(), runtime._catalog_market_v3_admission_is_current,
         current_admission=runtime._current_market_v3_admission, event_admissions=event_admissions,
         account_access=lambda key, target: account_access_for(runtime, key, target))
+    if callable(getattr(runtime.store, '_connect', None)):
+        from src.services.thesis_ledger_capability_verification import VerificationCatalog
+        verification = VerificationCatalog(runtime.store)
+        for entry in catalog.get('catalog', catalog)['entries']:
+            entry['verification'] = verification.read(entry['key'], entry['target'])
+            verified = entry['verification']
+            access = entry.get('accountAccess')
+            if (verified['state'] == 'verified' and access is not None
+                    and access.get('state') == 'unknown'):
+                entry['accountAccess'] = {'state': 'allowed', 'attempted': True, 'persisted': True,
+                                         'configVersion': verified['configVersion'], 'checkedAt': verified['verifiedAt']}
+    return catalog

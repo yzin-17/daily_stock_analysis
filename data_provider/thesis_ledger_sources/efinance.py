@@ -3,6 +3,7 @@
 from data_provider.exact_daily_contract import ExactDailyError, normalize_exact_daily
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError, DailyRead, provider_symbol_for_contract
 from src.services.thesis_ledger_capability_registry import DailyBinding, QuoteBinding, QueryBinding, ExactKey, SourceDefinition
+from src.services.thesis_ledger_dependency_facts import cn_research_calendar_eligible
 from src.services.thesis_ledger_fund_nav_contract_v1 import CONTRACT as NAV_CONTRACT
 from src.services.thesis_ledger_fund_nav_history_contract_v1 import CONTRACT as NAV_HISTORY_CONTRACT
 
@@ -55,7 +56,9 @@ def quote(query, context):
             value = context.adapter._get_realtime_snapshot_quote(symbol)
     except TimeoutError:
         raise CapabilityContractError("transient_failure", "efinance 单标报价超时") from None
-    except Exception:
+    except Exception as error:
+        from data_provider.provider_restrictions import raise_source_restriction
+        raise_source_restriction(error)
         raise CapabilityContractError("upstream_failure", "efinance 单标报价读取失败") from None
     if value is None:
         raise CapabilityContractError("not_covered", "efinance 单标快照未覆盖目标")
@@ -81,7 +84,8 @@ INTRADAY_BINDINGS = intraday_bindings(read_native_intraday, 'eastmoney')
 SOURCE = SourceDefinition("efinance", manifest, factory, tuple(
     DailyBinding(ExactKey("CN", asset, "DAILY_BAR", adjustment), "eastmoney",
                  f"dsa-v3-cn-{asset.lower()}-efinance-{adjustment}-exact-daily-v1",
-                 PROTOCOL, PROTOCOL, None, daily, gated=True)
+                 PROTOCOL, PROTOCOL, None, daily, gated=True,
+                 research_calendar_eligible=cn_research_calendar_eligible)
     for asset, adjustment in (("STOCK", "none"), ("STOCK", "qfq"), ("STOCK", "hfq"),
                               ("ETF", "none"), ("ETF", "qfq"), ("ETF", "hfq"))
 ) + INTRADAY_BINDINGS + (
@@ -94,4 +98,5 @@ SOURCE = SourceDefinition("efinance", manifest, factory, tuple(
     QueryBinding(NAV_HISTORY_CONTRACT, ExactKey('CN', 'MUTUAL_FUND', 'FUND_NAV_HISTORY'), 'eastmoney',
         'efinance-fund-nav-raw-v1', 'eastmoney-fund-nav-raw-v1', history_nav, admission_required=False),
 ), ("data_provider.efinance_fetcher", "EfinanceFetcher"), dependency_modules=("efinance",),
+    upstream_groups=(('eastmoney', 'eastmoney'),),
     quote_source_aliases=(('efinance', 'eastmoney'), ('eastmoney', 'eastmoney')))

@@ -38,7 +38,8 @@ def market_v3_current_route_revisions(
     if current_data_adapter_revisions(key, target) is not None and not admitted_query:
         if provider_manifest.get("providerId") != target.get("providerId"):
             return None
-        if provider_manifest.get("requiresCredential") is not False:
+        from src.services.thesis_ledger_route_credentials import route_requires_credential
+        if route_requires_credential(key, target, provider_manifest) is not False:
             return None
         return current_data_adapter_revisions(key, target)
     if event_adapter_matches(key, target):
@@ -72,7 +73,8 @@ def market_v3_current_route_revisions(
     ):
         return None
 
-    requires_credential = provider_manifest.get("requiresCredential")
+    from src.services.thesis_ledger_route_credentials import route_requires_credential
+    requires_credential = route_requires_credential(key, target, provider_manifest)
     if requires_credential is False:
         credential_revision = MARKET_V3_CREDENTIAL_NOT_REQUIRED_REVISION
     elif requires_credential is True:

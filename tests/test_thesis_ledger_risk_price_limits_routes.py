@@ -13,7 +13,7 @@ def test_risk_catalog_policy_and_authenticated_production_read(configured_client
     client, _runtime, store = configured_client
     catalog = client.get("/api/v3/thesis-ledger/control/routes/capabilities?contractVersion=3",
                          headers=routes.CONTROL_HEADERS).json()
-    assert {"key": ROUTE_KEY, "target": TARGET, "state": "ready"} in catalog["entries"]
+    assert {"key": ROUTE_KEY, "target": TARGET, "state": "ready", "verification": {"state": "unverified"}} in catalog["entries"]
     policy = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "risk-policy",
               "revision": 1, "enabled": True, "routes": [{"key": ROUTE_KEY, "targets": [TARGET]}]}
     saved = client.post("/api/v3/thesis-ledger/control/policies/apply", json=policy,

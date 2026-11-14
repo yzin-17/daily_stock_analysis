@@ -17,7 +17,6 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 from src.services.thesis_ledger_factory_execution import execute_source_factory
 from typing import Any, Callable, Mapping
@@ -46,7 +45,7 @@ from src.services.thesis_ledger_market_v3_pagination import MarketPaginationErro
 from src.services.thesis_ledger_catalog_manifest_v3 import catalog_manifest_matches_v3
 from src.services.thesis_ledger_event_v3_adapters import event_admission_reader
 from src.services.thesis_ledger_current_data_route import CurrentDataRouteError, current_data_route_key, select_current_data_targets
-from src.services.thesis_ledger_quote_dispatch import realtime_quote as dispatch_realtime_quote
+from src.services.thesis_ledger_quote_dispatch import realtime_quote as dispatch_realtime_quote, quote_request_operation
 from src.services.thesis_ledger_local_rules import (
     LOCAL_RULE_CAPABILITIES, LOCAL_RULE_ADAPTER_IMPORTS,
     local_rule_source_ready,
@@ -111,37 +110,8 @@ def _log_quote_event(
 
 
 def classify_provider_exception(error: Exception) -> str:
-    """Map adapter failures to stable categories without returning raw details."""
-
-    status_code = getattr(error, "status_code", None)
-    if status_code is not None:
-        status_code = int(status_code)
-        if status_code == 429:
-            return "rate_limited"
-        if status_code == 401:
-            return "authentication_failed"
-        if status_code == 403:
-            return "permission_denied"
-        if status_code >= 500:
-            return "upstream_failure"
-    error_kind = str(getattr(error, "error_kind", "")).lower()
-    if error_kind in {"rate_limited", "authentication_failed", "permission_denied"}:
-        return error_kind
-    if error_kind == "timeout":
-        return "network_failure"
-
-    text = str(error).lower()
-    if "429" in text or "rate limit" in text or "too many request" in text or "quota" in text:
-        return "rate_limited"
-    if "401" in text or "unauthor" in text or "invalid api key" in text or "invalid token" in text:
-        return "authentication_failed"
-    if "403" in text or "forbidden" in text or "permission" in text or "access denied" in text:
-        return "permission_denied"
-    if isinstance(error, (TimeoutError, ConnectionError, OSError)):
-        return "network_failure"
-    if any(term in text for term in ("timeout", "timed out", "connection reset", "dns")):
-        return "network_failure"
-    return "upstream_failure"
+    from .thesis_ledger_provider_errors import classify_provider_failure
+    return classify_provider_failure(error)
 
 
 class ProviderCallError(Exception):
@@ -354,37 +324,21 @@ class _CircuitState:
 
 
 class _ScopedCircuit:
-    """Maintain circuit state independently for each consumer route key."""
+    """按 consumer 路由键独立累计失败次数，仅用于观测展示。
+
+    这里不再提供“是否放行”的判断：来源是否可用只能由本次请求的真实调用
+    结果决定，不能因为历史失败而跳过主来源。
+    """
 
     def __init__(self) -> None:
         """Initialize the in-memory circuit state table."""
         self._states: dict[str, _CircuitState] = {}
         self._lock = threading.RLock()
 
-    def allow(self, key: str, now: float) -> bool:
-        """Return whether the route may execute at the supplied monotonic time."""
-        with self._lock:
-            state = self._states.setdefault(key, _CircuitState())
-            if state.open_until <= now:
-                if state.open_until > 0:
-                    if state.half_open:
-                        return False
-                    state.half_open = True
-                return True
-            return False
-
     def success(self, key: str) -> None:
         """Reset a route after a successful Provider call."""
         with self._lock:
             self._states[key] = _CircuitState()
-
-    def hydrate_open(self, key: str, now: float, remaining_seconds: float) -> None:
-        """Restore an externally persisted open circuit with remaining TTL."""
-        with self._lock:
-            state = self._states.setdefault(key, _CircuitState())
-            state.failures = max(state.failures, 3)
-            state.open_until = max(state.open_until, now + max(0.0, remaining_seconds))
-            state.half_open = False
 
     def failure(self, key: str, now: float) -> tuple[str, int]:
         """Record a failure and return the new circuit state and count."""
@@ -663,39 +617,9 @@ class ThesisLedgerProviderRuntime:
             if route_index > 0:
                 fallback_used = True
             key = f"thesis-ledger:{provider_id}:{capability}:{instrument_type}:{upstream_source}"
-            now = self.clock()
-            persisted_health = self.store.health(
-                provider_id,
-                capability,
-                instrument_type,
-                upstream_source=upstream_source,
-            )
-            if persisted_health and persisted_health.get("circuit") == "open":
-                try:
-                    checked_at = datetime.fromisoformat(
-                        str(persisted_health["checked_at"]).replace("Z", "+00:00")
-                    )
-                    elapsed = (datetime.now(timezone.utc) - checked_at).total_seconds()
-                    if elapsed < 60:
-                        self.circuit.hydrate_open(key, now, 60 - max(0.0, elapsed))
-                except (KeyError, TypeError, ValueError):
-                    pass
-            if not self.circuit.allow(key, now):
-                last_error = ProviderCallError("circuit_open", "Provider 熔断已打开")
-                if quote_request:
-                    _log_quote_event(
-                        stage="provider-qualification",
-                        request_id=request_id,
-                        symbol=logged_symbol,
-                        provider_symbol=budget_symbol,
-                        instrument_type=instrument_type,
-                        status="rejected",
-                        duration_ms=(time.monotonic() - quote_started) * 1000,
-                        provider=provider_id,
-                        error_code=last_error.code,
-                        providers=providers,
-                    )
-                continue
+            # 每次请求都按配置顺序真实调用每个候选来源：主来源先打，失败才落到
+            # 后备来源。历史健康与熔断状态只写不读，不能用来跳过主来源，否则
+            # 一次瞬时失败就会让主来源永久出局。
             quote_guard = None
             guard_policy = getattr(CAPABILITY_SOURCES.source(provider_id), 'quote_guard_policy', None) if quote_request else None
             if guard_policy is not None:
@@ -704,41 +628,6 @@ class ThesisLedgerProviderRuntime:
                 if quote_guard is None:
                     last_error = ProviderCallError("not_admitted", guard_policy.rejected_message)
                     continue
-            if budgeted_quote:
-                budget = self.store.claim_provider_request_budget(
-                    provider_id,
-                    capability,
-                    instrument_type,
-                    str(budget_symbol),
-                    upstream_source=upstream_source,
-                    request_id=request_id,
-                )
-                if not budget["allowed"]:
-                    last_error = ProviderCallError(
-                        "request_budget_cooldown",
-                        "该 Provider 的 ETF 单标请求仍在冷却期",
-                        diagnostics={
-                            "provider": provider_id,
-                            "requestKey": budget["requestKey"],
-                            "remainingSeconds": budget["remainingSeconds"],
-                            "budgetSeconds": 600,
-                        },
-                    )
-                    if quote_request:
-                        _log_quote_event(
-                            stage="provider-qualification",
-                            request_id=request_id,
-                            symbol=logged_symbol,
-                            provider_symbol=budget_symbol,
-                            instrument_type=instrument_type,
-                            status="rejected",
-                            duration_ms=(time.monotonic() - quote_started) * 1000,
-                            provider=provider_id,
-                            error_code=last_error.code,
-                            providers=providers,
-                        )
-                    continue
-            # An ETF reservation permits only one upstream call.
             attempts = 1
             for attempt in range(attempts):
                 started = self.clock()
@@ -876,7 +765,7 @@ class ThesisLedgerProviderRuntime:
                         capability,
                         code,
                     )
-                if not last_error.retryable or attempt + 1 >= attempts:
+                if last_error.code in {'rate_limited', 'rate_limited_global', 'quota_unavailable'} or not last_error.retryable or attempt + 1 >= attempts:
                     break
             if last_error and last_error.retryable:
                 circuit_state, failures = self.circuit.failure(key, self.clock())
@@ -904,12 +793,10 @@ class ThesisLedgerProviderRuntime:
                 )
         if last_error is None:
             raise ProviderCallError("upstream_unavailable", "Provider 暂时不可用")
-        if last_error.code == "circuit_open" and not attempted_providers:
-            raise NoEligibleProviderError(capability, instrument_type)
         if not budgeted_quote:
             exact_bar = (capability in {"DAILY_BAR", "MINUTE_BAR"} and isinstance(effective_policy_override, Mapping)
                          and effective_policy_override.get("contractVersion") == 3)
-            if not exact_bar and capability not in LOCAL_RULE_CAPABILITIES and last_error.code in {"not_covered", "unsupported", "circuit_open"}:
+            if not exact_bar and capability not in LOCAL_RULE_CAPABILITIES and last_error.code in {"not_covered", "unsupported"}:
                 raise ProviderCallError(
                     "upstream_unavailable",
                     "没有 Provider 返回可用数据",
@@ -927,7 +814,7 @@ class ThesisLedgerProviderRuntime:
             ],
             **last_error.diagnostics,
         }
-        if last_error.code in {"not_covered", "unsupported", "circuit_open"}:
+        if last_error.code in {"not_covered", "unsupported"}:
             raise ProviderCallError(
                 "upstream_unavailable",
                 "没有 Provider 返回可用数据",
@@ -966,15 +853,7 @@ class ThesisLedgerProviderRuntime:
         if capability == "REALTIME_QUOTE":
             provider_symbol = provider_symbol_for_contract(request.symbol)
 
-            def operation(provider_id: str, adapter: Any, upstream_source: str | None = None) -> Any:
-                value = self._realtime_quote(
-                    adapter, provider_id,
-                    request.symbol,
-                    instrument_type, upstream_source,
-                )
-                if value is None:
-                    raise ProviderCallError("not_covered", "Provider 未覆盖该标的")
-                return self._validate_quote(value)
+            operation = quote_request_operation(self, request, instrument_type, ProviderCallError)
 
             return self._execute_request_with_boundary(
                 request,

@@ -93,6 +93,11 @@ def read_futu_quote(sdk, host, port, symbol, instrument_type):
                 raise FutuMarketError("invalid_response", "富途价格字段不是有限数值")
             result[field] = value
         result.update(volume=optional_quote_number(row.get("volume")), amount=optional_quote_number(row.get("turnover")))
+        if market == 'US':
+            from .futu_quote_execution import current_us_execution
+            result['units'] = {'priceCurrency': 'USD', 'volume': 'share', 'turnoverCurrency': 'unknown'}
+            result['execution_facts'] = current_us_execution(
+                code, instrument_type, static, row, provider_time, result['fetched_at'])
         return result
     finally:
         if context is not None:
@@ -115,6 +120,9 @@ class FutuMarketAdapter(FutuLotSizeAdapter):
         frame = pd.DataFrame(value["rows"])
         frame.attrs.update(value["attrs"])
         return frame
+
+    def find_instrument(self, symbol):
+        return self._query({"operation": "instrument-search", "symbol": symbol})["items"]
 
     def get_security_static_info(self, symbol, asset_type):
         from .futu_static_info import static_identity

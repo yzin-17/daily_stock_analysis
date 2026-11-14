@@ -35,7 +35,7 @@ def validate_instrument_request(symbol, market, instrument_type, canonicalize, i
                                 bar_provider_id=None, bar_upstream_source=None):
     if market == "CN":
         return validate_cn_stock(symbol, market, instrument_type, canonicalize)
-    if instrument_type == 'STOCK' and identity_only and adjustment in ('none', 'qfq'):
+    if instrument_type == 'STOCK' and identity_only and adjustment in ('none', 'qfq', 'hfq'):
         binding = source_research_binding(
             {'kind': 'bar', 'market': market, 'assetType': instrument_type, 'capability': 'DAILY_BAR', 'timeframe': '1d', 'adjustment': adjustment},
             {'providerId': bar_provider_id, 'upstreamSource': bar_upstream_source},

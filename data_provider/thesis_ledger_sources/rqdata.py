@@ -81,4 +81,4 @@ SOURCE = SourceDefinition('rqdata', manifest, factory, tuple(
     for capability, contract in (('CASH_DISTRIBUTION', CASH_CONTRACT), ('SPLIT_EVENT', SPLIT_CONTRACT))
 ) + INTRADAY_BINDINGS, credentials=(('username_password', ('username', 'password')),),
     normalize_credential_value=normalize_credential_value, credential_revision_payload=credential_revision_payload,
-    dependency_modules=('rqdatac',))
+    dependency_modules=('rqdatac',), upstream_groups=(('rqdata', 'rqdata'),))

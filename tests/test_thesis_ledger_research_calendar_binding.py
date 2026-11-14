@@ -22,14 +22,22 @@ def request(provider='tencent', source='tencent', market='CN', asset='STOCK', ad
 @pytest.mark.parametrize(('provider', 'source', 'asset', 'adjustment', 'expected'), [
     ('tencent', 'tencent', 'STOCK', 'none', True), ('tencent', 'tencent', 'STOCK', 'qfq', True),
     ('tencent', 'tencent', 'ETF', 'none', True), ('tencent', 'tencent', 'ETF', 'qfq', True),
-    ('tencent', 'tencent', 'ETF', 'hfq', False),
+    ('tencent', 'tencent', 'ETF', 'hfq', True),
     ('hithink', 'hithink-financial-api', 'STOCK', 'none', True),
     ('hithink', 'hithink-financial-api', 'STOCK', 'qfq', True),
-    ('hithink', 'hithink-financial-api', 'STOCK', 'hfq', False),
-    ('hithink', 'fund-market-historical', 'ETF', 'qfq', False),
-    ('baostock', 'baostock', 'STOCK', 'qfq', False),
+    ('hithink', 'hithink-financial-api', 'STOCK', 'hfq', True),
+    ('hithink', 'fund-market-historical', 'ETF', 'qfq', True),
+    ('baostock', 'baostock', 'STOCK', 'qfq', True),
+    ('baostock', 'baostock', 'STOCK', 'none', True),
+    ('baostock', 'baostock', 'ETF', 'none', True),
+    ('futu', 'futu', 'STOCK', 'none', True),
+    ('futu', 'futu', 'ETF', 'none', True),
+    ('efinance', 'eastmoney', 'STOCK', 'none', True),
+    ('efinance', 'eastmoney', 'ETF', 'none', True),
+    ('akshare', 'eastmoney', 'STOCK', 'none', True),
+    ('akshare', 'eastmoney', 'ETF', 'none', True),
 ])
-def test_cn_original_scope(provider, source, asset, adjustment, expected):
+def test_cn_declared_research_scope(provider, source, asset, adjustment, expected):
     symbol = '510300.SH' if asset == 'ETF' else '600519.SH'
     assert research._research_request(request(provider, source, asset=asset, adjustment=adjustment, symbol=symbol)) is expected
 

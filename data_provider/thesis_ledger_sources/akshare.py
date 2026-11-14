@@ -17,6 +17,8 @@ from data_provider.akshare_daily_contract import project_public_units
 from data_provider.thesis_ledger_sources.akshare_news import BINDING as NEWS_BINDING, admission_current
 from data_provider.eastmoney_report_metadata import BINDING as REPORT_METADATA_BINDING
 from data_provider.market_reference_bindings import reference_bindings, reference_manifest
+from data_provider.provider_restrictions import raise_source_restriction
+from src.services.thesis_ledger_dependency_facts import cn_research_calendar_eligible
 
 REFERENCE_BINDINGS = reference_bindings('akshare')
 
@@ -126,10 +128,12 @@ def sina_stock_quote(query, context):
         response = sdk.requests.get(f"http://{sdk.SINA_REALTIME_ENDPOINT}={identity}",
             headers={"Referer": "http://finance.sina.com.cn", "User-Agent": random.choice(sdk.USER_AGENTS)}, timeout=10)
         response.encoding = "gbk"
-    except Exception:
+    except Exception as error:
+        raise_source_restriction(error)
         breaker.record_failure(source_key, "Sina 报价读取失败")
         raise CapabilityContractError("not_covered", "原来源未返回目标报价") from None
     if response.status_code != 200 or not response.text.strip():
+        raise_source_restriction(response)
         breaker.record_failure(source_key, "Sina 报价不可用")
         raise CapabilityContractError("not_covered", "原来源未返回目标报价")
     envelope = re.fullmatch(r'\s*var\s+hq_str_' + re.escape(identity) + r'\s*=\s*"([^"\r\n]*)";?\s*', response.text)
@@ -173,6 +177,7 @@ SOURCE = SourceDefinition("akshare", manifest, factory, tuple(
     DailyBinding(ExactKey("CN", asset, "DAILY_BAR", adjustment), upstream,
                  f"dsa-v3-{asset.lower()}-akshare-{upstream}-{adjustment}-adapter-v1",
                  protocol, protocol, None, source_reader(upstream),
+                 research_calendar_eligible=cn_research_calendar_eligible,
                  public_units_policy=DailyUnitsPolicy(('native_daily_contract',), project_public_units) if upstream == 'eastmoney' else None)
     for asset, upstream, protocol in (
         ("STOCK", "eastmoney", "akshare-stock-eastmoney-range-response-v1"),
@@ -203,5 +208,6 @@ SOURCE = SourceDefinition("akshare", manifest, factory, tuple(
                  read_split, split_revisions, split_wire, probe_read=probe_split)),
     ("data_provider.akshare_fetcher", "AkshareFetcher"), dependency_modules=("akshare",),
     policy_admission_guard=admission_current,
+    upstream_groups=(('eastmoney', 'eastmoney'), ('sina', 'sina'), ('tencent', 'tencent')),
     quote_source_aliases=(('eastmoney', 'eastmoney'), ('akshare_em', 'eastmoney'), ('sina', 'sina'),
                           ('akshare_sina', 'sina'), ('akshare_qq', 'tencent'), ('tencent', 'tencent')))

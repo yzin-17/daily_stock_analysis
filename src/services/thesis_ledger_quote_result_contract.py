@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from src.services.thesis_ledger_quote_units_contract import QuotePublicUnits
+from src.services.thesis_ledger_quote_execution_facts import QuoteExecutionFacts
+from src.services.thesis_ledger_us_live_rules_contract import UsLiveRules
 
 
 class QuoteUnitFailure(BaseModel):
@@ -40,6 +42,8 @@ class QuoteResult(BaseModel):
     is_stale: bool | None = None
     units: QuotePublicUnits | None = None
     unit_error: QuoteUnitFailure | None = None
+    execution_facts: QuoteExecutionFacts | None = None
+    execution_rules: UsLiveRules | None = None
 
     @model_validator(mode='after')
     def consistent_result(self):

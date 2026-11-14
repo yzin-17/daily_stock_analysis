@@ -140,7 +140,8 @@ def test_inventory_and_revisions_have_one_owner():
     identities = [(tuple(sorted(key.items())), tuple(sorted(target.items()))) for key, target in (
         *iter_market_v3_bar_adapters(), *iter_market_v3_gated_bar_adapters())]
     assert len(identities) == len(set(identities))
-    assert CAPABILITY_SOURCES.resolve({**KEY, "assetType": "STOCK", "adjustment": "hfq"}, TARGET) is None
+    stock_hfq = CAPABILITY_SOURCES.resolve({**KEY, "assetType": "STOCK", "adjustment": "hfq"}, TARGET)
+    assert stock_hfq is not None and stock_hfq.key.asset_type == "STOCK"
     with pytest.raises(CapabilityContractError, match="未实现订阅"):
         CAPABILITY_SOURCES.resolve(KEY, TARGET, "subscribe")
 

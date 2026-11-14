@@ -30,7 +30,7 @@ def sdk_for(pages):
     ctx.get_stock_basicinfo.return_value = 0, pd.DataFrame([{"code": "HK.00700", "stock_type": "STOCK"}])
     ctx.request_history_kline.side_effect = pages
     return SimpleNamespace(OpenQuoteContext=Mock(return_value=ctx), RET_OK=0,
-        Market=SimpleNamespace(HK="HK", US="US"), SecurityType=SimpleNamespace(STOCK="STOCK", ETF="ETF"),
+        Market=SimpleNamespace(HK="HK", US="US", SH="SH", SZ="SZ"), SecurityType=SimpleNamespace(STOCK="STOCK", ETF="ETF"),
         AuType=SimpleNamespace(NONE="NONE", QFQ="QFQ", HFQ="HFQ"), KLType=SimpleNamespace(K_DAY="K_DAY")), ctx
 
 
@@ -51,7 +51,9 @@ def test_complete_pages_explicit_adjustment_and_nullable_metrics(adjustment):
 
 
 @pytest.mark.parametrize("second,code", [
-    ((-1, "no permission", None), "upstream_failure"),
+    ((-1, "no permission", None), "permission_denied"),
+    ((-1, "too many requests", None), "rate_limited"),
+    ((-1, "historical quota exhausted", None), "quota_unavailable"),
     ((0, pd.DataFrame([row("2026-05-19")]), b"next"), "invalid_response"),
     ((0, pd.DataFrame([row("2026-05-19")]), "invalid"), "invalid_response"),
     ((0, pd.DataFrame([row()]), None), "invalid_response"),
@@ -89,6 +91,51 @@ def test_wrong_static_asset_fails_before_history():
     ctx.get_stock_basicinfo.return_value = 0, pd.DataFrame([{"code": "HK.00700", "stock_type": "ETF"}])
     with pytest.raises(ExactDailyError):
         read_futu_daily(sdk, "localhost", 11111, request())
+    ctx.request_history_kline.assert_not_called()
+    ctx.close.assert_called_once()
+
+
+@pytest.mark.parametrize('symbol,asset', [
+    ('900901.SH', 'STOCK'), ('200002.SZ', 'STOCK'),
+    ('600519.SZ', 'STOCK'), ('000001.SH', 'STOCK'),
+    ('600519.SH', 'ETF'), ('510300.SH', 'STOCK'),
+])
+def test_cn_daily_rejects_other_assets_and_exchange_mismatches_before_connection(symbol, asset):
+    sdk, _ = sdk_for([])
+    with pytest.raises(ExactDailyError) as error:
+        read_futu_daily(sdk, 'localhost', 11111, request(symbol=symbol, instrumentType=asset))
+    assert error.value.code == 'invalid_request'
+    sdk.OpenQuoteContext.assert_not_called()
+
+
+@pytest.mark.parametrize('symbol,code,market', [('510300.SH', 'SH.510300', 'SH'), ('159919.SZ', 'SZ.159919', 'SZ')])
+@pytest.mark.parametrize('adjustment', ['none', 'qfq', 'hfq'])
+def test_cn_etf_requires_exact_static_type_and_reads_all_pages(symbol, code, market, adjustment):
+    sdk, ctx = sdk_for([(0, pd.DataFrame([row(code=code, volume=100)]), b'next'),
+                       (0, pd.DataFrame([row('2026-05-19', code=code, volume=200)]), None)])
+    ctx.get_stock_basicinfo.return_value = 0, pd.DataFrame([{'code': code, 'stock_type': 'ETF'}])
+    result = read_futu_daily(sdk, 'localhost', 11111,
+                            request(symbol=symbol, instrumentType='ETF', adjustment=adjustment))
+    assert result['date'].tolist() == ['2026-05-18', '2026-05-19']
+    assert result['volume'].tolist() == [100, 200] and result['amount'].tolist() == [None, None]
+    ctx.get_stock_basicinfo.assert_called_once_with(market, stock_type='ETF', code_list=[code])
+    assert all(call.args == (code,) and call.kwargs['autype'] == ('NONE' if adjustment == 'none' else adjustment.upper())
+               for call in ctx.request_history_kline.call_args_list)
+    ctx.close.assert_called_once()
+
+
+@pytest.mark.parametrize('static', [
+    [{'code': 'SH.510300', 'stock_type': 'STOCK'}],
+    [{'code': 'SZ.510300', 'stock_type': 'ETF'}],
+    [{'code': 'SH.510300', 'stock_type': 'ETF'}, {'code': 'SH.510300', 'stock_type': 'ETF'}],
+    [],
+])
+def test_cn_etf_static_mismatch_never_requests_history(static):
+    sdk, ctx = sdk_for([])
+    ctx.get_stock_basicinfo.return_value = 0, pd.DataFrame(static)
+    with pytest.raises(ExactDailyError) as error:
+        read_futu_daily(sdk, 'localhost', 11111, request(symbol='510300.SH', instrumentType='ETF', adjustment='qfq'))
+    assert error.value.code == 'invalid_response'
     ctx.request_history_kline.assert_not_called()
     ctx.close.assert_called_once()
 

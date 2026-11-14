@@ -19,6 +19,7 @@ from api.thesis_ledger_events_v3 import router as events_router
 from api.thesis_ledger_nav_v3 import router as nav_router
 from api.thesis_ledger_oauth import router as oauth_router
 from api.thesis_ledger_rule_monitor import router as rule_monitor_router
+from api.thesis_ledger_public_search import router as public_search_router
 from src.data.stock_index_loader import find_existing_stock_index_path
 from src.data_config import DataConfigurationError
 
@@ -43,7 +44,7 @@ def create_app(*, lifespan=None) -> FastAPI:
         lifespan = data_lifespan
     app = FastAPI(title="DSA 数据服务 API", version="3.0.0", lifespan=lifespan)
     _add_cors(app)
-    for router in (router_v3, chart_router, events_router, nav_router, cache_context_router, oauth_router, rule_monitor_router):
+    for router in (router_v3, chart_router, events_router, nav_router, cache_context_router, oauth_router, rule_monitor_router, public_search_router):
         app.include_router(router, prefix="/api/v3")
     add_error_handlers(app)
 

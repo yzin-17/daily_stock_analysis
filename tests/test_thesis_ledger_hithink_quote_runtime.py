@@ -146,7 +146,7 @@ def _request(asset_type, symbol):
     return ThesisLedgerDataRequest("REALTIME_QUOTE", symbol, instrument_type=asset_type)
 
 
-def test_exact_configured_quote_preserves_source_and_request_budget(route):
+def test_exact_configured_quote_preserves_source_without_local_cooldown(route):
     store, asset_type, symbol, source = route
     adapter = _QuoteAdapter()
     runtime = ThesisLedgerProviderRuntime(store, adapters={"hithink": adapter})
@@ -159,10 +159,8 @@ def test_exact_configured_quote_preserves_source_and_request_budget(route):
     assert result.value.provider_timestamp is None
     assert result.value.fetched_at == "2026-09-29T01:00:00+00:00"
     if asset_type == "ETF":
-        with pytest.raises(ThesisLedgerGatewayError) as cooldown:
-            runtime.execute_request(_request(asset_type, symbol))
-        assert cooldown.value.code == "request_budget_cooldown"
-        assert adapter.calls == [(symbol, asset_type)]
+        runtime.execute_request(_request(asset_type, symbol))
+        assert adapter.calls == [(symbol, asset_type), (symbol, asset_type)]
 
 
 @pytest.mark.parametrize("mutation", ["credential", "policy"])

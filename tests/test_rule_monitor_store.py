@@ -13,11 +13,14 @@ SOURCE = "official-rules/cn-stock-auction-fees"
 def test_config_cas_disabled_scheduler_and_expired_attempt_cannot_commit(tmp_path):
     now = [1000.0]
     store = RuleMonitorStore(tmp_path / "monitor.sqlite", clock=lambda: now[0])
-    assert store.config() == {"revision": 0, "enabled": False, "sourceIds": []}
+    assert store.config() == {"revision": 0, "enabled": False, "sourceIds": [],
+        "taskCreated": False, "cron": "@every24h", "timezone": "Asia/Shanghai", "nextRunAt": None}
     assert store.schedule_due(str(uuid4())) is False
     store.configure(0, True, [SOURCE])
     with pytest.raises(MonitorConflict):
         store.configure(0, False, [])
+    assert store.schedule_due(str(uuid4())) is False
+    now[0] += 86400
     assert store.schedule_due(str(uuid4())) is True
     assert store.schedule_due(str(uuid4())) is False
     job = store.claim("worker-a")

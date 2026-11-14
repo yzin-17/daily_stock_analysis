@@ -176,6 +176,10 @@ class SourceDefinition:
     quote_admission_reader: Callable[[QuoteAdmissionContext], Mapping | None] | None = None
     probe_policy: SourceProbePolicy | None = None
     account_access_probe: Callable[[AccountAccessProbeContext], Mapping] | None = None
+    account_access_group: Callable[[Mapping], str] | None = None
+    account_access_cooldown_seconds: int = 60
+    route_requires_credential: Callable[[Mapping, Mapping], bool] | None = None
+    account_access_max_requests: int = 6
     account_access_snapshot: Callable[[ProviderCredentialSnapshot], ProviderCredentialSnapshot] | None = None
     account_access_level: AccountAccessLevelPolicy | None = None
     catalog_manifest_policy: Callable[[CatalogManifestContext], bool | None] | None = None
@@ -186,6 +190,8 @@ class SourceDefinition:
     quote_public_units: Callable[[QuotePublicUnitsContext], QuotePublicUnits] | None = None
     quote_source_aliases: tuple[tuple[str, str], ...] = ()
     default_enabled: bool = True
+    upstream_groups: tuple[tuple[str, str], ...] = ()
+    recommendation_priority: Callable[[ExactKey, str], tuple[int, str] | None] | None = None
 
 
 class CapabilityRegistry:
@@ -231,6 +237,13 @@ class CapabilityRegistry:
             if source.exact_probe_read is not None and not callable(source.exact_probe_read):
                 raise ValueError('来源精确只读检查声明无效')
             validate_account_access_policy(source)
+            groups = source.upstream_groups
+            if (not isinstance(groups, tuple) or any(not isinstance(pair, tuple) or len(pair) != 2
+                    or any(not isinstance(value, str) or not value.strip() for value in pair) for pair in groups)
+                    or len({pair[0] for pair in groups}) != len(groups)):
+                raise ValueError('来源服务上游归属声明无效')
+            if source.recommendation_priority is not None and not callable(source.recommendation_priority):
+                raise ValueError('来源用途优先级检查器无效')
             if source.probe_policy is not None:
                 probe = source.probe_policy
                 if not isinstance(probe, SourceProbePolicy) or not callable(probe.read):

@@ -95,9 +95,9 @@ N1 固定能力名 `NEWS_SEARCH`、信封 `version=3`、合同 `news-search-v1`�
 
 N2 的执行层复用既有七种搜索 Adapter，只装配选定来源；SearXNG 必须有专属实例，不使用公共实例发现。HTTP 尝试以实际传输计数，总预算预留执行回收时间；预算不足时零尝试返回超时。Bocha 明确关闭生成式摘要。公开身份先读取已发布且 checksum 有效的 Catalog 同代码条目，再读取现有数据索引；市场/资产类型冲突、代码不存在或无法唯一核验时在取数前返回 `ambiguous_instrument`，不以同名记录替代。Catalog 只读，不创建数据库或生成 fixture。显式控制凭据为空时不回退环境凭据；检索窗口最多向来源请求近一年，更早起点保留 `search_window_exceeds_one_year` 与不完整状态。
 
-2026-10-22 免费来源扩展按[配套规格](../../../thesis-ledger/docs/specs/2026-10-22-free-news-dg3.md)接入 NVIDIA 官方 RSS，仅个人非商业信息用途、仅 `NVDA.US`，无 Key 且默认关闭。RSS 解析留在来源模块，复用当前身份、预算、精确准入及 V3，有限订阅保持 partial；原七搜索来源和 DG3/研究 G3 的证据边界保持。
+2026-10-22 的官方 RSS 接入规格已[归档](../../../thesis-ledger/docs/archive/specs/2026-10-22-free-news-dg3.md)，该来源已[退役](../../../thesis-ledger/docs/archive/specs/2026-11-09-remove-nvidia-news.md)。当前不提供其注册、路由或准入入口；历史新闻与冻结证据保留。共享宿主准入工具见[操作指南](../guides/local-runtime-tools.md)。
 
-同日按用户“现有来源优先”的顺序，依[现有来源规格](../../../thesis-ledger/docs/specs/2026-10-22-existing-source-news.md)补充 `akshare / eastmoney / CN / STOCK / NEWS_SEARCH`。当前 SDK 只返回搜索第一页十条，提供公开元数据及转载页链接，保持有限覆盖、未知原始地址/可用时间及独立准入。`600519.SH` 的目标 V3、Market、Web 与原数据保护见[增量证据](../evidence/2026-10-18-data-only-service-news-contract.md#dg3-existing-source-20261022)；原 NVIDIA 路线继续有效。
+同日按用户“现有来源优先”的顺序，依[现有来源规格](../../../thesis-ledger/docs/specs/2026-10-22-existing-source-news.md)补充 `akshare / eastmoney / CN / STOCK / NEWS_SEARCH`。当前 SDK 只返回搜索第一页十条，提供公开元数据及转载页链接，保持有限覆盖、未知原始地址/可用时间及独立准入。`600519.SH` 的目标 V3、Market、Web 与原数据保护见[增量证据](../evidence/2026-10-18-data-only-service-news-contract.md#dg3-existing-source-20261022)。
 
 后续按[HiThink 与 Yahoo 规格](../../../thesis-ledger/docs/specs/2026-10-22-hithink-yahoo-news.md)，新增 HiThink 个股新闻精确绑定并保留现有 HMAC/当前快照。CN 新闻采用 HiThink 首源、AKShare 备用，`600519.SH` 的目标 V3/Market/Web 与保全通过。[当时实源记录](../evidence/2026-10-22-hithink-yahoo-news.md)保留 Yahoo Search 可读和旧 Ticker 新闻路径 404 的验证结论。
 

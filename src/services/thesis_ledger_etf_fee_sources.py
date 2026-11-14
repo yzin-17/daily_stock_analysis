@@ -39,4 +39,4 @@ def bindings(provider):
 
     market, source, _, filename = SOURCES[provider]
     return (QueryBinding(CONTRACT, ExactKey(market, "ETF", "HISTORICAL_PUBLIC_FEES"), source,
-        "bounded-etf-fees-adapter-v1", filename + ":v1", read_fees, admission_required=False),)
+        "bounded-etf-fees-adapter-v2", filename + ":v1", read_fees, admission_required=False),)

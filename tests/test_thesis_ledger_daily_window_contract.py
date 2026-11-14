@@ -40,7 +40,8 @@ def test_bad_plan_is_rejected_before_any_child_request(monkeypatch, value):
     calls = []
     request = {'routeKey': binding.key.route_key(), 'routeTarget': {'providerId': 'test-plan', 'upstreamSource': binding.upstream_source},
                'start': CONTEXT.start, 'end': CONTEXT.end}
-    coverage = {'calendar': {'expectedSessionDates': list(CONTEXT.sessions)}, 'listing': {'firstTradingDate': CONTEXT.start}}
+    coverage = {'calendar': {'expectedSessionDates': list(CONTEXT.sessions)}, 'listing': {'firstTradingDate': CONTEXT.start},
+                'expectedPostListingSessionDates': list(CONTEXT.sessions)}
     with pytest.raises(ProviderCallError) as failure:
         api.try_daily_multi_window_v3(request, coverage, SimpleNamespace(), lambda *_: calls.append('render'),
                                      lambda *_: calls.append('coverage'), max_requests=2, timeout_seconds=4.5)

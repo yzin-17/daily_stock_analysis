@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 
 # ===================================
 # DSA 数据服务镜像
@@ -6,20 +5,39 @@
 # 多阶段构建保留目标平台的原生 SDK 编译。
 
 # 在目标 glibc/Python 上构建 SDK，避免发行 wheel 的 glibc 版本要求高于运行镜像。
-FROM rust:1.94.1-slim-bookworm AS sdk-rust
-FROM python:3.11-slim-bookworm AS sdk-builder
+ARG RUST_IMAGE=rust:1.94.1-slim-bookworm
+ARG PYTHON_IMAGE=python:3.11-slim-bookworm
+
+# 独立构建时预取固定 SDK 源；本地部署可用同名构建上下文提供已校验源码。
+FROM ${PYTHON_IMAGE} AS longbridge_upstream
+ARG DEBIAN_MIRROR=https://mirrors.aliyun.com
+RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=3 update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY scripts/build_thesis_ledger_longbridge_sdk.py scripts/sdk-source.json /scripts/
+RUN python /scripts/build_thesis_ledger_longbridge_sdk.py --fetch-only --work-dir /upstream --output /unused \
+    && mv /upstream/source /source
+
+FROM ${RUST_IMAGE} AS sdk-rust
+FROM ${PYTHON_IMAGE} AS sdk-builder
+ARG DEBIAN_MIRROR=https://mirrors.aliyun.com
 COPY --from=sdk-rust /usr/local/cargo /usr/local/cargo
 COPY --from=sdk-rust /usr/local/rustup /usr/local/rustup
 ENV PATH="/usr/local/cargo/bin:${PATH}" RUSTUP_HOME=/usr/local/rustup
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends git gcc g++ pkg-config libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,id=dsa-sdk-apt-archives,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=dsa-sdk-apt-lists,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources && \
+    apt-get -o Acquire::Retries=3 -o Acquire::https::Timeout=45 update && \
+    apt-get -o Acquire::Retries=3 -o Acquire::https::Timeout=45 install -y --no-install-recommends git gcc g++ pkg-config libssl-dev
 WORKDIR /sdk-build
+COPY --from=longbridge_upstream /source/ /sdk-upstream/
 COPY patches/longbridge-sdk/ ./patches/longbridge-sdk/
-COPY scripts/build_thesis_ledger_longbridge_sdk.py scripts/verify_longbridge_native_storage.py ./scripts/
+COPY scripts/build_thesis_ledger_longbridge_sdk.py scripts/verify_longbridge_native_storage.py scripts/sdk-source.json ./scripts/
 RUN --mount=type=cache,target=/sdk-cache \
     CARGO_HOME=/sdk-cache/cargo CARGO_TARGET_DIR=/sdk-cache/target PIP_CACHE_DIR=/sdk-cache/pip \
-    python scripts/build_thesis_ledger_longbridge_sdk.py --output /wheels
+    python scripts/build_thesis_ledger_longbridge_sdk.py --output /wheels --source-dir /sdk-upstream
 
 # 记录宿主源码输入；数据库结构或 SDK/系统条件变化时快更必须拒绝。
 COPY scripts/data-runtime-contract.json scripts/data_runtime_compatibility.py /compat/scripts/
@@ -27,13 +45,14 @@ COPY .dockerignore /compat/.dockerignore
 COPY requirements.txt /compat/
 COPY docker/Dockerfile docker/entrypoint.sh /compat/docker/
 COPY patches/longbridge-sdk/ /compat/patches/longbridge-sdk/
-COPY scripts/build_thesis_ledger_longbridge_sdk.py scripts/verify_longbridge_native_storage.py /compat/scripts/
+COPY scripts/build_thesis_ledger_longbridge_sdk.py scripts/verify_longbridge_native_storage.py scripts/sdk-source.json /compat/scripts/
 COPY src/data/fx_rate_repository.py /compat/src/data/
 COPY src/services/provider_oauth_store.py src/services/thesis_ledger_control.py /compat/src/services/
 RUN python /compat/scripts/data_runtime_compatibility.py --root /compat --output /wheels/data-runtime-inputs.json
 
 # Pin to bookworm: wkhtmltopdf was removed from Debian testing (2025)
-FROM python:3.11-slim-bookworm
+FROM ${PYTHON_IMAGE}
+ARG DEBIAN_MIRROR=https://mirrors.aliyun.com
 
 # 设置工作目录
 WORKDIR /app
@@ -45,9 +64,12 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # 安装系统依赖（wkhtmltopdf 含 wkhtmltoimage，用于 Markdown 转图片 Issue #289）
 # /var/cache/apt 用 BuildKit cache mount 保存 .deb：即使该层缓存失效重跑，
 # 也只需刷新索引，包下载走本地缓存。docker-clean 会在每次装完后清空包缓存，先移除。
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+RUN --mount=type=cache,id=dsa-apt-archives,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=dsa-apt-lists,target=/var/lib/apt/lists,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
-    apt-get update && apt-get install -y --no-install-recommends \
+    sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources && \
+    apt-get -o Acquire::Retries=3 -o Acquire::https::Timeout=45 update && \
+    apt-get -o Acquire::Retries=3 -o Acquire::https::Timeout=45 install -y --no-install-recommends \
     gcc \
     curl \
     gosu \
@@ -55,8 +77,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     fontconfig \
     libjpeg62-turbo \
     libxrender1 \
-    libxext6 \
-    && rm -rf /var/lib/apt/lists/*
+    libxext6
 
 # 创建非 root 用户 (UID 1000)
 RUN groupadd -g 1000 dsa && \
@@ -66,7 +87,7 @@ RUN groupadd -g 1000 dsa && \
 COPY requirements.txt .
 
 # 安装 Python 依赖
-RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
+RUN --mount=type=cache,id=dsa-pip,target=/root/.cache/pip pip install -r requirements.txt
 
 # 基金扩展需显式加载；这里只验证安装与接口，不初始化账号或请求数据。
 RUN python -c "import importlib.metadata as m; import rqdatac, rqdatac_fund; assert m.version('rqdatac') == '3.7.1'; assert m.version('rqdatac-fund') == '1.0.44'; assert callable(rqdatac.fund.get_split) and callable(rqdatac.fund.get_dividend)"

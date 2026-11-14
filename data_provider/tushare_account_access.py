@@ -21,7 +21,9 @@ def failure_result(error):
         code = "network_failure"
     elif isinstance(error, TushareApiError):
         text = str(error).lower().replace(" ", "")
-        if error.status_code == 429 or any(part in text for part in ("每分钟", "每天", "每日", "每小时", "每秒", "访问频率", "访问次数", "频次", "ratelimit", "toomany", "quota")):
+        if error.status_code == 429:
+            code = "rate_limited_global"
+        elif any(part in text for part in ("每分钟", "每天", "每日", "每小时", "每秒", "访问频率", "访问次数", "频次", "频率超限", "ratelimit", "toomany", "quota")):
             code = "rate_limited"
         elif error.status_code == 401 or any(part in text for part in ("invalidtoken", "token无效", "token不对", "token错误", "token已过期", "token失效", "无效的token")):
             state, code = "credential_invalid", "authentication_failed"
@@ -30,6 +32,12 @@ def failure_result(error):
     elif isinstance(error, (ValueError, TypeError, AttributeError)):
         code = "invalid_response"
     return {"state": state, "attempted": True, "errorCode": code}
+
+
+def account_access_group(key):
+    if key["capability"] == "MINUTE_BAR":
+        return "etf_mins" if key["assetType"] == "ETF" else "stk_mins"
+    return SAMPLES[(key["market"], key["assetType"], key["capability"])][0]
 
 
 def probe_account_access(context):

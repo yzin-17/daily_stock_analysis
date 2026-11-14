@@ -22,8 +22,8 @@ class _IndependentStore(ThesisLedgerControlStore):
     _schema_lock = _NoopLock()
 
 
-def test_request_budget_concurrent_claim_has_exactly_one_winner(tmp_path):
-    """同一请求键并发领取时只能有一个 upstream 资格。"""
+def test_legacy_request_budget_does_not_count_or_block(tmp_path):
+    """兼容入口不再用本地频次阻断请求。"""
     database_path = str(tmp_path / "request-budget.db")
     first = _IndependentStore(database_path)
     second = _IndependentStore(database_path)
@@ -43,5 +43,6 @@ def test_request_budget_concurrent_claim_has_exactly_one_winner(tmp_path):
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(claim, (first, second)))
 
-    assert sorted(result["allowed"] for result in results) == [False, True]
-    assert sum(result["allowed"] for result in results) == 1
+    assert all(result['allowed'] and result['remainingSeconds'] == 0 for result in results)
+    with first._connect() as connection:
+        assert connection.execute('SELECT count(*) FROM thesis_ledger_provider_request_budget').fetchone()[0] == 0

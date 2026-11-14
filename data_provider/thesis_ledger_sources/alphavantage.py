@@ -42,7 +42,9 @@ def read_frame(adapter, request):
         "outputsize": "compact", "apikey": adapter._api_key,
     })
     if "Note" in payload or "Information" in payload:
-        raise ExactDailyError("quota_unavailable", "Alpha Vantage 免费日线权限或额度不可用")
+        from src.services.thesis_ledger_provider_errors import classify_provider_failure
+        raise ExactDailyError(classify_provider_failure(payload.get('Note') or payload.get('Information')),
+                              "Alpha Vantage 日线权限或额度不可用")
     series = payload.get("Time Series (Daily)")
     if not isinstance(series, dict) or not series:
         raise ExactDailyError("not_covered", "Alpha Vantage 未返回请求日线")
@@ -121,4 +123,5 @@ SOURCE = SourceDefinition("alphavantage", manifest, factory, (*INTRADAY_BINDINGS
 ), ("data_provider.alphavantage_fetcher", "AlphaVantageFetcher"),
     credentials=(("api_key", ("apiKey",)),), dependency_modules=("requests",), factory_scope="provider",
     probe_policy=SourceProbePolicy(probe_daily, capabilities=('DAILY_BAR',), adapter_required=True),
+    upstream_groups=(('alphavantage', 'alphavantage'),),
     environment_credential_policy=EnvironmentCredentialPolicy(environment_credentials))

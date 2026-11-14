@@ -19,7 +19,7 @@ from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest,
 from tests.test_configured_market_routes import store, apply, no_admissions
 
 NOW=datetime(2026,11,6,tzinfo=timezone.utc)
-ROWS=list(CAPABILITY_SOURCES.routes('HISTORICAL_PUBLIC_FEES'))
+ROWS=[row for row in CAPABILITY_SOURCES.routes('HISTORICAL_PUBLIC_FEES') if row[1]['providerId'] != 'local-materials']
 
 
 def wire(key,target):

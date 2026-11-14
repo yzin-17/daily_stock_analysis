@@ -128,8 +128,8 @@ class TencentFetcher(BaseFetcher):
         normalized_asset_type = str(asset_type or "").strip().upper()
         if adjustment not in (None, "none", "qfq", "hfq"):
             raise DataFetchError(f"TencentFetcher unsupported adjustment: {adjustment}")
-        if adjustment == "hfq" and normalized_asset_type != "ETF":
-            raise DataFetchError("TencentFetcher hfq adjustment is available only for ETF routes")
+        if adjustment == "hfq" and normalized_asset_type not in {"STOCK", "ETF"}:
+            raise DataFetchError("TencentFetcher hfq adjustment requires a STOCK or ETF route")
         symbol = _to_tencent_symbol(stock_code)
         if not symbol or symbol.startswith("bj"):
             raise DataFetchError(f"TencentFetcher unsupported stock code: {stock_code}")

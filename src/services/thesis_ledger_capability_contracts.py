@@ -227,9 +227,10 @@ class ReadContext:
     snapshot: ProviderCredentialSnapshot | None = None
     timeout_seconds: float = 4.5
     acquisition_cache: StatusAcquisitionCache | None = None
-    control_epoch: tuple[int, int] | None = None
+    control_epoch: tuple[int, ...] | None = None
     probe: bool = False
     database_path: str | None = None
+    publish_guard: Callable[[], bool] | None = None
 
 
 @dataclass(frozen=True)

@@ -87,3 +87,22 @@ def test_independent_notice_capabilities_do_not_gain_legacy_file_qualification()
         target = {'providerId': source.provider_id, 'upstreamSource': binding.upstream_source}
         assert not ready.local_rule_route_matches(binding.key.route_key(), target)
         assert ready.local_rule_source_ready(binding.key.route_key(), target) is None
+
+
+def test_recommendation_metadata_is_source_owned_and_optional():
+    from src.services.thesis_ledger_source_recommendation import source_recommendation
+    source = CAPABILITY_SOURCES.source('akshare')
+    binding = next(item for item in source.bindings if item.upstream_source == 'eastmoney')
+    key, target = binding.key.route_key(), {'providerId': 'akshare', 'upstreamSource': 'eastmoney'}
+    value = source_recommendation(CAPABILITY_SOURCES, key, target)
+    assert value['upstreamGroup'] == 'eastmoney'
+    assert 'priority' not in value and 'readEvidence' not in value
+    assert 'readEvidence' not in source_recommendation(CAPABILITY_SOURCES, key, target)
+    binding = next(item for item in source.bindings if getattr(item, 'admission_required', False) is True)
+    value = source_recommendation(CAPABILITY_SOURCES, binding.key.route_key(),
+                                 {'providerId': 'akshare', 'upstreamSource': binding.upstream_source},
+                                 read_evidence=True)
+    assert value['readEvidence'] is True
+    assert source_recommendation(CAPABILITY_SOURCES, key, {**target, 'upstreamSource': 'missing'}) is None
+    with pytest.raises(ValueError):
+        CapabilityRegistry((replace(source, upstream_groups=(('eastmoney', 'one'), ('eastmoney', 'two'))),))

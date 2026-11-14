@@ -42,9 +42,13 @@ class AccountAccessLevelPolicy:
 
 
 def validate_account_access_policy(source):
-    for callback in (source.account_access_probe, source.account_access_snapshot):
+    for callback in (source.account_access_probe, source.account_access_snapshot, source.route_requires_credential, source.account_access_group):
         if callback is not None and not callable(callback):
             raise ValueError("来源账户访问检查声明无效")
+    if type(source.account_access_cooldown_seconds) is not int or not 60 <= source.account_access_cooldown_seconds <= 86400:
+        raise ValueError("来源账户检查冷却必须在60到86400秒之间")
+    if type(source.account_access_max_requests) is not int or not 1 <= source.account_access_max_requests <= 16:
+        raise ValueError("来源账户检查次数必须在1到16之间")
     policy = source.account_access_level
     if policy is not None and (not isinstance(policy, AccountAccessLevelPolicy)
                                or not callable(policy.parse) or not callable(policy.excluded)

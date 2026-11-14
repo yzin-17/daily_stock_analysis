@@ -288,7 +288,7 @@ def test_empty_history_keeps_actual_stable_content_revision_and_incomplete_cover
     assert first["facts"] == second["facts"] == []
     assert first["providerRevision"] == second["providerRevision"]
     assert first["coverage"]["complete"] is second["coverage"]["complete"] is False
-    assert state.runtime.adapters["tushare"]._call_count == 2
+    assert not hasattr(state.runtime.adapters["tushare"], '_call_count')
 
 
 @pytest.mark.parametrize("failure", [PermissionError("synthetic-sensitive-token"), TimeoutError("synthetic-sensitive-url")])

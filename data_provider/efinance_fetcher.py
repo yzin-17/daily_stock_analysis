@@ -289,12 +289,9 @@ class EfinanceFetcher(BaseFetcher):
         初始化 EfinanceFetcher
         
         Args:
-            sleep_min: 最小休眠时间（秒）
-            sleep_max: 最大休眠时间（秒）
+            sleep_min: 兼容参数，不再主动等待
+            sleep_max: 兼容参数，不再主动等待
         """
-        self.sleep_min = sleep_min
-        self.sleep_max = sleep_max
-        self._last_request_time: Optional[float] = None
         # efinance keeps Eastmoney headers in a shared module-level mapping.
         # Apply the optional write-only Cookie before any provider call, even
         # when the NID/User-Agent patch is disabled.
@@ -336,25 +333,7 @@ class EfinanceFetcher(BaseFetcher):
             logger.debug(f"设置 User-Agent 失败: {e}")
     
     def _enforce_rate_limit(self) -> None:
-        """
-        强制执行速率限制
-        
-        策略：
-        1. 检查距离上次请求的时间间隔
-        2. 如果间隔不足，补充休眠时间
-        3. 然后再执行随机 jitter 休眠
-        """
-        if self._last_request_time is not None:
-            elapsed = time.time() - self._last_request_time
-            min_interval = self.sleep_min
-            if elapsed < min_interval:
-                additional_sleep = min_interval - elapsed
-                logger.debug(f"补充休眠 {additional_sleep:.2f} 秒")
-                time.sleep(additional_sleep)
-        
-        # 执行随机 jitter 休眠
-        self.random_sleep(self.sleep_min, self.sleep_max)
-        self._last_request_time = time.time()
+        """兼容旧调用入口；频次由上游或 SDK 处理，不主动等待。"""
     
     @retry(
         stop=stop_after_attempt(1),  # 减少到1次，避免触发限流
@@ -380,7 +359,6 @@ class EfinanceFetcher(BaseFetcher):
         流程：
         1. 判断代码类型（美股/股票/ETF）
         2. 设置随机 User-Agent
-        3. 执行速率限制（随机休眠）
         4. 调用对应的 efinance API
         5. 处理返回数据
         """
@@ -773,6 +751,8 @@ class EfinanceFetcher(BaseFetcher):
         try:
             snapshot_quote = self._get_realtime_snapshot_quote(stock_code)
         except Exception as exc:
+            from data_provider.provider_restrictions import raise_source_restriction
+            raise_source_restriction(exc)
             logger.info("[API错误] efinance ETF 单标的实时行情失败: %s", exc)
             circuit_breaker.record_failure("efinance_etf", str(exc))
             return None

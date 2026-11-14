@@ -47,6 +47,7 @@ jobs:
               - 'patches/longbridge-sdk/**'
               - 'scripts/data-runtime-contract.json'
               - 'scripts/build_thesis_ledger_longbridge_sdk.py'
+              - 'scripts/sdk-source.json'
               - 'scripts/verify_longbridge_native_storage.py'
               - 'scripts/admit_nav_research.py'
               - '.github/workflows/ci.yml'
@@ -88,6 +89,18 @@ jobs:
             if [ "$attempt" -eq 3 ]; then exit 1; fi
             sleep 15
           done
+      - uses: actions/setup-node@v4
+        if: matrix.shard == 1
+        with:
+          node-version: 24
+      - name: 验证本地数据工具与构建命令
+        if: matrix.shard == 1
+        run: |
+          git clone --depth 1 https://github.com/yzin-17/thesis-ledger-infra.git ../thesis-ledger-infra
+          git clone --depth 1 https://github.com/yzin-17/thesis-ledger.git ../thesis-ledger
+          node --test scripts/local-runtime/*.test.mjs scripts/deployment/*.test.mjs scripts/prepare-local-sdk-source.test.mjs
+          for test_file in scripts/local-runtime/*.test.py; do PYTHONPATH="$PWD" python -B "$test_file"; done
+          for test_file in scripts/deployment/*.test.py; do python -B "$test_file"; done
       - name: 核对全局数据 SDK
         if: matrix.shard == 1
         run: python -c "import futu; print('Futu 数据 SDK 可导入')"

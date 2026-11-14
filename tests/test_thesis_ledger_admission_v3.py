@@ -73,8 +73,8 @@ def test_supported_price_adapters_do_not_require_manual_admission(tmp_path):
             for key, target in iter_market_v3_bar_adapters()
         ]
 
-    assert len(reasons) == 20
-    assert reasons == [None] * 20
+    assert len(reasons) == 21
+    assert reasons == [None] * 21
 
 
 def test_tencent_etf_hfq_is_ready_without_manual_adjustment_admission(tmp_path):
@@ -183,7 +183,7 @@ def test_expired_and_not_yet_valid_admissions_fail_effective_closed(tmp_path):
         assert effective_target["reason"] == f"admission_{expected_state}"
 
 
-def test_circuit_state_is_execution_only_and_does_not_replace_g0_admission(tmp_path):
+def test_circuit_state_is_observability_only_and_never_removes_target(tmp_path):
     store = ThesisLedgerControlStore(str(tmp_path / "route-admission-circuit.db"))
     key, target = dict(EVENT_KEY), dict(EVENT_TARGET)
     _effective_for(store, key, target)
@@ -202,8 +202,8 @@ def test_circuit_state_is_execution_only_and_does_not_replace_g0_admission(tmp_p
     effective_target = store.effective_policy_v3()["routes"][0]["targets"][0]
 
     assert admission["admissionState"] == "admitted"
-    assert effective_target["eligible"] is False
-    assert effective_target["reason"] == "upstream_failure"
+    assert effective_target["eligible"] is True
+    assert effective_target["reason"] is None
 
 
 def test_wrong_route_identity_does_not_reuse_admission_and_scope_is_bounded(tmp_path):

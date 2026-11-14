@@ -45,8 +45,8 @@ class MinuteRequest(BaseModel):
     @classmethod
     def from_request(cls, request):
         if (request.capability != CAPABILITY or request.timeframe not in TIMEFRAMES or request.adjustment != "none"
-                or request.parameters != {"interactive_chart": True}):
-            raise ValueError("分钟仅支持不复权正常时段交互图表")
+                or request.parameters not in ({"interactive_chart": True}, {"historical_reconstruction": True})):
+            raise ValueError("分钟仅支持显式不复权原生资料读取")
         return cls(symbol=request.symbol, instrument_type=request.instrument_type, start=request.start,
                    end=request.end, timeframe=request.timeframe)
 

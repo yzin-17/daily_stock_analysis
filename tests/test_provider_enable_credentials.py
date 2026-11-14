@@ -26,7 +26,7 @@ def configured(store, provider_id="hithink"):
     return next(item for item in store.provider_registry() if item["providerId"] == provider_id)
 
 
-@pytest.mark.parametrize("provider_id", ["hithink", "tushare", "tickflow", "longbridge", "finnhub", "alphavantage", "rqdata"])
+@pytest.mark.parametrize("provider_id", ["hithink", "tushare", "longbridge", "finnhub", "alphavantage", "rqdata"])
 def test_required_provider_cannot_enable_without_credentials_or_write_config(store, provider_id):
     assert configured(store, provider_id)["enabled"] is False
     with pytest.raises(ControlContractError) as caught:
@@ -97,3 +97,9 @@ def test_public_sources_enable_without_credentials(store):
     result = store.save_provider_config("tencent", {"requestId": "public", "enabled": True})
     assert result["enabled"] is True
     assert configured(store, "tencent")["enabled"] is True
+
+
+def test_tickflow_free_daily_can_enable_without_paid_interface_credentials(store):
+    result = store.save_provider_config('tickflow', {'requestId': 'free-daily', 'enabled': True})
+    assert result['enabled'] is True
+    assert configured(store, 'tickflow')['credentialConfigured'] is False

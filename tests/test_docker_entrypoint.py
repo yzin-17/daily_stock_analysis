@@ -30,7 +30,7 @@ def test_dockerfile_keeps_cached_data_sdk_install_and_entrypoint_smoke() -> None
 
     assert "screening.git" not in requirements.lower()
     assert "pip install -r requirements.txt" in dockerfile
-    assert "--mount=type=cache,target=/root/.cache/pip" in dockerfile
+    assert re.search(r"--mount=type=cache,(?:[^\s,]+,)*target=/root/\.cache/pip(?:[\s,])", dockerfile)
     assert "from server import app; import futu" in dockerfile
 
 

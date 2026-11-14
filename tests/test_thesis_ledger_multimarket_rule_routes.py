@@ -32,5 +32,7 @@ def test_configured_market_source_uses_authenticated_runtime_without_admission(t
         response = client.post(url, json=req, headers={"Authorization": "Bearer p6-data-token"})
         assert response.status_code == 200, response.text
         assert response.json()["provenance"]["upstreamSource"] == target["upstreamSource"]
-        wrong = {**req, "symbol": "uncovered"}
-        assert client.post(url, json=wrong, headers={"Authorization": "Bearer p6-data-token"}).status_code == 503
+        wrong = {**req, "symbol": "00700.HK" if market == "HK" else "AAPL.US"}
+        outside = client.post(url, json=wrong, headers={"Authorization": "Bearer p6-data-token"})
+        assert outside.status_code == 422
+        assert outside.json()["detail"]["error"]["code"] == "insufficient_coverage"

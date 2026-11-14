@@ -122,7 +122,7 @@ class OfficialPublicFeeProvider:
             raise PublicFeeSourceError("invalid_request", "公共收费请求合同无效")
 
         try:
-            path = ARCHIVE_DATA_PATH if target["upstreamSource"] == ARCHIVE_SOURCE else self.data_path
+            path = self._data_path_override or (ARCHIVE_DATA_PATH if target["upstreamSource"] == ARCHIVE_SOURCE else self.data_path)
             pack = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             raise PublicFeeSourceError("upstream_failure", "公共收费数据包无法读取") from exc

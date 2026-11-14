@@ -52,7 +52,7 @@ def test_environment_credentials_do_not_enable_new_news_sources(store):
         assert connection.execute("SELECT count(*) FROM thesis_ledger_provider_config").fetchone()[0] == 0
 
 
-def test_news_route_requires_explicit_enable_and_keeps_independent_admission(store):
+def test_news_route_requires_explicit_enable_and_allows_unverified_first_use(store):
     missing_flag = policy()
     del missing_flag["routes"][0]["enabled"]
     with pytest.raises(ControlContractError) as failure:
@@ -67,8 +67,10 @@ def test_news_route_requires_explicit_enable_and_keeps_independent_admission(sto
     store.save_provider_config("searxng", payload)
     effective = store.effective_policy_v3()
     target = effective["routes"][0]["targets"][0]
-    assert target["eligible"] is False and target["reason"] == "not_admitted"
+    assert target["eligible"] is True and target["reason"] is None
     assert store.get_route_admission_v3(key=KEY, target=TARGET) is None
+    from src.services.thesis_ledger_capability_verification import VerificationCatalog
+    assert VerificationCatalog(store).read(KEY, TARGET) == {"state": "unverified"}
 
 
 def test_first_settings_write_preserves_news_default_closed_and_legacy_defaults(store):
@@ -93,7 +95,8 @@ def test_exact_bindings_and_structured_secret_schema(source):
         assert CAPABILITY_SOURCES.resolve(binding.key.route_key(), {
             "providerId": source.provider_id, "upstreamSource": binding.upstream_source,
         }) is binding
-        assert binding.key.capability == "NEWS_SEARCH" and binding.gated
+        assert binding.key.capability in {"NEWS_SEARCH", "WEB_SEARCH"} and binding.gated
+    assert {binding.key.capability for binding in source.bindings} == {"NEWS_SEARCH", "WEB_SEARCH"}
     assert CAPABILITY_SOURCES.resolve(KEY, {"providerId": source.provider_id, "upstreamSource": "other"}) is None
 
 

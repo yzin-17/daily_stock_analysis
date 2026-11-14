@@ -17,7 +17,7 @@ def test_real_source_catalog_policy_and_authenticated_read(configured_client, so
     target = {"providerId": PROVIDER_ID, "upstreamSource": source}
     catalog = client.get("/api/v3/thesis-ledger/control/routes/capabilities?contractVersion=3",
                          headers=routes.CONTROL_HEADERS).json()
-    assert {"key": ROUTE_KEY, "target": target, "state": "ready"} in catalog["entries"]
+    assert {"key": ROUTE_KEY, "target": target, "state": "ready", "verification": {"state": "unverified"}} in catalog["entries"]
     policy = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "listing-policy", "revision": 1,
               "enabled": True, "routes": [{"key": ROUTE_KEY, "targets": [target]}]}
     assert client.post("/api/v3/thesis-ledger/control/policies/apply", json=policy, headers=routes.CONTROL_HEADERS).status_code == 200

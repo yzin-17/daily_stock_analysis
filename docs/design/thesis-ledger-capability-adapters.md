@@ -10,7 +10,7 @@ TickFlow免费历史明确显示为`tickflow-free`／“TickFlow 免费历史”
 
 精确只读检查可通过来源`exact_probe_read`声明复用原读取器，入口传已绑定key/target及可选的实际policy_revision，并校验标准symbol/start/end样本，不传Runtime或任意SDK方法。CN费用、HK/US费用及盘中状态、公告状态和公告现金已按此本地迁移；来源拥有数据包路径/原reader与字节前后核验，公共官方前缀与文件分派已退役。来源级回调返回None表示委托未迁移路径。RQ/HiThink/Tushare/东财六在线事件诊断已由EventBinding.probe_read本地声明，执行成功返回None即完成本次读取，缺声明则not_adapted，失败不落回旧供应商分支。新来源不能依靠名称前缀获得检查或生产资格。公告七个独立功能诊断已在本地复用各自标准Schema/处理器/结果；缺有效实际修订则拒绝，返回前复核同代次，不虚构占位政策。目标更新/真实检查见原Task；本地包读取成功不等于当前准入、消费或冻结资格。
 
-当前已迁移选定腾讯/HiThink 日线、腾讯 ETF 即时报价、efinance 六项日线、Akshare 十二项日线、BaoStock 三项日线及独立状态/粗风险/基础日期、公告独立状态/风险/规则/阶段、pytdx 沪深股票未复权日线、TickFlow完整服务股票三项复权日线及免费服务三个独立绑定、Alpha Vantage 美股未复权日线、Finnhub 美股 qfq 日线、Tushare CN/HK 股票 none 日线、Longbridge HK/US 股票/ETF none/qfq 八项日线、Futu HK/US 股票/ETF none/qfq/hfq 十二项日线，以及 Yahoo 七项 qfq 日线和两项已有 Share none 参考窗口。原140目标保持，新增免费三个后共143个精确目标各自归入唯一来源绑定；精确组合与真实就绪/消费/冻结仍由原Task和来源矩阵分层维护。源文件以 `data_provider/thesis_ledger_sources/` 中各模块为可运行参考。
+当前已迁移选定腾讯/HiThink 日线、腾讯 ETF 即时报价、efinance 六项日线、Akshare 十二项日线、BaoStock 三项日线及独立状态/粗风险/基础日期、公告独立状态/风险/规则/阶段、pytdx 沪深股票未复权日线、TickFlow完整服务股票三项复权日线及免费服务三个独立绑定、Alpha Vantage 美股未复权日线、Finnhub 美股 qfq 日线、Tushare CN/HK 股票 none 日线、Longbridge HK/US 股票/ETF none/qfq 八项日线、Futu 港美股票/ETF 十二项及内地股票三项日线，以及 Yahoo 七项 qfq 日线和两项已有 Share none 参考窗口。精确目标各自归入唯一来源绑定；当前组合以注册库存为准，真实就绪、消费与冻结按各自任务和来源矩阵分层维护。源文件以 `data_provider/thesis_ledger_sources/` 中各模块为可运行参考。
 
 efinance 股票/ETF、pytdx 股票和 AKShare ETF 即时报价也已归来源绑定。efinance 股票只读原单标快照，保留 TTL 缓存/限流与 ETF 冷却；pytdx 使用原单标 session 并校验证券及市场，缺失量额和未证明单位保持未知。AKShare ETF 复用原 4.5s 单证券 helper；本地修订与上游修订分别维护。
 
@@ -52,7 +52,7 @@ Tushare 的 `require_credential_revision_for_cache=true` 保留原内部 HMAC �
 
 Longbridge 来源工厂保留 legacy 三凭据与原 `build_page_oauth`。内部 `ReadContext.database_path` 供原 CAS 刷新仓储使用，其他来源无需提供；probe 传 `read_only=true`，不保存刷新或启动交互授权。`allow_empty_environment_credentials=true` 仅保存原 SDK 环境发现行为，控制凭据为空仍拒绝；该声明不表示来源可用。正常工厂仍按不可变凭据快照缓存，精确读取仍沿原缓存调用约定。八项绑定保留原 SDK 日期、复权枚举、时钟和未知单位，不在适配器内新增回退。
 
-Futu 来源复用原 `FutuMarketAdapter` 与 `futu_query_worker`，隔离进程仍为 4.5s；原 SDK 多页完成、游标/身份/窗口校验和 finally 释放保持。其 `DailyRead.pages_fetched=1`/wire `pagesFetched=1` 计数的是一次完整隔离响应，不是 SDK 页数；worker 没有导出内部页数，保持未知。不要按行数推算页数，也不要用该计数证明完整性。HK/US 股票/ETF none/qfq/hfq 十二项既有日线的来源绑定集中拥有原工厂、opend 凭据/依赖及修订；现行报价/当前资料/每手目标也已分别绑定，继续复用同一工厂和原读取器。
+Futu 来源复用原 `FutuMarketAdapter` 与 `futu_query_worker`，隔离进程仍为 4.5s；原 SDK 多页完成、游标/身份/窗口校验和 finally 释放保持。其 `DailyRead.pages_fetched=1`/wire `pagesFetched=1` 计数的是一次完整隔离响应，不是 SDK 页数；worker 没有导出内部页数，保持未知。不要按行数推算页数，也不要用该计数证明完整性。HK/US 股票/ETF none/qfq/hfq 十二项既有日线的来源绑定集中拥有原工厂、opend 凭据/依赖及修订；2026-11-10 增加 CN/STOCK 三种复权日线，沪深股票身份核验仍在读取器内，不扩展研究资格，见[增量规格](../specs/2026-11-10-futu-cn-daily.md)。现行报价/当前资料/每手目标继续复用同一工厂和原读取器。
 
 Native 日线生产查找/执行已退役，旧空表仅为迁移回归与防重门禁哨兵，不允许新登记或生产依赖。已绑定的非 HiThink 日线只读检查复用能力处理器与原 probe 工厂，继续核对来源、日期和错误；HiThink专有interactive检查已沿其绑定复用原语义，产品范围外原生分析继续自身路径。检查成功不自动写准入或证明历史消费资格。
 
@@ -66,7 +66,7 @@ Futu 与 Longbridge 的 HK/STOCK 每手股数使用同一 LotRequest/LotResult/Q
 
 Futu 四项 HK/US 股票/ETF 报价使用既有 QuoteBinding；原 worker、单标身份、价格/量额、来源时钟与释放保持，缺来源时间不以抓取时间补齐。公共报价分发按精确绑定拒绝不匹配的 upstreamSource，不能隐式调用旧通用接口；只读检查传标准证券代码，不维护第二份供应商格式名单。四项当前资料也使用独立 StaticRequest/StaticResult/QueryContract，原整数精度、未知字段和 historicalChanges=unverified 保持，HTTP/probe 复用合同；每手也已按下文标准合同绑定。
 
-QueryBinding 的 `admission_required` 为可选内部 bool 事实，None 保持存量由 gated 推导的规则；Futu 当前资料为 false，目录 gated 仍为原 true。按配置读取和目录兼容标记分别表达，不因此写入用户准入或跳过凭据/启用检查。来源错误可传原 retryable 标记，默认 false；标记不增加重试。当前资料只接受规范证券/类型，不接受历史参数，其观察不能填入历史基础日期或价格覆盖证明。
+普通 QueryBinding 按当前配置执行，缺少人工准入记录不再阻止首次使用；`admission_required` 的既有内部声明不充当普通查询的首次验证门槛。EventBinding 的原文、身份和历史事实要求继续由相应数据合同维护。实际完整成功按[能力验证机制](thesis-ledger-capability-verification.md)保存精确结果，不跳过凭据或启用检查。来源错误可传原 retryable 标记，默认 false；标记不增加重试。当前资料只接受规范证券/类型，不接受历史参数，其观察不能填入历史基础日期或价格覆盖证明。
 
 QueryBinding 的合同必须同时提供 `validate_binding` 和 `correlate_result`：前者在上游读取前核对本能力请求与精确绑定，后者在 Schema 校验后核对请求及固定目标。校验由能力合同拥有，适配器只负责来源结构转换；不把关联校验留给每个新来源自行复制。处理器只能登记 query；声明 subscribe 需要独立生命周期实现，现有纯盘口状态测试不代表生产订阅。能力版本须为正整数并使用相应 Schema，公共注册器不按供应商或固定版本号分支。已有日线/报价继续走各自专用入口，通用 query 不能绕过它们的精确规则。
 

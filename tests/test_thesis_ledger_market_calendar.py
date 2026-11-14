@@ -69,6 +69,30 @@ def test_exact_future_and_total_budget_boundaries():
         contract.validate_market_calendar_range((first - timedelta(days=1)).isoformat(), "2026-01-02", as_of)
 
 
+@pytest.mark.parametrize("market,timezone,as_of", [
+    ("CN", "Asia/Shanghai", "2026-11-01T16:00:00Z"),
+    ("HK", "Asia/Hong_Kong", "2026-11-01T16:00:00Z"),
+    ("US", "America/New_York", "2026-11-02T05:00:00Z"),
+])
+def test_local_midnight_calendar_request_uses_market_date(monkeypatch, market, timezone, as_of):
+    def fact(start, end, instant):
+        return {**_fact(start, end, instant), "market": market, "timezone": timezone, "holidays": []}
+    monkeypatch.setattr(contract, "calendar_fact", fact)
+    monkeypatch.setattr("src.services.thesis_ledger_multimarket_calendar.multimarket_calendar_fact",
+                        lambda _market, start, end, instant: fact(start, end, instant))
+    result = _client(monkeypatch).get("/api/v3/thesis-ledger/market/calendar", headers=_headers(), params={
+        "market": market, "start": "2026-11-02", "end": "2026-11-02", "dataAsOf": as_of,
+    })
+    assert result.status_code == 200
+    assert result.json()["status"] == "supported"
+
+
+def test_us_date_still_in_previous_day_rejects_future_start():
+    with pytest.raises(DependencyFactError):
+        contract.validate_market_calendar_range("2026-11-02", "2026-11-02",
+                                               parse_data_as_of("2026-11-02T01:00:00Z"), "US")
+
+
 @pytest.mark.parametrize("patch", [
     {"market": "JP"}, {"start": "2026-02-30"}, {"start": "2026-01-03"},
     {"end": "2025-12-31"}, {"end": "2027-01-04"}, {"start": "1900-01-01"},

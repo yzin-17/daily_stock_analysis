@@ -229,7 +229,7 @@ def test_empty_response_keeps_stable_content_revision_incomplete_coverage_and_sh
     assert first.result["providerRevision"] == second.result["providerRevision"]
     assert first.result["providerRevision"].startswith("tushare-fund-div-content-v1:")
     assert first.result["coverage"]["complete"] is second.result["coverage"]["complete"] is False
-    assert inputs.runtime.adapters["tushare"]._call_count == 2
+    assert not hasattr(inputs.runtime.adapters["tushare"], '_call_count')
 
 
 @pytest.mark.parametrize("failure", [PermissionError("synthetic denial"), TimeoutError("synthetic timeout")])

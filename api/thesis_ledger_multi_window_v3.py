@@ -40,8 +40,7 @@ def try_daily_multi_window_v3(
     binding = CAPABILITY_SOURCES.resolve(key, target)
     if not isinstance(binding, DailyBinding) or binding.window_planner is None:
         return None
-    sessions = [day for day in coverage_context["calendar"]["expectedSessionDates"]
-                if day >= coverage_context["listing"]["firstTradingDate"]]
+    sessions = coverage_context["expectedPostListingSessionDates"]
     context = DailyWindowPlanningContext(request_data['start'], request_data['end'], tuple(sessions), max_requests)
     try:
         raw_plan = binding.window_planner(context)
@@ -99,8 +98,8 @@ def _combine(request: dict, context: dict, observations: list[dict], *, complete
         "pagesFetched": sum(item["response"]["coverageProof"]["pagination"]["pagesFetched"] for item in observations),
         "continuationPending": False}}
     parent["coverageProof"]["window"]["requestedEnd"] = end
-    expected = [day for day in context["calendar"]["expectedSessionDates"]
-                if request["start"] <= day <= end and day >= context["listing"]["firstTradingDate"]]
+    expected = [day for day in context["expectedPostListingSessionDates"]
+                if request["start"] <= day <= end]
     actual = [datetime.fromisoformat(point["timestamp"].replace("Z", "+00:00"))
               .astimezone(ZoneInfo(context["calendar"]["timezone"])).date().isoformat() for point in parent["bars"]]
     if request.get("tradabilityMode"):

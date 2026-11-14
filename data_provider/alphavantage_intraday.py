@@ -14,7 +14,9 @@ def read_minute(query, context):
         'apikey': context.adapter._api_key,
     })
     if 'Note' in payload or 'Information' in payload:
-        raise CapabilityContractError('quota_unavailable', 'Alpha Vantage 分钟权限或额度不可用')
+        from src.services.thesis_ledger_provider_errors import classify_provider_failure
+        raise CapabilityContractError(classify_provider_failure(payload.get('Note') or payload.get('Information')),
+                                      'Alpha Vantage 分钟权限或额度不可用')
     metadata = payload.get('Meta Data', {})
     if metadata.get('2. Symbol') != symbol or metadata.get('4. Interval') != query.timeframe[:-1] + 'min':
         raise CapabilityContractError('invalid_response', 'Alpha Vantage 分钟证券或周期不一致')

@@ -84,7 +84,7 @@ def test_fetch_rt_k_names_batches_and_collects_results():
         }
     )
 
-    with patch.object(fetch_tushare_stock_list, "random_sleep") as random_sleep:
+    with patch("time.sleep") as random_sleep:
         name_map = fetch_tushare_stock_list.fetch_rt_k_names(api, ["000001.SZ", "300001.SZ"])
 
     assert name_map == {"000001.SZ": "西藏药", "300001.SZ": "惠康"}
@@ -108,7 +108,7 @@ def test_main_default_flow_keeps_original_filename():
         patch.object(fetch_tushare_stock_list, "fetch_hk_stock_list", return_value=hk_df) as fetch_hk,
         patch.object(fetch_tushare_stock_list, "fetch_us_stock_list", return_value=us_df) as fetch_us,
         patch.object(fetch_tushare_stock_list, "generate_data_documentation") as generate_doc,
-        patch.object(fetch_tushare_stock_list, "random_sleep") as random_sleep,
+        patch("time.sleep") as random_sleep,
         patch.object(fetch_tushare_stock_list, "fix_a_stock_names_with_rt_k") as fix_a_stock_names,
     ):
         exit_code = fetch_tushare_stock_list.main([])
@@ -120,7 +120,7 @@ def test_main_default_flow_keeps_original_filename():
     fetch_us.assert_called_once_with(api)
     fix_a_stock_names.assert_not_called()
     generate_doc.assert_called_once_with(a_df, hk_df, us_df, a_filename="stock_list_a.csv", a_title="A股列表")
-    assert random_sleep.call_count == 2
+    random_sleep.assert_not_called()
 
 
 def test_main_a_rk_flow_overwrites_a_filename_and_rt_k():
@@ -138,7 +138,7 @@ def test_main_a_rk_flow_overwrites_a_filename_and_rt_k():
         patch.object(fetch_tushare_stock_list, "fetch_hk_stock_list", return_value=hk_df) as fetch_hk,
         patch.object(fetch_tushare_stock_list, "fetch_us_stock_list", return_value=us_df) as fetch_us,
         patch.object(fetch_tushare_stock_list, "generate_data_documentation") as generate_doc,
-        patch.object(fetch_tushare_stock_list, "random_sleep") as random_sleep,
+        patch("time.sleep") as random_sleep,
     ):
         exit_code = fetch_tushare_stock_list.main(["--a-rk"])
 
@@ -159,4 +159,4 @@ def test_main_a_rk_flow_overwrites_a_filename_and_rt_k():
         a_filename="stock_list_a.csv",
         a_title="A股列表（修正后）",
     )
-    assert random_sleep.call_count == 2
+    random_sleep.assert_not_called()

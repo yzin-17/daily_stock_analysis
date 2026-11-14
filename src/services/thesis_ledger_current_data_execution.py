@@ -14,6 +14,7 @@ from src.services.thesis_ledger_status_capabilities_v1 import NAMES as STATUS_QU
 from src.services.thesis_ledger_feature_policy import feature_provider_epoch
 from src.services.thesis_ledger_price_route_access import configured_data_route
 from src.services.thesis_ledger_route_admission_v3 import route_admission_scope_applies
+from src.services.thesis_ledger_verification_request import VerificationRequest
 from src.services.thesis_ledger_provider_runtime import (
     PROVIDER_MANIFESTS, ProviderCallError, ProviderExecution, RouteTarget,
     ThesisLedgerDataRequest, ThesisLedgerGatewayError, _log_quote_event,
@@ -44,6 +45,7 @@ def execute_current_data_request(
                 raise CurrentDataRouteError('not_admitted', '同日比较只允许已选的东方财富公开净值主来源')
             targets = targets[:1]
         route_key = current_data_route_key(capability, instrument_type, request.symbol)
+        verification = VerificationRequest(runtime, route_key, request_id=request.request_id, symbol=request.symbol)
         if capability == "NEWS_FEED" and (request.parameters or {}).get("providerId") is not None:
             targets = [item for item in targets if item[0] == request.parameters["providerId"]]
             if not targets:
@@ -85,7 +87,7 @@ def execute_current_data_request(
         if not scoped_targets:
             raise CurrentDataRouteError("not_admitted", "当前来源准入未覆盖请求标的或日期")
         provider_epoch = None
-        if capability in STATUS_QUERY_CAPABILITIES or capability in {"NEWS_SEARCH", "NEWS_FEED"}:
+        if capability in STATUS_QUERY_CAPABILITIES or capability in {"NEWS_SEARCH", "NEWS_FEED", "WEB_SEARCH"}:
             provider_epoch = feature_provider_epoch(runtime.store, [item.provider_id for item in scoped_targets])
         def checked_operation(provider_id, adapter, source):
             value = operation(provider_id, adapter, source)
@@ -144,6 +146,7 @@ def execute_current_data_request(
         if snapshot is not None and runtime.store.provider_credential_snapshot(result.provider) != snapshot:
             raise CurrentDataRouteError("credential_missing", "数据返回前来源凭证已变更")
         constrain_background_quote(runtime, request, current_targets)
+        verification.accept(result.value, provider=result.provider, source=result.upstream_source)
         return result
     except ThesisLedgerGatewayError:
         raise

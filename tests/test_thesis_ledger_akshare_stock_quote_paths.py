@@ -33,6 +33,25 @@ def configured(store, upstream):
     return ThesisLedgerProviderRuntime(store)
 
 
+@pytest.mark.parametrize('upstream', ['eastmoney', 'tencent', 'sina'])
+@pytest.mark.parametrize('status,code', [(429, 'rate_limited'), (401, 'authentication_failed'), (403, 'permission_denied')])
+def test_explicit_upstream_restriction_is_not_retried_or_swallowed(monkeypatch, store, sdk, upstream, status, code):
+    import requests
+    import akshare as ak
+    from unittest.mock import Mock
+    module, _ = sdk
+    failure = requests.HTTPError('private fixture', response=SimpleNamespace(status_code=status))
+    read = Mock(side_effect=failure)
+    if upstream == 'eastmoney':
+        monkeypatch.setattr(ak, 'stock_zh_a_spot_em', read)
+    else:
+        monkeypatch.setattr(module.requests, 'get', read)
+    with pytest.raises(ProviderCallError) as error:
+        configured(store, upstream).execute_request(ThesisLedgerDataRequest('REALTIME_QUOTE', '600519.SH'))
+    assert error.value.code == code and read.call_count == 1
+    assert 'private fixture' not in str(error.value)
+
+
 def test_eastmoney_actual_market_snapshot_reuses_cache_and_selects_identity(monkeypatch, store, sdk):
     import akshare as ak
     calls = []

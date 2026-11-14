@@ -7,6 +7,7 @@ import re
 import time
 
 from data_provider.hithink_news import HithinkNewsSettings, hithink_news_worker
+from data_provider.hithink_news_pagination import project_page
 from src.data_config import DataConfigurationError
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError
 from src.services.thesis_ledger_capability_registry import ExactKey, QueryBinding
@@ -15,11 +16,12 @@ from src.services.thesis_ledger_news_contract_v1 import NewsError, NewsRoute
 from src.services.thesis_ledger_news_execution import execute_news_search
 from src.services.thesis_ledger_news_instruments import resolve_public_news_instrument
 from src.services.thesis_ledger_news_records import RawNewsRead
+from src.services.thesis_ledger_news_pagination import NEWS_CURSORS, news_page_scope
 from src.services.thesis_ledger_news_results import build_news_response
 
 UPSTREAM = "hithink-news-stock-timeline"
-ADAPTER_REVISION = "hithink-stock-news-v1"
-SOURCE_REVISION = "hithink-stock-timeline-first-page-v1"
+ADAPTER_REVISION = "hithink-stock-news-offset-v2"
+SOURCE_REVISION = "hithink-stock-timeline-offset-v2"
 
 
 def read(request, context):
@@ -50,12 +52,20 @@ def read(request, context):
         return reject("configuration_failure", "新闻公开身份读取失败")
     if identity is None:
         return reject("ambiguous_instrument", "公开目录无法核验新闻标的身份")
+    scope = news_page_scope(request, context, (ADAPTER_REVISION, SOURCE_REVISION))
+    state = NEWS_CURSORS.get(request.cursor, scope) if request.cursor else None
     remaining = request.requestBudgetMs - math.ceil((time.monotonic() - started) * 1000)
     raw = execute_news_search(settings, identity.symbol, limit=request.limit, days=3,
-                              request_budget_ms=remaining, cursor=request.cursor, worker=hithink_news_worker)
-    raw = replace(raw, missing_reasons=raw.missing_reasons + ("timeline_window_not_exhaustive",),
-                  errors=tuple(error.model_copy(update={"providerId": "hithink", "upstreamSource": UPSTREAM})
-                               for error in raw.errors))
+                              request_budget_ms=remaining, cursor=state.offset if state else None,
+                              worker=hithink_news_worker)
+    try:
+        raw = project_page(raw, state, scope=scope, provider="hithink", source=UPSTREAM,
+                           published_start=request.publishedStart)
+    except CapabilityContractError as error:
+        raw = replace(raw, success=False, records=(), next_cursor=None,
+                      errors=raw.errors + (NewsError(code=error.code, message=str(error)),))
+    raw = replace(raw, errors=tuple(error.model_copy(update={"providerId": "hithink", "upstreamSource": UPSTREAM})
+                                   for error in raw.errors))
     return result(raw)
 
 

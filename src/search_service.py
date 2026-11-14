@@ -4596,8 +4596,6 @@ class SearchService:
             else:
                 logger.warning(f"[情报搜索] {dim['desc']}: 搜索失败 - {response.error_message}")
             
-            # 短暂延迟避免请求过快
-            time.sleep(0.5)
         
         return results
     
@@ -4678,8 +4676,6 @@ class SearchService:
         results = {}
         
         for i, stock in enumerate(stocks):
-            if i > 0:
-                time.sleep(delay_between)
             
             code = stock.get('code', '')
             name = stock.get('name', '')
@@ -4767,9 +4763,6 @@ class SearchService:
                     logger.warning(f"[增强搜索] {provider.name} 搜索异常: {e}")
                     continue
             
-            # 短暂延迟避免请求过快
-            if i < max_attempts - 1:
-                time.sleep(0.5)
         
         # 汇总结果
         if all_results:

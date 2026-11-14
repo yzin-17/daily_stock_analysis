@@ -42,7 +42,6 @@ def save(client, provider_id, **values):
 
 
 @pytest.mark.parametrize("provider_id,method,field", [
-    ("tickflow", "api_key", "apiKey"),
     ("finnhub", "api_key", "apiKey"),
     ("alphavantage", "api_key", "apiKey"),
     ("tushare", "token", "token"),
@@ -92,7 +91,7 @@ def test_first_save_preserves_preexisting_environment_and_source_defaults(
         if provider_id == "tickflow" and environment_configured else {}
     ))
     before = provider(store, "tickflow")
-    assert before["enabled"] is (default_enabled and environment_configured)
+    assert before["enabled"] is default_enabled
     response = save(client, "tickflow", credentials={
         "method": "api_key", "values": {"apiKey": "synthetic-page-secret"},
     })

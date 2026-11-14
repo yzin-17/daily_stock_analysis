@@ -116,17 +116,14 @@ class TwInstitutionalFetcher:
         self._cache_at: Dict[Any, float] = {}
         self._cache_ttl = cache_ttl_seconds
         self._timeout = timeout
-        # TWSE T86 RWD endpoint has an informal ~3 req / 5 s ban; throttle requests.
-        self._min_interval = min_request_interval
-        self._last_request_at = 0.0
+        # 并发与缓存锁独立于上游频次限制。
         self._lock = threading.Lock()
-        self._throttle_lock = threading.Lock()
         # One lock per unique (market, ad_date) key; bounded by tw markets x
         # distinct dates queried -- low thousands at most, negligible memory.
         self._inflight: Dict[Any, threading.Lock] = {}
         # Per-market circuit breaker (keyed "twse"/"tpex"): when an endpoint is down
         # (>= 3 consecutive failures) skip the network round-trip for ~5 min and fail
-        # open, instead of paying timeout + throttle on every stock during an outage.
+        # open, instead of paying timeout on every stock during an outage.
         # Reuses the repo's CircuitBreaker (same one DataFetcherManager uses).
         self._breaker = CircuitBreaker(failure_threshold=3, cooldown_seconds=300.0)
 
@@ -254,11 +251,7 @@ class TwInstitutionalFetcher:
             return lock
 
     def _throttle(self) -> None:
-        with self._throttle_lock:
-            wait = self._min_interval - (time.time() - self._last_request_at)
-            if wait > 0:
-                time.sleep(wait)
-            self._last_request_at = time.time()
+        """兼容旧调用入口；频次由上游或 SDK 处理，不主动等待。"""
 
     def _get_json(self, url: str, params: Optional[dict] = None) -> Any:
         self._throttle()

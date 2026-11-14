@@ -114,6 +114,7 @@ def test_baostock_adjustment_and_fields(store, adjustment, flag):
 @pytest.mark.parametrize('date_field', ['date', 'timestamp', 'time', 'ts'])
 def test_tickflow_compact_response_uses_sdk_adjustment(store, adjustment, flag, date_field):
     from data_provider.tickflow_fetcher import TickFlowFetcher
+    from data_provider.tickflow_daily import read_frame
     store.save_provider_config('tickflow', {"enabled": True, 'requestId': 'fixture',
         'credentials': {'method': 'api_key', 'values': {'apiKey': 'synthetic'}}})
     calls = []
@@ -129,7 +130,7 @@ def test_tickflow_compact_response_uses_sdk_adjustment(store, adjustment, flag, 
            'timeframe': '1d', 'adjustment': adjustment}
     target = {'providerId': 'tickflow', 'upstreamSource': 'tickflow'}
     assert apply(store, key, target)['effective']['routes'][0]['targets'][0]['eligible']
-    result = ThesisLedgerProviderRuntime(store, adapters={'tickflow': adapter}).execute_market_bars_v3(request(adjustment), key).value
+    result = read_frame(adapter, request(adjustment))
     assert result["date"].tolist() == ["2026-05-18"]
     assert result['volume'].tolist() == [100.]
     assert calls == [('600519.SH', {'period': '1d', 'count': 30,

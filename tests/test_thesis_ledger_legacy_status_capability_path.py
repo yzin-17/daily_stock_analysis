@@ -21,7 +21,7 @@ from tests.test_thesis_ledger_baostock_lifecycle import normalize, frame as basi
 
 NOW=datetime(2026,10,12,tzinfo=timezone.utc)
 ROWS=list(CAPABILITY_SOURCES.routes('HISTORICAL_TRADING_STATUS'))
-DOCUMENT_ROWS=[row for row in ROWS if row[1]['providerId']!='baostock']
+DOCUMENT_ROWS=[row for row in ROWS if row[1]['providerId'] not in {'baostock', 'local-materials'}]
 
 
 def wire(key,target):

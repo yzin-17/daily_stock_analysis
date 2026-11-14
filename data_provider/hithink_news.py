@@ -1,4 +1,4 @@
-"""HiThink 个股新闻首屏：只投影元数据，保留真实时间和有限覆盖。"""
+"""HiThink 个股时间线的单页读取：原样消费来源 offset，只投影元数据。"""
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -21,6 +21,7 @@ class HithinkNewsSettings:
     api_key: str = field(repr=False)
     provider_id: str = "hithink"
     result_limit: int = MAX_ITEMS
+    paginated: bool = True
 
     def configured(self):
         return bool(self.api_key.strip())
@@ -86,16 +87,17 @@ def parse_hithink_page(body, *, max_results):
     return HithinkNewsPage(tuple(records), more, offset if isinstance(offset, str) else None, sha256(body).hexdigest())
 
 
-def fetch_hithink_news(settings, symbol, connection, deadline, *, max_results):
+def fetch_hithink_news(settings, symbol, connection, deadline, *, max_results, offset="first"):
     import requests
-    if not settings.configured() or not re.fullmatch(r"\d{6}\.(?:SH|SZ|BJ)", symbol):
+    if (not settings.configured() or not re.fullmatch(r"\d{6}\.(?:SH|SZ|BJ)", symbol)
+            or not isinstance(offset, str) or not 0 < len(offset) <= 4096):
         raise HithinkNewsError("configuration_failure")
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise requests.Timeout("新闻总请求预算已耗尽")
     with requests.Session() as session:
         connection.send(("attempt", None))
-        with session.get(NEWS_URL, params={"thscode": symbol, "offset": "first", "size": max_results},
+        with session.get(NEWS_URL, params={"thscode": symbol, "offset": offset, "size": max_results},
                          headers={"X-api-key": settings.api_key}, timeout=remaining,
                          stream=True, allow_redirects=False) as response:
             connection.send(("http_status", response.status_code))
@@ -113,7 +115,8 @@ def hithink_news_worker(connection, settings, query, max_results, _days, deadlin
     logging.disable(logging.CRITICAL)
     page = None
     try:
-        page = fetch_hithink_news(settings, query, connection, deadline, max_results=max_results)
+        symbol, offset = query if isinstance(query, tuple) else (query, "first")
+        page = fetch_hithink_news(settings, symbol, connection, deadline, max_results=max_results, offset=offset)
     except HithinkNewsError as error:
         connection.send((error.code, None))
     except Exception as error:
@@ -122,5 +125,6 @@ def hithink_news_worker(connection, settings, query, max_results, _days, deadlin
     finally:
         connection.send(("result", {"records": page.records if page else (), "success": page is not None,
                                     "truncated": page.has_more if page else False,
+                                    "next_cursor": page.offset if page and page.has_more else None,
                                     "examined_count": len(page.records) if page else 0, "partial": False}))
         connection.close()

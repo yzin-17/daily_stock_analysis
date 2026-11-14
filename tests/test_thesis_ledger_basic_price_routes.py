@@ -53,7 +53,7 @@ def test_other_exact_price_source_uses_configuration_without_manual_admission():
 @pytest.mark.parametrize("provider,source,adjustment,market,expected", [
     ("tencent", "tencent", "none", "CN", True),
     ("tencent", "tencent", "qfq", "CN", True),
-    ("tencent", "tencent", "hfq", "CN", False),
+    ("tencent", "tencent", "hfq", "CN", True),
     ("tencent", "eastmoney", "none", "CN", False),
     ("hithink", "hithink-financial-api", "none", "CN", True),
     ("tencent", "tencent", "none", "HK", False),

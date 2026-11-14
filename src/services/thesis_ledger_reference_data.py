@@ -19,7 +19,7 @@ def reference_data_operation(request, error_type, runtime=None):
     legacy_operation = legacy_status_operation(request, error_type)
     if legacy_operation is not None:
         return legacy_operation
-    fees_operation = fees_query_operation(request, error_type)
+    fees_operation = fees_query_operation(request, error_type, runtime)
     if fees_operation is not None:
         return fees_operation
     status_operation = status_query_operation(request, error_type, runtime)

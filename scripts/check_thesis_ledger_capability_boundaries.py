@@ -18,6 +18,12 @@ from src.services.thesis_ledger_exact_route_inventory import exact_route_invento
 
 def check():
     errors = []
+    for name in ['thesis_ledger_cache_context_v3.py', 'thesis_ledger_bar_cache_context_v3.py']:
+        tree = ast.parse((ROOT / 'src/services' / name).read_text())
+        if any(isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+               and node.func.attr in {'_adapter', 'execute_request', 'execute_market_bars_v3', 'daily', 'query'}
+               for node in ast.walk(tree)):
+            errors.append(f'{name} 缓存控制投影不得读取价格或创建SDK适配器')
     if NATIVE_DAILY_ROUTES:
         errors.append("退役 Native 日线库存不得重新登记；新来源应使用能力绑定")
     identities = [(tuple(sorted(key.items())), tuple(sorted(target.items())))
@@ -203,6 +209,8 @@ def check():
                 if module.startswith(("tests", "api")) or module.endswith("thesis_ledger_provider_runtime"):
                     errors.append(f"{path.relative_to(ROOT)}:{node.lineno} 反向依赖或生产测试混用 {module}")
     for source in CAPABILITY_SOURCES.sources:
+        if source.provider_id == "tickflow-free":
+            errors.append("TickFlow 必须按功能权限使用同一来源身份")
         for binding in source.bindings:
             key = binding.key
             triple = (key.asset_type, source.provider_id, binding.upstream_source)

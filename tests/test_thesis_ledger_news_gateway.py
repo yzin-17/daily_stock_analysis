@@ -92,13 +92,16 @@ def test_formal_binding_http_and_same_request_replay_preserve_original_facts(env
     ("malformed", "unavailable", "upstream_failure"), ("rate", "unavailable", "rate_limited"),
 ])
 def test_formal_response_preserves_empty_partial_failure_and_limits(environment, mode, status, code):
-    client, _, _, state = environment
+    from src.services.thesis_ledger_capability_verification import VerificationCatalog
+    client, store, _, state = environment
     state["mode"] = mode
     result = read(client)
     assert result.status == status and result.upstreamAttempts == len(state["calls"]) == 1
     assert code is None or code in {error.code for error in result.errors}
     if mode in {"empty", "malformed", "rate"}:
         assert result.items == []
+    expected = 'verified' if status == 'available' else 'unverified'
+    assert VerificationCatalog(store).read(KEY, TARGET)['state'] == expected
 
 
 @pytest.mark.parametrize("action", ["revoke", "disable"])
@@ -123,10 +126,8 @@ def test_config_and_policy_revisions_separate_cached_identity(environment):
     store.save_provider_config("searxng", {
         "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-settings-revision", "settings": {},
     })
-    assert read(client).upstreamAttempts == 0
-    admit(store)
     second = read(client)
-    assert second.status == "available" and len(state["calls"]) == 2
+    assert second.status == "available" and second.upstreamAttempts == 1 and len(state["calls"]) == 2
     assert first.route.credentialRevision != second.route.credentialRevision
     apply(store, revision=2)
     third = read(client)
@@ -165,10 +166,10 @@ def test_http_auth_and_private_or_invalid_request_rejected_without_search(enviro
     response = client.post("/api/v3/thesis-ledger/market/news", headers=HEADERS,
                            json=payload(privateHolding="controlled-private-material"))
     assert response.status_code == 422 and "controlled-private-material" not in response.text
-    result = read(client, payload(instrument={"symbol": "000002.SZ", "market": "CN", "assetType": "STOCK"}))
-    assert result.status == "unavailable" and result.upstreamAttempts == 0
-    assert {error.code for error in result.errors} == {"not_admitted"}
     assert state["calls"] == []
+    result = read(client, payload(instrument={"symbol": "000002.SZ", "market": "CN", "assetType": "STOCK"}))
+    assert result.status == "available" and result.upstreamAttempts == 1
+    assert len(state["calls"]) == 1
 
 
 def test_absent_policy_has_zero_attempts_and_does_not_create_default_news_route(environment, tmp_path):
@@ -214,7 +215,8 @@ def test_cache_expiry_and_exhausted_budget_do_not_fabricate_fresh_reads(environm
     assert len(state["calls"]) == 2
 
 
-def test_nonempty_environment_revision_change_invalidates_policy_and_cached_read(environment, monkeypatch):
+def test_nonempty_environment_revision_change_requires_fresh_read_and_verification(environment, monkeypatch):
+    from src.services.thesis_ledger_capability_verification import VerificationCatalog
     client, store, _, state = environment
     instance = json.loads(store.provider_credential_snapshot("searxng").values["baseUrls"])[0]
     store.save_provider_config("searxng", {
@@ -228,7 +230,24 @@ def test_nonempty_environment_revision_change_invalidates_policy_and_cached_read
     assert read(client).status == "available" and len(state["calls"]) == 1
     monkeypatch.setattr(data_config, "get_data_config", lambda: DataServiceConfig(searxng_base_urls=[instance + "/changed"]))
     target = store.effective_policy_v3()["routes"][0]["targets"][0]
-    assert target["eligible"] is False and target["reason"] == "not_admitted"
+    assert target["eligible"] is True and target["reason"] is None
+    assert VerificationCatalog(store).read(KEY, TARGET) == {'state': 'unverified'}
     result = read(client)
-    assert result.status == "unavailable" and result.upstreamAttempts == 0
-    assert {error.code for error in result.errors} == {"not_admitted"} and len(state["calls"]) == 1
+    assert result.status == "available" and result.upstreamAttempts == 1 and len(state["calls"]) == 2
+    assert VerificationCatalog(store).read(KEY, TARGET)['state'] == 'verified'
+
+
+def test_first_real_query_without_prior_admission_saves_success_once(environment):
+    from src.services.thesis_ledger_capability_verification import VerificationCatalog
+    client, store, runtime, state = environment
+    with store._connect() as connection:
+        connection.execute('DELETE FROM thesis_ledger_route_admission_v3')
+    before = runtime.market_route_catalog_v3()
+    entry = next(row for row in before['entries'] if row['key'] == KEY and row['target'] == TARGET)
+    assert entry['state'] == 'ready' and entry['verification'] == {'state': 'unverified'}
+    assert read(client).status == 'available' and len(state['calls']) == 1
+    verified = VerificationCatalog(ThesisLedgerControlStore(store.database_path)).read(KEY, TARGET)
+    assert verified['state'] == 'verified'
+    assert read(client).status == 'available'
+    assert VerificationCatalog(store).read(KEY, TARGET) == verified
+    assert len(state['calls']) == 1

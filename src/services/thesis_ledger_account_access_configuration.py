@@ -40,7 +40,7 @@ def configure_provider(store, provider_id, value, *, fixture=False):
         settings.pop("accountLevel", None)
         return store.save_provider_config(provider_id, {**value, "settings": settings,
             "expectedConfigVersion": value.get("expectedConfigVersion", baseline.config_version)})
-    if source is None or source.account_access_level is None or value.get("clearCredentials") or not (
+    if source is None or source.account_access_probe is None or value.get("clearCredentials") or not (
             "credentials" in value or "accountLevel" in value.get("settings", {})):
         return store.save_provider_config(provider_id, value)
     from src.services.thesis_ledger_provider_runtime import get_thesis_ledger_runtime
@@ -49,11 +49,9 @@ def configure_provider(store, provider_id, value, *, fixture=False):
 
     runtime = get_thesis_ledger_runtime()
     try:
-        level = source.account_access_level.parse(value.get("settings", {}).get("accountLevel", configured_level(store, provider_id)))
+        level = source.account_access_level.parse(value.get("settings", {}).get("accountLevel", configured_level(store, provider_id))) if source.account_access_level else None
     except ValueError as error:
         raise ControlContractError("INVALID_ACCOUNT_LEVEL", str(error)) from error
-    if level is None:
-        return store.save_provider_config(provider_id, value)
     provider = next(p for p in store.provider_registry() if p["providerId"] == provider_id)
     baseline, candidate = _snapshot(store, provider, value)
     if value.get("expectedConfigVersion", baseline.config_version) != baseline.config_version:
@@ -62,16 +60,20 @@ def configure_provider(store, provider_id, value, *, fixture=False):
     with _LOCK:
         cached = _cache(runtime).setdefault("drafts", {}).get(draft_key(candidate, level))
         report = deepcopy(cached[1]) if cached and cached[0] > runtime.clock() else None
-    if report is None:
+    if report is None and source.account_access_level is not None and level is not None:
         check = {k: v for k, v in value.items() if k in {"contractVersion", "consumer", "requestId", "credentials"}}
         report = check_provider(runtime, provider_id, {**check, "purpose": "account_access", "accountLevel": level},
                                 fixture=fixture)["accountAccess"]
+    if report is None:
+        return store.save_provider_config(provider_id, value)
     if any(r["access"]["state"] == "credential_invalid" for r in report["routes"]):
         raise ControlContractError("PROVIDER_CREDENTIAL_INVALID", "凭证无效，请检查后重新配置")
     if store.provider_credential_snapshot(provider_id) != baseline:
         raise ControlContractError("PROVIDER_CREDENTIAL_CHANGED", "检查期间账号配置发生变化")
-    patch = {**value, "expectedConfigVersion": baseline.config_version,
-             "settings": {**configured_settings(store, provider_id), **(value.get("settings") or {}), "accountLevel": level}}
+    settings = {**configured_settings(store, provider_id), **(value.get("settings") or {})}
+    if level is not None:
+        settings["accountLevel"] = level
+    patch = {**value, "expectedConfigVersion": baseline.config_version, "settings": settings}
     def persist(connection, config_version, credential_version):
         current = ProviderCredentialSnapshot.create(provider_id, candidate.source, candidate.method, dict(candidate.values),
                                                     config_version, credential_version)

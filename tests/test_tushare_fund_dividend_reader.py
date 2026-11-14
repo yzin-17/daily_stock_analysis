@@ -120,7 +120,7 @@ def test_exact_http_entry_retains_decimal_cash_without_aliasing_or_other_endpoin
     assert result["facts"][0]["cashAmount"] == "0.0151234567890123456789"
     assert post.call_args.kwargs["json"]["api_name"] == "fund_div"
     assert post.call_args.kwargs["allow_redirects"] is False
-    assert fetcher._call_count == 1
+    assert not hasattr(fetcher, '_call_count')
 
 
 def test_exact_source_redirect_is_rejected_without_following_another_endpoint():

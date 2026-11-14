@@ -42,6 +42,19 @@ def test_persisted_queued_job_runs_once_deduplicates_documents_and_reopen_is_qui
     assert all(item["versionCount"] == 1 and item["status"] == "unchanged" for item in monitor.status()["observations"])
 
 
+def test_catalog_growth_does_not_expand_single_job_document_budget(tmp_path):
+    monitor, calls = setup(tmp_path)
+    source = monitor.registry()[IDENTITY]
+    from dataclasses import replace
+    documents = tuple({'id': str(i), 'title': '受控资料', 'url': URL + str(i)} for i in range(25))
+    monitor.registry = lambda: {IDENTITY: replace(source, documents=documents)}
+    identity = str(uuid4())
+    monitor.enqueue(identity, [IDENTITY])
+    assert monitor.run_pending_once()
+    assert monitor.store.job(identity)['errorCode'] == 'monitor_execution_failed'
+    assert calls == []
+
+
 def test_control_auth_strict_input_cas_idempotence_and_missing_job(tmp_path, monkeypatch):
     monitor, calls = setup(tmp_path)
     monkeypatch.setenv("THESIS_LEDGER_CONTROL_TOKEN", "monitor-control")
@@ -51,6 +64,7 @@ def test_control_auth_strict_input_cas_idempotence_and_missing_job(tmp_path, mon
     root = "/api/v3/thesis-ledger/control/rule-monitor"
     with TestClient(app) as client:
         assert client.get(root).status_code == 401
+        assert client.get(root + "/history").status_code == 401
         assert client.get(root, headers={"Authorization": "Bearer monitor-data"}).status_code == 401
         assert client.get(root, headers=headers).json()["config"]["enabled"] is False
         request = {"version": VERSION, "requestId": str(uuid4()), "sourceIds": [IDENTITY]}
@@ -69,3 +83,8 @@ def test_control_auth_strict_input_cas_idempotence_and_missing_job(tmp_path, mon
         assert client.get(root + "/checks/" + str(uuid4()), headers=headers).status_code == 404
         versions = client.get(root + "/versions", params={"kind": "document", "identity": URL}, headers=headers)
         assert len(versions.json()["versions"]) == 1
+        history = client.get(root + "/history", headers=headers)
+        assert history.json()["items"][0]["id"] == request["requestId"]
+        assert history.json()["items"][0]["trigger"] == "manual"
+        assert client.get(root + "/history?limit=101", headers=headers).status_code == 422
+        assert client.get(root + "/history?offset=-1", headers=headers).status_code == 422

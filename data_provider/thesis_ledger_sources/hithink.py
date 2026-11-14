@@ -45,13 +45,7 @@ def probe_cash(context):
     read_hithink_mapped_fund_dividends(context.symbol, **context.mapped_read_options())
 
 
-def research_calendar_eligible(context):
-    from src.services.thesis_ledger_dependency_facts import DependencyFactError, validate_cn_stock
-    try:
-        validate_cn_stock(context.symbol, context.market, context.asset_type, lambda symbol: symbol)
-    except DependencyFactError:
-        return False
-    return True
+from src.services.thesis_ledger_dependency_facts import cn_research_calendar_eligible as research_calendar_eligible
 
 
 def policy_admission_guard(context):
@@ -239,7 +233,7 @@ SOURCE = SourceDefinition("hithink", manifest, factory, tuple(
     DailyBinding(ExactKey("CN", "STOCK", "DAILY_BAR", adjustment), STOCK_SOURCE,
                  f"dsa-v3-stock-hithink-financial-api-{adjustment}-adapter-v1",
                  STOCK_SOURCE_REVISION, STOCK_PROTOCOL, None, daily, gated=True,
-                 research_calendar_eligible=research_calendar_eligible if adjustment in {'none', 'qfq'} else None)
+                 research_calendar_eligible=research_calendar_eligible)
     for adjustment in ("none", "qfq", "hfq")
 ) + (NEWS_BINDING,
     DailyBinding(ExactKey('CN', 'ETF', 'DAILY_BAR', 'qfq'), HITHINK_ETF_HISTORY_SOURCE,
@@ -247,7 +241,7 @@ SOURCE = SourceDefinition("hithink", manifest, factory, tuple(
         HITHINK_ETF_SOURCE_CONTRACT_REVISION_V1, HITHINK_ETF_LOCAL_PAGINATION_PROTOCOL_V1,
         None, daily, gated=True, source_contract=SOURCE_CONTRACT,
         public_units_policy=DailyUnitsPolicy(('hithink_etf_field_units',), project_public_units),
-        window_planner=plan_public_windows),
+        window_planner=plan_public_windows, research_calendar_eligible=research_calendar_eligible),
     QuoteBinding(ExactKey("CN", "STOCK", "REALTIME_QUOTE"), HITHINK_STOCK_SNAPSHOT_SOURCE,
         "dsa-hithink-stock-quote-adapter-v1", "dsa-hithink-stock-snapshot-request-v1", quote),
     QuoteBinding(ExactKey("CN", "ETF", "REALTIME_QUOTE"), HITHINK_ETF_SNAPSHOT_SOURCE,

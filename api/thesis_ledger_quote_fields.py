@@ -39,4 +39,11 @@ def quote_response_payload(quote, *, symbol, provider, fallback_used, source, fe
     }
     if source:
         result["upstreamSource"] = source
+    execution = getattr(quote, 'execution_facts', None)
+    if execution is not None:
+        from src.services.thesis_ledger_quote_execution_facts import QuoteExecutionFacts
+        result['executionFacts'] = QuoteExecutionFacts.model_validate(execution.model_dump()).model_dump()
+    rules = getattr(quote, 'execution_rules', None)
+    if rules is not None:
+        result['executionRules'] = rules.model_dump(exclude_none=True)
     return result

@@ -5,9 +5,8 @@ import re
 from zoneinfo import ZoneInfo
 
 from data_provider.exact_daily_contract import ExactDailyError
-from data_provider.thesis_ledger_sources.tickflow import read_frame
-from src.services.thesis_ledger_capability_contracts import CapabilityContractError, DailyRead, DailyQuery, ReadContext, SourceProbePolicy
-from src.services.thesis_ledger_capability_registry import DailyBinding, ExactKey, SourceDefinition
+from data_provider.tickflow_daily import read_frame
+from src.services.thesis_ledger_capability_contracts import CapabilityContractError, DailyRead, DailyQuery, ReadContext
 
 BASE_URL = "https://free-api.tickflow.org"
 UPSTREAM = "tickflow-free-history"
@@ -19,13 +18,6 @@ MAXIMUM_WINDOW_DAYS = 3650
 def symbol_in_scope(symbol):
     # 本次CNY研究只支持沪深A股；不把B股/基金/指数或交易所后缀泛化为同一币种。
     return re.fullmatch(r"(?:60|68)[0-9]{4}\.SH|(?:00|30)[0-9]{4}\.SZ", symbol) is not None
-
-
-def manifest():
-    from src.services.provider_manifest import build_provider_manifest
-    return build_provider_manifest("tickflow-free", "TickFlow 免费历史", {
-        "DAILY_BAR": ("STOCK",),
-    }, upstream_sources=((UPSTREAM, "TickFlow 免费历史日K"),), markets=("CN",))
 
 
 class FreeHistoryConnection:
@@ -82,7 +74,7 @@ def validate_compact(payload, request, count):
         raise ExactDailyError("invalid_response", "免费日K证券回显与请求不一致")
 
 
-def daily(query, context):
+def daily(query, context, *, upstream_source=UPSTREAM):
     try:
         if query.instrument_type != "STOCK" or not symbol_in_scope(query.symbol):
             raise ExactDailyError("invalid_request", "免费历史当前仅支持沪深A股完整证券代码")
@@ -93,7 +85,8 @@ def daily(query, context):
                 or instrument.get("exchange") != query.symbol.rsplit(".", 1)[1]
                 or instrument.get("region") != "CN" or instrument.get("type") != "stock"):
             raise ExactDailyError("invalid_response", "免费标的元数据未确认所请求沪深股票身份")
-        frame = read_frame(context.adapter, query, source=UPSTREAM, validate_raw=validate_compact)
+        frame = read_frame(context.adapter, query, source=upstream_source, validate_raw=validate_compact)
+        frame.attrs["transport_source"] = UPSTREAM
         frame.attrs["tickflow_free_history_identity"] = {
             "basis": "current-provider-instrument-metadata", "instrument": instrument,
             "klineIdentity": "request-bound", "historicalIdentity": "notVerified",
@@ -114,13 +107,3 @@ def probe_daily(context):
     query = DailyQuery(symbol=symbol, instrument_type="STOCK", adjustment="none",
                        start=(end - timedelta(days=20)).isoformat(), end=end.isoformat(), request_id="free-history-probe")
     daily(query, ReadContext(context.adapter, context.snapshot, timeout_seconds=5, probe=True))
-
-
-SOURCE = SourceDefinition("tickflow-free", manifest, factory, tuple(
-    DailyBinding(ExactKey("CN", "STOCK", "DAILY_BAR", adjustment), UPSTREAM,
-                 f"dsa-v3-cn-stock-tickflow-free-{adjustment}-exact-daily-v1",
-                 PROTOCOL, PROTOCOL, MAXIMUM_ROWS, daily,
-                 research_calendar_eligible=research_calendar_eligible)
-    for adjustment in ("none", "qfq", "hfq")
-), dependency_modules=("tickflow",),
-    probe_policy=SourceProbePolicy(probe_daily, capabilities=("DAILY_BAR",), adapter_required=True))

@@ -89,6 +89,15 @@ def validate_cn_stock(symbol: str, market: str, instrument_type: str, canonicali
     return canonical
 
 
+def cn_research_calendar_eligible(context: Any) -> bool:
+    """仅判断已声明研究绑定的 CN 股票／ETF 身份，不推断上市日期。"""
+    try:
+        validate_cn_stock(context.symbol, context.market, context.asset_type, lambda symbol: symbol)
+    except DependencyFactError:
+        return False
+    return True
+
+
 def validate_range(start: str, end: str, data_as_of: datetime) -> tuple[date, date]:
     start_date = parse_date(start, "start")
     end_date = parse_date(end, "end")

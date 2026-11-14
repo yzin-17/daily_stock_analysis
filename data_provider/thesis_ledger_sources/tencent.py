@@ -28,16 +28,19 @@ def factory(context):
     return TencentFetcher()
 
 
-def research_calendar_eligible(context):
-    from src.services.thesis_ledger_dependency_facts import DependencyFactError, validate_cn_stock
-    try:
-        validate_cn_stock(context.symbol, context.market, context.asset_type, lambda symbol: symbol)
-    except DependencyFactError:
-        return False
-    return True
+from src.services.thesis_ledger_dependency_facts import cn_research_calendar_eligible as research_calendar_eligible
 
 
 def daily(query, context):
+    from src.services.thesis_ledger_dependency_facts import validate_cn_stock, DependencyFactError
+    try:
+        validate_cn_stock(query.symbol, "CN", query.instrument_type, lambda symbol: symbol)
+    except DependencyFactError as error:
+        raise CapabilityContractError(error.code, str(error)) from None
+    from data_provider.tencent_fetcher import _to_tencent_symbol
+    code, exchange = query.symbol.split(".")
+    if _to_tencent_symbol(query.symbol) != exchange.lower() + code:
+        raise CapabilityContractError("invalid_request", "腾讯日线证券代码与交易所不一致")
     frame = context.adapter.get_daily_data_for_source(
         provider_symbol_for_contract(query.symbol), "tencent", start_date=query.start, end_date=query.end,
         days=(date.fromisoformat(query.end) - date.fromisoformat(query.start)).days + 1,
@@ -130,12 +133,13 @@ SOURCE = SourceDefinition("tencent", manifest, factory, (
     *REFERENCE_BINDINGS, *INTRADAY_BINDINGS,
     *(DailyBinding(ExactKey("CN", asset, "DAILY_BAR", adjustment), "tencent",
         f"dsa-v3-{asset.lower()}-tencent-{adjustment}-adapter-v2" if adjustment != "hfq"
-        else "dsa-v3-etf-tencent-hfq-newfqkline-adapter-v1",
+        else f"dsa-v3-{asset.lower()}-tencent-hfq-newfqkline-adapter-v1",
         TENCENT_NATIVE_DAILY_PROTOCOL, TENCENT_NATIVE_DAILY_PROTOCOL, MAX_ROWS, daily, verify_transport=verify_transport,
-        research_calendar_eligible=research_calendar_eligible if adjustment in {'none', 'qfq'} else None)
-      for asset, adjustment in (("STOCK", "none"), ("STOCK", "qfq"), ("ETF", "none"), ("ETF", "qfq"), ("ETF", "hfq"))),
+        research_calendar_eligible=research_calendar_eligible)
+      for asset in ("STOCK", "ETF") for adjustment in ("none", "qfq", "hfq")),
     QuoteBinding(ExactKey("CN", "ETF", "REALTIME_QUOTE"), "tencent",
                  "tencent-etf-basic-quote-v2", "tencent-etf-single-symbol-v1", quote),
 ), ("data_provider.tencent_fetcher", "TencentFetcher"), dependency_modules=("requests",),
     quote_public_units=public_quote_units,
+    upstream_groups=(('tencent', 'tencent'),),
     quote_source_aliases=(('tencent', 'tencent'), ('tencent/tencent', 'tencent'), ('akshare_qq', 'tencent')))
