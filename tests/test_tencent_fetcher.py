@@ -201,10 +201,13 @@ def test_tencent_fetcher_requests_explicit_historical_date_window() -> None:
     assert float(df.iloc[0]["volume"]) == 500000.0
 
 
-def test_tencent_fetcher_preserves_amount_column_when_missing() -> None:
+@pytest.mark.parametrize(
+    "code, shares", [("600519", 100000.0), ("688111", 1000.0), ("689009", 1000.0)],
+)
+def test_tencent_fetcher_preserves_amount_column_when_missing(code, shares) -> None:
     payload = {
         "data": {
-            "sh600519": {
+            f"sh{code}": {
                 "qfqday": [
                     ["2026-05-06", "100.00", "101.00", "102.00", "99.00", "1000"],
                 ]
@@ -220,11 +223,11 @@ def test_tencent_fetcher_preserves_amount_column_when_missing() -> None:
             return payload
 
     with patch("data_provider.tencent_fetcher.requests.get", return_value=FakeResponse()):
-        df = TencentFetcher().get_daily_data("600519", start_date="2026-05-01", end_date="2026-05-10")
+        df = TencentFetcher().get_daily_data(code, start_date="2026-05-01", end_date="2026-05-10")
 
     assert "amount" in df.columns
     assert pd.isna(df.iloc[0]["amount"])
-    assert float(df.iloc[0]["volume"]) == 100000.0
+    assert float(df.iloc[0]["volume"]) == shares
 
 
 def test_tencent_fetcher_returns_empty_frame_for_empty_history() -> None:

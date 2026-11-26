@@ -35,6 +35,11 @@ class TencentDailyResponseError(DataFetchError):
     code = "invalid_response"
 
 
+def is_star_market_daily_symbol(symbol: str) -> bool:
+    """Return whether Tencent's canonical daily symbol reports volume in shares."""
+    return symbol.startswith(("sh688", "sh689"))
+
+
 def _number(value: Any, field: str, *, positive: bool = False) -> Decimal:
     if isinstance(value, bool) or not isinstance(value, (str, int, float, Decimal)):
         raise TencentDailyResponseError(f"腾讯原生日线 {field} 非法")
@@ -118,7 +123,7 @@ def _parse_response(
             raise TencentDailyResponseError("腾讯原生日线 OHLC 非法")
         # 锁定版 AKShare 对该接口的字段约定：常规股票/ETF 为手，科创板为股；
         # 金额原文字段为万元。真实 ETF 单位准入仍由 G0-M 单独完成。
-        shares = volume if symbol.startswith("sh688") else volume * 100
+        shares = volume if is_star_market_daily_symbol(symbol) else volume * 100
         rows.append({
             "date": raw[0],
             "open": str(open_price),

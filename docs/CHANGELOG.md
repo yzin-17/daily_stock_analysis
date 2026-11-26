@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 腾讯科创板 `688`、`689` 日线保留原股数，普通股票和 ETF 继续将手数转换为股。
+
 - [修复] 日线读取和精确路由诊断标明具名 Data 与 Control 合同，现行接入文档对齐 V1 路径和请求版本。
 
 - [修复] ThesisLedger 的鉴权失败使用当前 V1 错误信封，新闻和快讯的请求与响应版本对齐。公告后台依据停复牌、风险警示和价格规则的已选精确来源判断采集资格。

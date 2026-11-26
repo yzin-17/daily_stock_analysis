@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover - dependency is present in supported ins
     xcals = None
 
 from .base import BaseFetcher, DataFetchError, STANDARD_COLUMNS, normalize_stock_code, is_bse_code
-from .tencent_native_daily import fetch_tencent_native_daily
+from .tencent_native_daily import fetch_tencent_native_daily, is_star_market_daily_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -256,11 +256,12 @@ def _format_tencent_date(date_text: str) -> Optional[str]:
         return None
 
 
-def _lots_to_shares(volume: Any) -> Any:
+def _daily_volume_in_shares(volume: Any, *, symbol: str) -> Any:
     try:
-        return float(volume) * 100
+        value = float(volume)
     except (TypeError, ValueError):
         return volume
+    return value if is_star_market_daily_symbol(symbol) else value * 100
 
 
 def _extract_kline_rows(
@@ -286,7 +287,7 @@ def _extract_kline_rows(
                 "close": row[2],
                 "high": row[3],
                 "low": row[4],
-                "volume": _lots_to_shares(row[5]),
+                "volume": _daily_volume_in_shares(row[5], symbol=symbol),
                 "amount": amount,
             }
         )

@@ -227,16 +227,20 @@ def test_tencent_stock_and_etf_hfq_have_separate_revisions():
     none = market_v3_current_route_revisions(
         {**ROUTE_KEY, "adjustment": "none"}, target, PROVIDER_MANIFESTS["tencent"],
     )
-    stock_hfq = market_v3_current_route_revisions(
-        {**hfq_key, "assetType": "STOCK"}, target, PROVIDER_MANIFESTS["tencent"],
-    )
-
     assert hfq is not None and qfq is not None and none is not None
     assert hfq["adapterRevision"] == "dsa-v3-etf-tencent-hfq-newfqkline-adapter-v1"
-    assert len({hfq["adapterRevision"], qfq["adapterRevision"], none["adapterRevision"]}) == 3
-    assert stock_hfq is not None
-    assert stock_hfq["adapterRevision"] == "dsa-v3-stock-tencent-hfq-newfqkline-adapter-v1"
-    assert stock_hfq["adapterRevision"] != hfq["adapterRevision"]
+    assert qfq["adapterRevision"] == "dsa-v3-etf-tencent-qfq-adapter-v2"
+    assert none["adapterRevision"] == "dsa-v3-etf-tencent-none-adapter-v2"
+    for adjustment, expected_revision in (
+        ("none", "dsa-v3-stock-tencent-none-adapter-v3"),
+        ("qfq", "dsa-v3-stock-tencent-qfq-adapter-v3"),
+        ("hfq", "dsa-v3-stock-tencent-hfq-newfqkline-adapter-v2"),
+    ):
+        stock = market_v3_current_route_revisions(
+            {**ROUTE_KEY, "assetType": "STOCK", "adjustment": adjustment},
+            target, PROVIDER_MANIFESTS["tencent"],
+        )
+        assert stock is not None and stock["adapterRevision"] == expected_revision
 
 
 @pytest.mark.parametrize(

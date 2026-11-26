@@ -132,11 +132,12 @@ INTRADAY_BINDINGS = intraday_bindings(read_minute, 'tencent', periods=('5m', '15
 SOURCE = SourceDefinition("tencent", manifest, factory, (
     *REFERENCE_BINDINGS, *INTRADAY_BINDINGS,
     *(DailyBinding(ExactKey("CN", asset, "DAILY_BAR", adjustment), "tencent",
-        f"dsa-v3-{asset.lower()}-tencent-{adjustment}-adapter-v2" if adjustment != "hfq"
-        else f"dsa-v3-{asset.lower()}-tencent-hfq-newfqkline-adapter-v1",
+        f"dsa-v3-{asset.lower()}-tencent-{adjustment}-adapter-v{revision}" if adjustment != "hfq"
+        else f"dsa-v3-{asset.lower()}-tencent-hfq-newfqkline-adapter-v{hfq_revision}",
         TENCENT_NATIVE_DAILY_PROTOCOL, TENCENT_NATIVE_DAILY_PROTOCOL, MAX_ROWS, daily, verify_transport=verify_transport,
         research_calendar_eligible=research_calendar_eligible)
-      for asset in ("STOCK", "ETF") for adjustment in ("none", "qfq", "hfq")),
+      for asset, revision, hfq_revision in (("STOCK", 3, 2), ("ETF", 2, 1))
+      for adjustment in ("none", "qfq", "hfq")),
     QuoteBinding(ExactKey("CN", "ETF", "REALTIME_QUOTE"), "tencent",
                  "tencent-etf-basic-quote-v2", "tencent-etf-single-symbol-v1", quote),
 ), ("data_provider.tencent_fetcher", "TencentFetcher"), dependency_modules=("requests",),

@@ -33,28 +33,32 @@ class _Response:
         pass
 
 
-def test_native_amount_and_volume_are_read_from_upstream_fields(monkeypatch):
+@pytest.mark.parametrize(
+    "symbol, shares", [("sh510300", "12300"), ("sh600519", "12300"),
+                       ("sh688111", "123"), ("sh689009", "123")],
+)
+def test_native_amount_and_volume_are_read_from_upstream_fields(monkeypatch, symbol, shares):
     requests = []
 
     def fake_get(url, *, params, timeout, **kwargs):
         requests.append((url, params, timeout))
-        return _Response(params["_var"], "sh510300", [_row("2025-06-13")])
+        return _Response(params["_var"], symbol, [_row("2025-06-13")])
 
     monkeypatch.setattr("data_provider.tencent_native_daily.requests.get", fake_get)
     frame, retrieval = fetch_tencent_native_daily(
-        "sh510300", "2025-06-13", "2025-06-30", "none", 4.5,
+        symbol, "2025-06-13", "2025-06-30", "none", 4.5,
     )
     assert requests[0][0] == TENCENT_NATIVE_DAILY_URL
-    assert requests[0][1]["param"] == "sh510300,day,2025-06-13,2025-06-30,640,"
+    assert requests[0][1]["param"] == f"{symbol},day,2025-06-13,2025-06-30,640,"
     assert requests[0][1]["_var"] == "kline_day2025"
     assert requests[0][1]["r"] == "0.8205512681390605"
     assert 0 < requests[0][2] <= 4.5
-    assert frame.iloc[0]["volume"] == "12300"
+    assert frame.iloc[0]["volume"] == shares
     assert frame.iloc[0]["amount"] == "234500.00"
-    assert frame.iloc[0]["amount"] != str(2.1 * 12300)
+    assert frame.iloc[0]["amount"] != str(2.1 * int(shares))
     assert retrieval["partitions"][0]["rows"] == 1
     assert retrieval["partitions"][0]["sha256"] == sha256(
-        _Response(requests[0][1]["_var"], "sh510300", [_row("2025-06-13")]).text.encode()
+        _Response(requests[0][1]["_var"], symbol, [_row("2025-06-13")]).text.encode()
     ).hexdigest()
 
 
