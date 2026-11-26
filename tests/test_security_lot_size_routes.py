@@ -31,7 +31,7 @@ def setup(monkeypatch, tmp_path):
 
 
 def runtime_for(store, targets=("futu", "longbridge"), fail=False):
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "lots",
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "lots",
                            "revision": 1, "enabled": True, "routes": [{"key": KEY, "targets": [
                                {"providerId": p, "upstreamSource": p} for p in targets]}]})
     futu = Mock(return_value=lot_reference("00700.HK", "100", "futu", "2026-10-08T10:00:00Z"))
@@ -75,7 +75,7 @@ def test_http_auth_and_response(setup):
     runtime, _, _ = runtime_for(setup)
     app = FastAPI()
     app.include_router(build_reference_data_router(lambda: runtime))
-    body = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "lot-http", "symbol": "00700.HK"}
+    body = {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "lot-http", "symbol": "00700.HK"}
     with TestClient(app) as client:
         assert client.post("/market/security-lot-size", json=body).status_code == 401
         response = client.post("/market/security-lot-size", json=body, headers={"authorization": "Bearer synthetic-lot-token"})

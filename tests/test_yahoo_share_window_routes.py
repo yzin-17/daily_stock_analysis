@@ -18,16 +18,16 @@ def test_share_window_authenticated_wire_keeps_scope_and_unknown_listing(tmp_pat
     monkeypatch.setattr(runtime_module, "_runtime_database_path", path)
     key = {"kind": "bar", "market": "US", "assetType": "STOCK", "capability": "DAILY_BAR", "timeframe": "1d", "adjustment": "none"}
     target = {"providerId": "yfinance", "upstreamSource": "yahoo-gme-share-window"}
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "share-policy",
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "share-policy",
         "revision": 1, "enabled": True, "routes": [{"key": key, "targets": [target]}]})
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
-    request = {"contractVersion": 3, "requestId": "share-window-wire", "symbol": "GME.US",
+    app.include_router(router_v3, prefix="/api/v1")
+    request = {"contractVersion": 1, "requestId": "share-window-wire", "symbol": "GME.US",
         "routeKey": key, "routeTarget": {**target, "routeIndex": 0}, "start": "2024-05-10", "end": "2024-05-24",
         "tradabilityMode": "assume-untradable-no-bar"}
     headers = {"Authorization": "Bearer share-window-data-token"}
     with TestClient(app) as client:
-        url = "/api/v3/thesis-ledger/market/bars"
+        url = "/api/v1/thesis-ledger/market/bars"
         assert client.post(url, json=request).status_code == 401
         response = client.post(url, json=request, headers=headers)
         assert response.status_code == 200, response.text

@@ -79,14 +79,22 @@ def test_original_announcement_library_fallback_stays_read_only(monkeypatch, tmp
     assert reads == ['records']
 
 
-def test_independent_notice_capabilities_do_not_gain_legacy_file_qualification():
+def test_independent_notice_capabilities_use_their_exact_source_readiness(monkeypatch):
+    from src.services import thesis_ledger_trading_status as producer
+
     source = CAPABILITY_SOURCES.source('official-states')
     bindings = [binding for binding in source.bindings if binding.key.capability != 'HISTORICAL_TRADING_STATUS']
-    assert len(bindings) == 7
+    checked = []
+    monkeypatch.setattr(producer, 'trading_status_source_ready',
+                        lambda target: checked.append(target) or target['upstreamSource'] == producer.RISK_UPSTREAM_SOURCE)
     for binding in bindings:
         target = {'providerId': source.provider_id, 'upstreamSource': binding.upstream_source}
         assert not ready.local_rule_route_matches(binding.key.route_key(), target)
-        assert ready.local_rule_source_ready(binding.key.route_key(), target) is None
+        assert ready.local_rule_source_ready(binding.key.route_key(), target) is (
+            binding.upstream_source == producer.RISK_UPSTREAM_SOURCE
+        )
+    assert [target['upstreamSource'] for target in checked] == [binding.upstream_source for binding in bindings]
+    assert checked
 
 
 def test_recommendation_metadata_is_source_owned_and_optional():

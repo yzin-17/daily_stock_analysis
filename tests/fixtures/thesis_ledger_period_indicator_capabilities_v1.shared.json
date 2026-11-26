@@ -1,5 +1,5 @@
 {
-  "contractVersion": 3,
+  "contractVersion": 1,
   "engineVersion": "dsa-indicator-v3",
   "calculation": "provided-points",
   "periodProtocol": "market-period-indicator-v1",

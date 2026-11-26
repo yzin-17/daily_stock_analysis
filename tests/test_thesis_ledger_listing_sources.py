@@ -13,7 +13,7 @@ from src.services.thesis_ledger_trading_status import (
 
 
 def request(source, symbol, start, end):
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "listing-test",
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "listing-test",
             "routeKey": ROUTE_KEY, "routeTarget": {"providerId": PROVIDER_ID, "upstreamSource": source, "routeIndex": 0},
             "symbol": symbol, "range": {"start": start, "end": end}}
 

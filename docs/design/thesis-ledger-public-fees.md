@@ -18,7 +18,7 @@
 
 控制目录已登记内置 Provider `official-rules` 和精确来源 `cn-stock-auction-fees`，无需凭据或人工准入记录。现有策略可以将其选为收费主源；统一执行入口只使用当前生效配置中的精确 target，读取后仍检查策略修订，防止晚到结果跨越停用或配置变更。
 
-正式读取入口为 `POST /api/v3/thesis-ledger/market/public-fees`，沿用 Data Token 认证和 V3 请求关联错误。请求包含 `contractVersion`、`consumer`、`requestId`、`routeKey`、`routeTarget`、`symbol` 和 `range`，字段定义以主仓 `market-public-fees-v3.ts` 为准。覆盖不足返回 `insufficient_coverage`，标的不适用返回 `not_covered`；未配置或停用的目标不会被直接读取。
+正式读取入口为 `POST /api/v1/thesis-ledger/market/public-fees`，沿用 Data Token 认证和 `dsa-data-v1` 请求关联错误。请求包含 `contractVersion`、`consumer`、`requestId`、`routeKey`、`routeTarget`、`symbol` 和 `range`，字段定义以主仓 `market-public-fees-v3.ts` 为准。覆盖不足返回 `insufficient_coverage`，标的不适用返回 `not_covered`；未配置或停用的目标不会被直接读取。
 
 阶段状态：来源读取、控制目录、统一请求路由、HTTP 和主仓配置中文展示已完成本地验证。主仓 P3.3 已接入独立收费 Snapshot 产物及离线 Runner/基准费用消费，创建时按执行整窗读取，重放不再请求来源；真实价格源与目标运行验收仍由 P3.4 承担。没有新增配置项、依赖或数据库结构，也未更新目标容器。
 

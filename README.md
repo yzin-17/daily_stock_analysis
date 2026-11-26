@@ -1,6 +1,6 @@
 # DSA 数据服务（ThesisLedger Fork）
 
-本仓为 ThesisLedger 获取、标准化、校验、缓存和提供市场事实。Data/Control V3 覆盖行情、K 线、交易日历、事件、NAV、公共规则、公告、目录、OAuth 与新闻数据；能力范围以来源目录、策略和准入为准。ThesisLedger 负责研究、模型推理、观点与账户业务。
+本仓为 ThesisLedger 获取、标准化、校验、缓存和提供市场事实。`/api/v1/thesis-ledger` 下的 `dsa-data-v1` 和 `dsa-control-v1` 覆盖行情、K 线、交易日历、事件、NAV、公共规则、公告、目录、OAuth 与新闻数据。能力范围以来源目录、策略和准入为准。ThesisLedger 负责研究、模型推理、观点与账户业务。
 
 当前实施进度与验收边界由[纯数据服务 Task](docs/archive/tasks/2026-10-18-data-only-service.md)维护，合同见[规格](docs/specs/2026-10-18-data-only-service.md)。本地测试、独立进程、真实来源、定制 SDK/镜像及目标升级恢复是不同证据层。
 

@@ -17,7 +17,7 @@ def _client(monkeypatch):
     monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "false")
     monkeypatch.setattr("api.thesis_ledger._fixture_mode", lambda: False)
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     add_error_handlers(app)
     return TestClient(app)
 
@@ -44,15 +44,15 @@ def _headers():
 def test_full_year_display_is_independent_of_settlement_budget(monkeypatch):
     monkeypatch.setattr(contract, "calendar_fact", _fact)
     client = _client(monkeypatch)
-    result = client.get("/api/v3/thesis-ledger/market/calendar", params=_params(), headers=_headers())
+    result = client.get("/api/v1/thesis-ledger/market/calendar", params=_params(), headers=_headers())
     assert result.status_code == 200
     body = result.json()
     assert body["status"] == "supported" and body["coverage"]["complete"] is True
     assert body["facts"][0]["range"] == {"start": "2026-01-01", "end": "2026-12-31"}
-    assert client.get("/api/v3/thesis-ledger/backtest/calendar", params=_params(), headers=_headers()).status_code == 422
+    assert client.get("/api/v1/thesis-ledger/backtest/calendar", params=_params(), headers=_headers()).status_code == 422
     short = _params(end="2026-02-01")
-    display = client.get("/api/v3/thesis-ledger/market/calendar", params=short, headers=_headers())
-    settlement = client.get("/api/v3/thesis-ledger/backtest/calendar", params=short, headers=_headers())
+    display = client.get("/api/v1/thesis-ledger/market/calendar", params=short, headers=_headers())
+    settlement = client.get("/api/v1/thesis-ledger/backtest/calendar", params=short, headers=_headers())
     assert display.status_code == settlement.status_code == 200
     assert display.json() == settlement.json()
 
@@ -80,7 +80,7 @@ def test_local_midnight_calendar_request_uses_market_date(monkeypatch, market, t
     monkeypatch.setattr(contract, "calendar_fact", fact)
     monkeypatch.setattr("src.services.thesis_ledger_multimarket_calendar.multimarket_calendar_fact",
                         lambda _market, start, end, instant: fact(start, end, instant))
-    result = _client(monkeypatch).get("/api/v3/thesis-ledger/market/calendar", headers=_headers(), params={
+    result = _client(monkeypatch).get("/api/v1/thesis-ledger/market/calendar", headers=_headers(), params={
         "market": market, "start": "2026-11-02", "end": "2026-11-02", "dataAsOf": as_of,
     })
     assert result.status_code == 200
@@ -102,14 +102,14 @@ def test_invalid_display_calendar_is_rejected_before_source(monkeypatch, patch):
     def forbidden(*_args):
         pytest.fail("非法范围不应读取来源")
     monkeypatch.setattr(contract, "calendar_fact", forbidden)
-    result = _client(monkeypatch).get("/api/v3/thesis-ledger/market/calendar", params=_params(**patch), headers=_headers())
+    result = _client(monkeypatch).get("/api/v1/thesis-ledger/market/calendar", params=_params(**patch), headers=_headers())
     assert result.status_code == 422
 
 
 def test_calendar_source_unavailable_and_authentication(monkeypatch):
     monkeypatch.setattr(contract, "calendar_fact", lambda *_args: None)
     client = _client(monkeypatch)
-    url = "/api/v3/thesis-ledger/market/calendar"
+    url = "/api/v1/thesis-ledger/market/calendar"
     assert client.get(url, params=_params()).status_code == 401
     result = client.get(url, params=_params(), headers=_headers())
     assert result.status_code == 200

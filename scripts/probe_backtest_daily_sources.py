@@ -174,7 +174,7 @@ def probe_window(runtime, *, symbol, asset, adjustment, start, end, provider, so
             result['errorCode'] = entry['state'] if entry else 'not_adapted'
             return result
         request = _market_data_v3_request({
-            'contractVersion': 3, 'requestId': str(uuid4()), 'symbol': symbol, 'routeKey': key,
+            'contractVersion': 1, 'requestId': str(uuid4()), 'symbol': symbol, 'routeKey': key,
             'routeTarget': {**target, 'routeIndex': 0}, 'start': start, 'end': end,
             **({'tradabilityMode': 'assume-untradable-no-bar'}
                if adjustment != 'none' or price_research_reference else {}),
@@ -187,7 +187,7 @@ def probe_window(runtime, *, symbol, asset, adjustment, start, end, provider, so
         previous = runtime.store.effective_policy_v3()
         revision = previous['revision'] + 1 if previous else 1
         runtime.store.apply_policy_v3({
-            'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': str(uuid4()),
+            'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': str(uuid4()),
             'revision': revision, 'enabled': True, 'routes': [{'key': key, 'targets': [target]}],
         })
         result['stage'] = 'read'

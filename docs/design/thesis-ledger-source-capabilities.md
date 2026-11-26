@@ -222,7 +222,7 @@ Spec §4.2 的五类能力范围（行情、基金、事件、基础、研究）
 
 ### R01 基础身份与日历（12）
 
-Data V3 时间说明：原生历史行情的 `timestamp` 保留原始日期，`completionStatus` 根据当日收盘判定；当来源未给出可核实的历史版本可用时间时，`availableAt` 记录实际抓取观测时点，与 `sourcePriceBasis.observedAt` 一致。Server 必须显式使用固定快照研究时钟；此信息不能证明严格 PIT 重建可用，不能回填成历史收盘时间。
+`dsa-data-v1` 时间说明：原生历史行情的 `timestamp` 保留原始日期，`completionStatus` 根据当日收盘判定；当来源未给出可核实的历史版本可用时间时，`availableAt` 记录实际抓取观测时点，与 `sourcePriceBasis.observedAt` 一致。Server 必须显式使用固定快照研究时钟；此信息不能证明严格 PIT 重建可用，不能回填成历史收盘时间。
 
 2026-09-25 续接：`thesis_ledger_market_v3_facts.py` 的深市日历依据[深交所 2026 年休市公告](https://www.szse.cn/disclosure/notice/t20251222_618087.html)，覆盖 2026-01-01..12-31，修订为 `szse-2026-holidays-t20251222_618087-year-v1`。交易日按公告的节假日及周末确定，调休周末不开放；该范围可供 159516 策略预热。此项只扩日历证据，上市登记仍限已有独立事实，不自动扩大行情 admission，不证明所有日期的证券可交易性；2025/2027、HK/US 等未核实范围仍不可用。历史快照保留原有日历证明及指纹。本文为本 Fork 专属单语能力记录，无对应英文文档需要同步。
 

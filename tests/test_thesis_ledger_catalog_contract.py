@@ -16,7 +16,7 @@ def store(monkeypatch, tmp_path):
 
 
 def ack(snapshot, **changes):
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "ack-request",
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "ack-request",
             "generation": snapshot["generation"], "checksum": snapshot["checksum"], **changes}
 
 
@@ -30,7 +30,7 @@ def test_old_cursor_does_not_upgrade_catalog(store, cursor):
     assert store.catalog_snapshot() == before
 
 
-@pytest.mark.parametrize("changes", [{"contractVersion": 1}, {"contractVersion": 2},
+@pytest.mark.parametrize("changes", [{"contractVersion": 3}, {"contractVersion": 2},
                                      {"requestId": ""}, {"consumer": "other"}, {"legacy": True}])
 def test_old_ack_does_not_write(store, changes):
     snapshot = store.catalog_snapshot()

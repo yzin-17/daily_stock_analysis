@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from api.thesis_ledger_auth import require_contract_token
 from api.thesis_ledger_market_errors import market_data_error_v3
 from src.services.thesis_ledger_market_errors_v3 import market_runtime_error
-from src.services.thesis_ledger_report_metadata_contract_v2 import CAPABILITY, ReportMetadataWireRequest
+from src.services.thesis_ledger_report_metadata_contract import CAPABILITY, ReportMetadataWireRequest
 from src.services.thesis_ledger_provider_runtime import ProviderCallError, ThesisLedgerDataRequest
 
 
@@ -29,7 +29,7 @@ def build_report_metadata_router(get_runtime):
                 instrument_type='STOCK', request_id=query.requestId,
                 parameters={'page': query.page, 'pageSize': query.pageSize, 'requestBudgetMs': query.requestBudgetMs})
             result = get_runtime().execute_request(request)
-            return {**result.value, 'contractVersion': 3, 'consumer': 'thesis-ledger',
+            return {**result.value, 'contractVersion': 1, 'consumer': 'thesis-ledger',
                     'policyRevision': result.effective_revision,
                     'routeTarget': {'providerId': result.provider, 'upstreamSource': result.upstream_source,
                                     'routeIndex': result.route_index}}

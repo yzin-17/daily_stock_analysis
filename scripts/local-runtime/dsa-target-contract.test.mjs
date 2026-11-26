@@ -29,9 +29,9 @@ test('清理只接受本轮精确资源，持久卷及可写输入均拒绝', ()
   assert.throws(() => assertOwnedProbe({ ...info, HostConfig: { NetworkMode: 'none', ReadonlyRootfs: false } }, name, image));
 });
 test('传输桥只接受数据读接口，不向控制面或其他主机转发', () => {
-  assertForwardRequest('/api/v3/thesis-ledger/market/bars', 'POST');
-  assertForwardRequest('/api/v3/thesis-ledger/backtest/nav-inputs', 'POST');
-  for (const path of ['//other.test/x', '/api/v3/thesis-ledger/control/providers', '/api/v3/thesis-ledger/market/../control'])
+  assertForwardRequest('/api/v1/thesis-ledger/market/bars', 'POST');
+  assertForwardRequest('/api/v1/thesis-ledger/backtest/nav-inputs', 'POST');
+  for (const path of ['//other.test/x', '/api/v1/thesis-ledger/control/providers', '/api/v1/thesis-ledger/market/../control'])
     assert.throws(() => assertForwardRequest(path, 'POST'));
-  assert.throws(() => assertForwardRequest('/api/v3/thesis-ledger/market/bars', 'DELETE'));
+  assert.throws(() => assertForwardRequest('/api/v1/thesis-ledger/market/bars', 'DELETE'));
 });

@@ -118,7 +118,7 @@ class OfficialPublicFeeProvider:
         start, end = _day(requested_range.get("start")), _day(requested_range.get("end"))
         if start > end:
             raise PublicFeeSourceError("invalid_request", "收费起点不得晚于终点")
-        if request.get("contractVersion") != 3 or request.get("consumer") != "thesis-ledger" or not request.get("requestId"):
+        if (type(request.get("contractVersion")) is not int or request.get("contractVersion") != 1) or request.get("consumer") != "thesis-ledger" or not request.get("requestId"):
             raise PublicFeeSourceError("invalid_request", "公共收费请求合同无效")
 
         try:
@@ -153,7 +153,7 @@ class OfficialPublicFeeProvider:
         digest = hashlib.sha256(json.dumps(pack, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         used_documents = {item for segment in segments for fee in segment["charges"] for item in fee["sourceDocumentIds"]}
         return {
-            "contractVersion": 3,
+            "contractVersion": 1,
             "consumer": "thesis-ledger",
             "requestId": request["requestId"],
             "routeKey": dict(key),

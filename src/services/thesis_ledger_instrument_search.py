@@ -67,4 +67,4 @@ def search_current_instruments(store, query, market=None, instrument_type=None):
             code, exchange = row["symbol"].split(".")
             items.append({"canonicalCode": code, "market": exchange, "instrumentType": row["assetType"],
                           "displayName": row["name"]})
-    return {"contractVersion": 3, "providerId": provider, "items": items}
+    return {"contractVersion": 1, "providerId": provider, "items": items}

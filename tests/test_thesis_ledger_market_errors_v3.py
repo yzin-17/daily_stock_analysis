@@ -28,7 +28,7 @@ def test_existing_http_boundaries_preserve_source_error(endpoint, raw, wire, sta
     monkeypatch.setattr(thesis_ledger, "_market_data_v3_coverage_context", lambda request: {})
     monkeypatch.setattr("src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime",
                         lambda: SimpleNamespace(execute_market_bars_v3=fail))
-    request = {"contractVersion": 3, "requestId": "source-error-proof", "symbol": "600112.SH",
+    request = {"contractVersion": 1, "requestId": "source-error-proof", "symbol": "600112.SH",
                "routeKey": {"kind": "bar", "market": "CN", "assetType": "STOCK", "capability": "DAILY_BAR",
                             "timeframe": "1d", "adjustment": "qfq"},
                "routeTarget": {"providerId": "hithink", "upstreamSource": "hithink-financial-api", "routeIndex": 0},
@@ -42,6 +42,6 @@ def test_existing_http_boundaries_preserve_source_error(endpoint, raw, wire, sta
         response = client.post(f"/thesis-ledger/market/{endpoint}", json=request,
                                headers={"Authorization": "Bearer synthetic-error-token"})
     assert response.status_code == status
-    assert response.json() == {"contractVersion": 3, "requestId": request["requestId"],
+    assert response.json() == {"contractVersion": 1, "requestId": request["requestId"],
                                "error": {"code": wire, "message": message}}
     assert "sensitive-provider-message" not in response.text

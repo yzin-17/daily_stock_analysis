@@ -61,7 +61,7 @@ def test_catalog_two_targets_and_no_implicit_provider_switch(configured_client):
     saved = store.apply_policy_v3(configured)
     assert all(item["eligible"] for item in saved["effective"]["routes"][0]["targets"])
     catalog = client.get(
-        "/api/v3/thesis-ledger/control/routes/capabilities?contractVersion=3",
+        "/api/v1/thesis-ledger/control/routes/capabilities?contractVersion=1",
         headers={"Authorization": "Bearer fees-control-test-token"},
     ).json()
     assert {item["target"]["upstreamSource"] for item in catalog["entries"] if item["key"] == KEY} == {

@@ -16,6 +16,6 @@ def bar_query_semantics(key, target):
     pagination = market_pagination_contract_v3(key["assetType"], target["providerId"], target["upstreamSource"])
     if pagination is None:
         return None
-    return {"contractVersion": 3, "operation": "query", "adjustment": key["adjustment"],
+    return {"contractVersion": 1, "operation": "query", "adjustment": key["adjustment"],
             "priceBasis": "provider-native", "readScope": "single-target-whole-window",
             "coverageValidation": "per-request", "transportProtocol": pagination["protocol"]}

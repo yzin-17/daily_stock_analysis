@@ -2,7 +2,7 @@
   "说明": "由主仓控制复核共享合同发布；样例不证明供应商读取或准入。",
   "exchange": {
     "request": {
-      "contractVersion": 3,
+      "contractVersion": 1,
       "protocolVersion": "known-cash-control-v1",
       "requestId": "known-cash-fixture",
       "symbol": "510300.SH",
@@ -40,7 +40,7 @@
       }
     },
     "response": {
-      "contractVersion": 3,
+      "contractVersion": 1,
       "protocolVersion": "known-cash-control-v1",
       "requestId": "known-cash-fixture",
       "symbol": "510300.SH",

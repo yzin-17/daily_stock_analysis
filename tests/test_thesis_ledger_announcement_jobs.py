@@ -88,17 +88,31 @@ def test_disabled_runtime_does_not_enqueue_or_acquire(tmp_path):
 def test_selection_requires_enabled_provider_and_relevant_local_route():
     class Store:
         enabled = True
+        route_enabled = True
+        eligible = True
+        capability = "RISK_WARNING"
         source = "cn-stock-risk-price-limits"
         def provider_registry(self): return [{"providerId": "official-states", "enabled": self.enabled}]
         def effective_policy_v3(self): return {"enabled": True, "routes": [{"key": {
-            "market": "CN", "assetType": "STOCK", "capability": "HISTORICAL_TRADING_STATUS"},
-            "targets": [{"providerId": "official-states", "eligible": True, "upstreamSource": self.source}]}]}
+            "market": "CN", "assetType": "STOCK", "capability": self.capability}, "enabled": self.route_enabled,
+            "targets": [{"providerId": "official-states", "eligible": self.eligible, "upstreamSource": self.source}]}]}
     store = Store()
     assert announcements_selected(store)
     store.enabled = False
     assert not announcements_selected(store)
     store.enabled = True
     store.source = "cn-stock-initial-listing"
+    assert not announcements_selected(store)
+    store.source = "cn-stock-daily-suspension"
+    store.capability = "DAILY_TRADING_STATUS"
+    assert announcements_selected(store)
+    store.eligible = False
+    assert not announcements_selected(store)
+    store.eligible = True
+    store.route_enabled = False
+    assert not announcements_selected(store)
+    store.route_enabled = True
+    store.capability = "HISTORICAL_TRADING_STATUS"
     assert not announcements_selected(store)
 
 

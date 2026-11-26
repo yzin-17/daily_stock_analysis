@@ -102,8 +102,8 @@ for directory in ('src', 'api', 'data_provider'):
         assert original.is_file() and marshal.loads(cached.read_bytes()[16:]).co_filename == str(original)
 with urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=3) as response:
     paths = json.load(response)['paths']
-assert '/api/v3/thesis-ledger/market/news' in paths
-assert all(path.startswith('/api/v3/thesis-ledger/') or path in ('/health', '/api/health') for path in paths)
+assert '/api/v1/thesis-ledger/market/news' in paths
+assert all(path.startswith('/api/v1/thesis-ledger/') or path in ('/health', '/api/health') for path in paths)
 with urllib.request.urlopen('http://127.0.0.1:8000/stocks.index.json', timeout=3) as response:
     assert len(json.load(response)) > 1000
 print('数据镜像入口、SDK 存储接口、路由与索引检查通过')

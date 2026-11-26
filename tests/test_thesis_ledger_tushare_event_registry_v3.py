@@ -34,7 +34,7 @@ def state(tmp_path, monkeypatch):
     store = ThesisLedgerControlStore(str(tmp_path / "registry.sqlite"))
     runtime = ThesisLedgerProviderRuntime(store)
     store.apply_policy_v3({
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "synthetic-policy",
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "synthetic-policy",
         "revision": 1, "enabled": True, "routes": [{"key": EVENT_KEY, "targets": [TUSHARE_TARGET]}],
     })
     credential = _provider_credential_revision_from_snapshot(store.provider_credential_snapshot("tushare"))
@@ -64,6 +64,8 @@ def test_inventory_preserves_existing_routes_with_exact_tushare_and_hithink_cash
         (HITHINK_DIVIDEND_KEY, HITHINK_DIVIDEND_TARGET, True),
         (EVENT_KEY, {"providerId": "official-dividends", "upstreamSource": "cn-etf-cash-notices"}, True),
         (EVENT_KEY, {"providerId": "local-materials", "upstreamSource": "local-materials"}, True),
+        (EVENT_KEY, {"providerId": "official-event-archive", "upstreamSource": "sse-disclosure-history"}, True),
+        (SPLIT_KEY, {"providerId": "official-event-archive", "upstreamSource": "sse-disclosure-history"}, True),
     ], key=identity)
     assert event_adapter_matches(EVENT_KEY, {**TUSHARE_TARGET, "routeIndex": 0})
     assert event_adapter_revisions(EVENT_KEY, {**TUSHARE_TARGET, "routeIndex": 0},

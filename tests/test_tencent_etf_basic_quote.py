@@ -75,7 +75,7 @@ def test_unknown_time_does_not_become_fetch_time():
 
 
 def policy(revision=1, enabled=True):
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": f"tencent-quote-{revision}",
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": f"tencent-quote-{revision}",
             "revision": revision, "enabled": enabled, "routes": [{"key": KEY, "targets": [TARGET]}]}
 
 

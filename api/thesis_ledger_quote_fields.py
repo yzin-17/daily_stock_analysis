@@ -32,7 +32,7 @@ def quote_response_payload(quote, *, symbol, provider, fallback_used, source, fe
         datetime.now(timezone.utc),
     )
     result = {
-        "version": 3, "symbol": symbol, **quote_public_fields(quote, number),
+        "version": 1, "symbol": symbol, **quote_public_fields(quote, number),
         "stale": stale, "provider": provider,
         "marketTime": timestamp(provider_timestamp) if provider_timestamp else None,
         "fetchedAt": fetched_at, "freshness": freshness, "fallbackUsed": fallback_used,

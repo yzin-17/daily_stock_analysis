@@ -65,7 +65,7 @@ def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, 
         monkeypatch.setattr(CAPABILITY_SOURCES, 'sources', registry.sources)
         monkeypatch.setattr(CAPABILITY_SOURCES, '_bindings', registry._bindings)
         monkeypatch.setitem(PROVIDER_MANIFESTS, provider, manifest())
-    request = {'contractVersion': 3, 'requestId': 'synthetic-multi-window', 'symbol': '159516.SZ',
+    request = {'contractVersion': 1, 'requestId': 'synthetic-multi-window', 'symbol': '159516.SZ',
                'routeKey': key, 'routeTarget': target, 'start': SESSIONS[0], 'end': SESSIONS[-1]}
     if unknown_listing:
         request['tradabilityMode'] = 'assume-untradable-no-bar'
@@ -116,8 +116,8 @@ def test_api_builds_verified_subresponses_and_stops_after_conflict(monkeypatch, 
 
         monkeypatch.setattr('api.thesis_ledger_multi_window_v3.try_daily_multi_window_v3', timed_dispatch)
     app = FastAPI()
-    app.include_router(router_v3, prefix='/api/v3')
-    response = TestClient(app).post('/api/v3/thesis-ledger/market/bars', json=request,
+    app.include_router(router_v3, prefix='/api/v1')
+    response = TestClient(app).post('/api/v1/thesis-ledger/market/bars', json=request,
                                     headers={'Authorization': 'Bearer synthetic-token'})
     if provider == 'test-window-source':
         assert len(plans) == 1

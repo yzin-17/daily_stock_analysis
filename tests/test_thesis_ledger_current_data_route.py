@@ -17,7 +17,7 @@ from src.services.thesis_ledger_provider_runtime import (
 
 def _policy():
     return {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "revision": 7,
         "sourceDesiredRevision": 7,
         "enabled": True,

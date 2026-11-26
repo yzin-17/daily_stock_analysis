@@ -2,6 +2,7 @@
 
 from data_provider.public_fee_projection import read_fees
 from data_provider.legacy_status_projection import read_intraday_status as read_status
+from data_provider.thesis_ledger_sources.multimarket_status import daily_status_bindings, probe_multimarket_status
 from src.services.thesis_ledger_legacy_status_contract_v1 import CONTRACT as LEGACY_CONTRACT
 from src.services.thesis_ledger_multimarket_rules import SOURCES, MultimarketRuleProvider, multimarket_rule_manifests, multimarket_rule_path
 from src.services.thesis_ledger_public_fees_contract_v1 import CONTRACT
@@ -31,9 +32,14 @@ def exact_probe(context):
     pack = json.loads(before)
     symbol = pack.get('symbol', '600519.SH')
     start, end = pack['coverage']['start'], pack['coverage']['end']
-    MultimarketRuleProvider(path).read({'contractVersion': 3, 'consumer': 'thesis-ledger',
+    request = {'contractVersion': 1, 'consumer': 'thesis-ledger',
         'requestId': 'source-check', 'symbol': symbol, 'range': {'start': start, 'end': end},
-        'routeKey': key, 'routeTarget': {**context.target, 'routeIndex': 0}})
+        'routeKey': key, 'routeTarget': {**context.target, 'routeIndex': 0}}
+    adapter = MultimarketRuleProvider(path)
+    if key['capability'] == 'DAILY_TRADING_STATUS':
+        probe_multimarket_status(request, context.policy_revision, adapter)
+    else:
+        adapter.read(request)
     if path.read_bytes() != before:
         raise CapabilityContractError('admission_invalid', '检查期间官方事实包发生变化')
     return {'symbol': symbol, 'start': start, 'end': end}
@@ -44,4 +50,6 @@ SOURCE = SourceDefinition('official-us-rules', manifest, factory, tuple(
         'bounded-public-fees-adapter-v2' if capability == 'HISTORICAL_PUBLIC_FEES' else 'bounded-multimarket-rules-adapter-v1', filename + ':v1', read_fees if capability == 'HISTORICAL_PUBLIC_FEES' else read_status, admission_required=False)
     for (market, capability, provider, source), filename in SOURCES.items()
     if provider == 'official-us-rules'
-) + bindings('official-us-rules'), ('src.services.thesis_ledger_multimarket_rules', 'MultimarketRuleProvider'), factory_scope='provider', exact_probe_read=exact_probe, catalog_readiness=catalog_readiness)
+) + bindings('official-us-rules') + daily_status_bindings('official-us-rules'),
+    ('src.services.thesis_ledger_multimarket_rules', 'MultimarketRuleProvider'),
+    factory_scope='provider', exact_probe_read=exact_probe, catalog_readiness=catalog_readiness)

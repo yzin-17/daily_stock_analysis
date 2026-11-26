@@ -201,7 +201,7 @@ def test_first_use_and_credential_change_keep_cursor_and_identity_boundaries(run
         credential_revision=revision, valid_from=(now - timedelta(minutes=1)).isoformat(),
         valid_until=(now + timedelta(hours=1)).isoformat(), recorded_by="controlled-test",
     )
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-news-policy",
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-news-policy",
                            "revision": 1, "enabled": True,
                            "routes": [{"key": KEY, "targets": [TARGET], "enabled": True}]})
     value = execute_news_request(app, request())
@@ -230,7 +230,7 @@ def test_formal_pages_bind_scope_keep_every_row_and_allow_retry(runtime, monkeyp
         valid_from=(now - timedelta(minutes=1)).isoformat(), valid_until=(now + timedelta(hours=1)).isoformat(),
         recorded_by="controlled-test",
     )
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-pagination",
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-pagination",
                            "revision": 1, "enabled": True, "routes": [{"key": KEY, "targets": [TARGET], "enabled": True}]})
     calls = []
     def execute(_settings, _symbol, **kwargs):

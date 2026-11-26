@@ -44,7 +44,7 @@ def current_hithink_quote_guard(
         ):
             return None
         effective = store.effective_policy_v3()
-        if not isinstance(effective, Mapping) or effective.get("contractVersion") != 3:
+        if not isinstance(effective, Mapping) or (type(effective.get("contractVersion")) is not int or effective.get("contractVersion") != 1):
             return None
         revision = effective.get("revision")
         if (

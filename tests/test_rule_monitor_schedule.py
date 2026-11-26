@@ -127,8 +127,8 @@ def test_authenticated_creation_schedule_and_due_execution_without_remote_calls(
     now = [epoch("2026-11-09T10:00:00+00:00")]
     monitor.store.clock = lambda: now[0]
     monkeypatch.setenv("THESIS_LEDGER_CONTROL_TOKEN", "schedule-control")
-    app = FastAPI(); app.state.rule_monitor = monitor; app.include_router(router, prefix="/api/v3")
-    root = "/api/v3/thesis-ledger/control/rule-monitor"
+    app = FastAPI(); app.state.rule_monitor = monitor; app.include_router(router, prefix="/api/v1")
+    root = "/api/v1/thesis-ledger/control/rule-monitor"
     headers = {"Authorization": "Bearer schedule-control"}
     body = {"version": VERSION, "expectedRevision": 0, "sourceIds": [IDENTITY]}
     with TestClient(app) as client:

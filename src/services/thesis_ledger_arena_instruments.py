@@ -22,7 +22,7 @@ def read_instruments(runtime, request):
             raise ProviderCallError(error.code, "证券身份检索不可用") from None
     ref = archive(runtime, {"kind": "current-instrument-discovery", "query": request.query,
                            "providerVersion": version, **result})
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": request.requestId,
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": request.requestId,
             "kind": "current-instrument-discovery", "historicalEligibility": "unverified", "market": "CN", "date": day,
             "query": request.query, "providerId": "hithink", "providerVersion": version, "archiveRef": ref,
             "observedAt": result["observedAt"], "sourceTimestamp": result["sourceTimestamp"],

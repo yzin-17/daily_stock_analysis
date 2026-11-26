@@ -30,7 +30,7 @@ def test_v3_rejects_third_target_before_admission_or_adapter(pinned):
 
     store = SimpleNamespace(
         effective_policy_v3=lambda: {
-            "contractVersion": 3, "enabled": True, "revision": 17,
+            "contractVersion": 1, "enabled": True, "revision": 17,
             "sourceDesiredRevision": 17, "routes": [{"key": key, "targets": targets}],
         },
         get_route_admission_v3=forbidden,

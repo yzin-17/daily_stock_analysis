@@ -45,7 +45,7 @@ def test_four_targets_run_control_factory_worker_and_typed_http(monkeypatch, sto
     runtime = ThesisLedgerProviderRuntime(store)
     monkeypatch.setenv('THESIS_LEDGER_DSA_TOKEN', 'synthetic-static-contract')
     app = FastAPI(); app.include_router(build_static_info_router(lambda: runtime))
-    payload = {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'static-contract', 'symbol': symbol, 'assetType': asset}
+    payload = {'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'static-contract', 'symbol': symbol, 'assetType': asset}
     with TestClient(app) as client:
         response = client.post('/market/security-static-info', json=payload,
             headers={'authorization': 'Bearer synthetic-static-contract'})

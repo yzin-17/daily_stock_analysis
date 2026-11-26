@@ -200,7 +200,7 @@ def test_first_use_and_exact_binding_preserve_public_identity(runtime):
     from src.services.thesis_ledger_capability_verification import VerificationCatalog
     assert VerificationCatalog(store).read(KEY, TARGET) == {"state": "unverified"}
     admit(store)
-    applied = store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "local-policy",
+    applied = store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "local-policy",
                                     "revision": 1, "enabled": True,
                                     "routes": [{"key": KEY, "targets": [TARGET], "enabled": True}]})
     assert applied["status"] == "applied"

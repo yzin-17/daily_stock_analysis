@@ -24,7 +24,7 @@ _MINUTE_CASES = json.loads((_FIXTURES / "thesis_ledger_minute_indicator_v1.share
 def _client(monkeypatch):
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "period-test-token")
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     add_error_handlers(app)
     return TestClient(app)
 
@@ -50,12 +50,13 @@ def test_period_capability_http_and_golden_are_exact(monkeypatch):
     golden = json.loads((_FIXTURES / "thesis_ledger_period_indicator_capabilities_v1.shared.json").read_text())
     assert period_indicator_capabilities() == golden
     client = _client(monkeypatch)
-    url = "/api/v3/thesis-ledger/market/indicators/capabilities"
+    url = "/api/v1/thesis-ledger/market/indicators/capabilities"
     assert client.get(url).status_code == 401
     assert client.get(url, headers={"Authorization": "Bearer period-test-token"}).json() == golden
-    assert client.get("/api/v3/thesis-ledger/capabilities").json() == {
-        "dataContractVersions": [3], "serviceCapabilities": {"fundNav": True},
+    assert client.get("/api/v1/thesis-ledger/capabilities").json() == {
+        "dataContract": "dsa-data-v1", "serviceCapabilities": {"fundNav": True},
         "multiWindowProtocols": ["market-multi-window-content-v1"],
+        "dailyObservationContract": "market-daily-tradability-window-v1",
     }
 
 
@@ -85,7 +86,7 @@ def test_period_http_rejects_invalid_binding_and_input(monkeypatch, kind):
     elif kind == "invalid-ohlc":
         payload["points"][0]["high"] = -1
     response = _client(monkeypatch).post(
-        "/api/v3/thesis-ledger/market/indicators/calculate",
+        "/api/v1/thesis-ledger/market/indicators/calculate",
         headers={"Authorization": "Bearer period-test-token"}, json=payload,
     )
     assert response.status_code == 422
@@ -94,7 +95,7 @@ def test_period_http_rejects_invalid_binding_and_input(monkeypatch, kind):
 @pytest.mark.parametrize("case", _CASES + _MINUTE_CASES, ids=lambda case: case["timeframe"])
 def test_shared_period_payload_http_success(monkeypatch, case):
     response = _client(monkeypatch).post(
-        "/api/v3/thesis-ledger/market/indicators/calculate",
+        "/api/v1/thesis-ledger/market/indicators/calculate",
         headers={"Authorization": "Bearer period-test-token"}, json=case["payload"],
     )
     assert response.status_code == 200
@@ -122,7 +123,7 @@ def test_minute_period_rejects_non_comparable_identity(monkeypatch, field, value
     payload = copy.deepcopy(_MINUTE_CASES[0]["payload"])
     payload["identity"][field] = value
     response = _client(monkeypatch).post(
-        "/api/v3/thesis-ledger/market/indicators/calculate",
+        "/api/v1/thesis-ledger/market/indicators/calculate",
         headers={"Authorization": "Bearer period-test-token"}, json=payload,
     )
     assert response.status_code == 422

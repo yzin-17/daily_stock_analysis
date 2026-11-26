@@ -24,7 +24,7 @@
 
 ## API
 
-DSA：`POST /api/v3/thesis-ledger/market/security-lot-size`，使用已有 Data Token。请求字段为 `contractVersion=3`、`consumer=thesis-ledger`、`requestId`、`symbol`。服务器按当前生效的独立路由选择主备；不接收历史日期或复权参数。
+DSA：`POST /api/v1/thesis-ledger/market/security-lot-size`，使用已有 Data Token。请求字段为 `contractVersion=1`、`consumer=thesis-ledger`、`requestId`、`symbol`。服务器按当前生效的独立路由选择主备；不接收历史日期或复权参数。
 
 产品：`GET /api/market-data/security-lot-size?symbol=00700.HK`。返回实际 `routeTarget`、策略修订、观察与返回时间。OpenD 地址和凭证不进入数据响应、模型或诊断导出。
 

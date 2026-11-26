@@ -40,7 +40,7 @@ def test_rule_errors_are_standard_and_do_not_expose_source_text(monkeypatch, cap
     add_error_handlers(app)
     app.include_router(build_rule_data_router(capability, path, "隔离规则", lambda: SimpleNamespace(execute_request=execute)))
     payload = {
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "isolated-rule-error",
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "isolated-rule-error",
         "symbol": "300058.SZ",
         "routeKey": {"kind": "data", "market": "CN", "assetType": "STOCK", "capability": capability},
         "routeTarget": {"providerId": "local-materials", "upstreamSource": "local-materials", "routeIndex": 0},
@@ -50,6 +50,6 @@ def test_rule_errors_are_standard_and_do_not_expose_source_text(monkeypatch, cap
     assert response.status_code == status
     detail = response.json()["detail"]
     assert set(detail) == {"contractVersion", "requestId", "error"}
-    assert detail["contractVersion"] == 3 and detail["requestId"] == payload["requestId"]
+    assert detail["contractVersion"] == 1 and detail["requestId"] == payload["requestId"]
     assert detail["error"]["code"] == code
     assert "private" not in response.text and "must-not-escape" not in response.text

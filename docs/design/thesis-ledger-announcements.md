@@ -2,7 +2,7 @@
 
 ## 自动入口
 
-ThesisLedger 的已保存股票策略配置准备，会在冻结新快照前调用受 Control Token 认证的 `POST /api/v3/thesis-ledger/control/announcements/prepare`。请求为 `symbols`、`start` 和 `end`；响应返回 `preparing` 或 `ready`、任务标识、总数、完成数、失败数和检索／下载／解析统计。接口只入队和读取进度，网络获取在后台执行。
+ThesisLedger 的已保存股票策略配置准备，会在冻结新快照前调用受 Control Token 认证的 `POST /api/v1/thesis-ledger/control/announcements/prepare`。请求为 `symbols`、`start` 和 `end`；响应返回 `preparing` 或 `ready`、任务标识、总数、完成数、失败数和检索／下载／解析统计。接口只入队和读取进度，网络获取在后台执行。
 
 只有生效路由启用、`official-states` 数据源启用，且中国内地股票历史状态路由选用了 `cn-stock-daily-suspension` 或 `cn-stock-risk-price-limits` 时自动获取。停用或移除这些来源后不新增后台获取。普通公告列表、状态读取、快照计算和旧回测重放不调用上游。
 
@@ -16,7 +16,7 @@ ThesisLedger 的已保存股票策略配置准备，会在冻结新快照前调�
 
 ## 显式维护
 
-原有 `POST /api/v3/thesis-ledger/control/announcements/fetch` 和 CLI 获取入口保留；公告目录由 `GET /api/v3/thesis-ledger/market/announcements` 查询。准备进度与目录内容不是同一个数量，解析不支持的原文仍可在目录查看。
+原有 `POST /api/v1/thesis-ledger/control/announcements/fetch` 和 CLI 获取入口保留；公告目录由 `GET /api/v1/thesis-ledger/market/announcements` 查询。准备进度与目录内容不是同一个数量，解析不支持的原文仍可在目录查看。
 
 自动获取的产品范围与目标验收，以相邻 ThesisLedger 仓库的 `docs/specs/2026-10-08-announcement-preparation.md` 及对应实施记录为准。资料进入库存不代表已取得严格历史首次公开资格。
 

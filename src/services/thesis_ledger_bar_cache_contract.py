@@ -27,7 +27,7 @@ class BarCacheTarget(BaseModel):
 
 class BarCacheRequest(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
-    contractVersion: Literal[3]
+    contractVersion: Literal[1]
     consumer: Literal['thesis-ledger']
     requestId: str = Field(min_length=1)
     purpose: Literal['interactive-chart']

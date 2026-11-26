@@ -124,8 +124,8 @@ def test_original_http_classifies_rq_guard_rejection_without_publishing_late_fac
     read = controlled_reader(monkeypatch, change=mutate)
     monkeypatch.setattr('src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime', lambda: runtime)
     app = FastAPI()
-    app.include_router(router, prefix='/api/v3')
-    response = TestClient(app).post('/api/v3/thesis-ledger/market/events', json=request(key),
+    app.include_router(router, prefix='/api/v1')
+    response = TestClient(app).post('/api/v1/thesis-ledger/market/events', json=request(key),
         headers={'Authorization': 'Bearer synthetic-data-token'})
     assert response.status_code == 422
     assert response.json()['error']['code'] == 'not_admitted'

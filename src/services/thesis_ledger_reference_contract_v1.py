@@ -85,7 +85,7 @@ class ReferenceRequest(BaseModel):
 
 
 class ReferenceWireRequest(ReferenceRequest):
-    contractVersion: Literal[3]
+    contractVersion: Literal[1]
     consumer: Literal['thesis-ledger']
 
 

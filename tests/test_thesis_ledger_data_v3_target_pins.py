@@ -38,7 +38,7 @@ START = "2026-05-18"
 END = "2026-05-20"
 REQUEST_ID = "data-v3-target-pin-test"
 REQUEST = {
-    "contractVersion": 3,
+    "contractVersion": 1,
     "requestId": REQUEST_ID,
     "symbol": SYMBOL,
     "routeKey": ROUTE_KEY,
@@ -136,7 +136,7 @@ class _DataStore:
 
     def effective_policy_v3(self):
         return {
-            "contractVersion": 3,
+            "contractVersion": 1,
             "enabled": True,
             "revision": self.revision,
             "sourceDesiredRevision": self.source_desired_revision,
@@ -409,7 +409,7 @@ def test_pinned_runtime_rejects_inconsistent_effective_revision_before_adapter_c
 
 def _api_client() -> TestClient:
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     add_error_handlers(app)
     return TestClient(app)
 
@@ -444,7 +444,7 @@ def test_api_parses_optional_pin_passes_it_and_echoes_matching_provenance(monkey
     monkeypatch.setattr(provider_runtime, "get_thesis_ledger_runtime", lambda: runtime)
 
     response = _api_client().post(
-        "/api/v3/thesis-ledger/market/bars",
+        "/api/v1/thesis-ledger/market/bars",
         headers={"Authorization": "Bearer data-token"},
         json={**REQUEST, "routeTarget": target},
     )
@@ -482,7 +482,7 @@ def test_api_rejects_malformed_route_target_pin_before_runtime(monkeypatch, targ
     monkeypatch.setattr(provider_runtime, "get_thesis_ledger_runtime", lambda: runtime)
 
     response = _api_client().post(
-        "/api/v3/thesis-ledger/market/bars",
+        "/api/v1/thesis-ledger/market/bars",
         headers={"Authorization": "Bearer data-token"},
         json={**REQUEST, "routeTarget": target},
     )
@@ -500,7 +500,7 @@ def test_api_rejects_success_response_whose_provenance_disagrees_with_pin(monkey
     monkeypatch.setattr(provider_runtime, "get_thesis_ledger_runtime", lambda: runtime)
 
     response = _api_client().post(
-        "/api/v3/thesis-ledger/market/bars",
+        "/api/v1/thesis-ledger/market/bars",
         headers={"Authorization": "Bearer data-token"},
         json={**REQUEST, "routeTarget": {**BACKUP, "routeIndex": 1}},
     )
@@ -526,7 +526,7 @@ def test_api_maps_unavailable_pin_to_a_stable_safe_error(monkeypatch):
         lambda: _UnavailableRuntime(),
     )
     response = _api_client().post(
-        "/api/v3/thesis-ledger/market/bars",
+        "/api/v1/thesis-ledger/market/bars",
         headers={"Authorization": "Bearer data-token"},
         json={**REQUEST, "routeTarget": {**BACKUP, "routeIndex": 1}},
     )
@@ -553,7 +553,7 @@ def test_api_keeps_no_pin_v3_runtime_call_compatible(monkeypatch):
     monkeypatch.setattr(provider_runtime, "get_thesis_ledger_runtime", lambda: runtime)
 
     response = _api_client().post(
-        "/api/v3/thesis-ledger/market/bars",
+        "/api/v1/thesis-ledger/market/bars",
         headers={"Authorization": "Bearer data-token"},
         json=REQUEST,
     )

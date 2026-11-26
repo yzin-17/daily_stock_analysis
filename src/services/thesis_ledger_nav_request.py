@@ -25,7 +25,7 @@ def parse_nav_request(value):
               'calendarDecisionRaw', 'domesticRuleDecisionRaw'}
     if not isinstance(value, dict) or set(value) != fields:
         raise NavProductionError('invalid_request')
-    if type(value['contractVersion']) is not int or value['contractVersion'] != 3:
+    if type(value['contractVersion']) is not int or value['contractVersion'] != 1:
         raise NavProductionError('invalid_request')
     if (not isinstance(value['requestId'], str) or not value['requestId'].strip()
             or value['requestId'].strip() != value['requestId'] or len(value['requestId']) > 128

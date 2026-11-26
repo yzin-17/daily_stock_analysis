@@ -165,7 +165,7 @@ def build_fx_rates(
             )
         )
     return {
-        "version": 3,
+        "version": 1,
         "baseCurrency": base_currency,
         "asOf": as_of.isoformat(),
         "fetchedAt": _now_iso(),

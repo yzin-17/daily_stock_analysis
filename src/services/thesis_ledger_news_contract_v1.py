@@ -33,7 +33,7 @@ class NewsInstrument(NewsModel):
 
 
 class NewsWindowRequest(NewsModel):
-    version: Literal[3] = 3
+    version: Literal[1] = 1
     requestId: str = Field(min_length=1, max_length=128)
     publishedStart: str | None = None
     publishedEnd: str | None = None
@@ -203,7 +203,7 @@ class NewsResponseContent(NewsModel):
 
 
 class NewsResponse(NewsResponseContent):
-    version: Literal[3] = 3
+    version: Literal[1] = 1
     contractVersion: Literal["news-search-v1"] = NEWS_CONTRACT_VERSION
     capability: Literal["NEWS_SEARCH"] = NEWS_CAPABILITY
     instrument: NewsInstrument

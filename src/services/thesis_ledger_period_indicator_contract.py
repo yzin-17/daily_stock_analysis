@@ -19,7 +19,7 @@ _FINGERPRINT = re.compile(r"^[a-f0-9]{64}$")
 def period_indicator_capabilities() -> dict[str, Any]:
     """声明计算协议；不声明来源周期或历史预热已充足。"""
     return {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "engineVersion": "dsa-indicator-v3",
         "calculation": "provided-points",
         "periodProtocol": PERIOD_PROTOCOL,

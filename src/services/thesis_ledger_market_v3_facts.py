@@ -1,4 +1,4 @@
-"""Data V3 独立日历与上市事实，不从行情结果推断边界。"""
+"""dsa-data-v1 独立日历与上市事实，不从行情结果推断边界。"""
 
 from __future__ import annotations
 
@@ -190,7 +190,7 @@ def market_coverage_context_v3(
     = market_calendar_evidence_v3,
     allow_unknown_listing: bool = False,
 ) -> dict[str, Any] | None:
-    """Build independently sourced Data V3 coverage facts for one request window."""
+    """Build independently sourced dsa-data-v1 coverage facts for one request window."""
     if market not in {"CN", "HK", "US"} or (market != "CN" and not allow_unknown_listing):
         return None
     try:

@@ -14,11 +14,11 @@ from tests.test_configured_market_routes import store  # noqa: F401 - pytest 按
 from tests.test_futu_minute import sdk, row
 from tests.test_thesis_ledger_futu_capability_path import configure, worker_transport
 
-PATH = "/api/v3/thesis-ledger/market/chart-bars"
+PATH = "/api/v1/thesis-ledger/market/chart-bars"
 
 
 def request(market="HK", asset="STOCK", symbol="00700.HK"):
-    return {"contractVersion": 3, "purpose": "interactive-chart", "requestId": "minute-contract",
+    return {"contractVersion": 1, "purpose": "interactive-chart", "requestId": "minute-contract",
             "symbol": symbol, "start": "2026-05-18", "end": "2026-05-18",
             "routeKey": {"kind": "bar", "market": market, "assetType": asset,
                          "capability": "MINUTE_BAR", "timeframe": "1m", "adjustment": "none"},
@@ -31,7 +31,7 @@ def client_for(monkeypatch, store):
     instance = ThesisLedgerProviderRuntime(store)
     monkeypatch.setattr(runtime, "get_thesis_ledger_runtime", lambda: instance)
     app = FastAPI()
-    app.include_router(router, prefix="/api/v3")
+    app.include_router(router, prefix="/api/v1")
     return TestClient(app), instance
 
 
@@ -57,9 +57,15 @@ def test_exact_native_minute_bindings_do_not_invent_periods():
                and configured_data_route(k, t) for k, t in entries)
     for key, target in entries:
         revision = market_v3_current_route_revisions(key, target, PROVIDER_MANIFESTS["futu"], credential_version=1)
-        if key['market'] == 'CN' and key['timeframe'] == '1m':
+        if (key['market'], key['assetType'], key['timeframe']) == ('CN', 'STOCK', '1m'):
+            assert revision['adapterRevision'] == 'futu-exact-cn-stock-minute-v4'
+            assert revision['sourceRevision'] == 'futu-observed-cn-stock-minute-sdk-v4'
+        elif key['market'] == 'CN' and key['timeframe'] == '1m':
             assert revision['adapterRevision'] == 'futu-exact-cn-minute-end-v2'
             assert revision['sourceRevision'] == 'futu-complete-cn-minute-end-sdk-pagination-v2'
+        elif key['market'] == 'CN':
+            assert revision['adapterRevision'] == 'futu-exact-cn-minute-end-v3'
+            assert revision['sourceRevision'] == 'futu-complete-cn-minute-end-sdk-pagination-v3'
         else:
             assert revision["adapterRevision"] == "futu-exact-minute-v1"
             assert revision["sourceRevision"] == "futu-complete-minute-sdk-pagination-v1"
@@ -146,7 +152,7 @@ def test_changes_during_minute_read_reject_late_results(monkeypatch, store, chan
             store.save_provider_config("futu", {"requestId": "changed", "enabled": True,
                 "credentials": {"method": "opend", "values": {"host": "localhost", "port": "11112"}}})
         else:
-            store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "changed",
+            store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "changed",
                 "revision": 2, "enabled": True, "routes": [{"key": payload["routeKey"], "targets": [target]}]})
         return 0, pd.DataFrame([row()]), None
     ctx.request_history_kline.side_effect = changed

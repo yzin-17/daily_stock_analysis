@@ -81,3 +81,26 @@ def test_invalid_evidence_is_rejected(failure):
         metadata["calendar"]["source"]["provider"] = ""
     with pytest.raises(ValueError):
         daily_tradability_evidence(**inputs)
+
+
+@pytest.mark.parametrize("missing", [None, float("nan")])
+def test_price_only_requires_explicit_permission_and_preserves_missing_day(missing):
+    inputs = _input()
+    inputs["bars"].loc[0, "volume"] = missing
+    with pytest.raises(ValueError):
+        daily_tradability_evidence(**inputs)
+    evidence = daily_tradability_evidence(**inputs, allow_price_only=True)
+    assert evidence["contract"] == "market-daily-tradability-window-v1"
+    assert evidence["priceOnlyAllowed"] is True
+    assert [day["state"] for day in evidence["days"]] == [
+        "observed-price-only", "assumed-untradable-no-bar", "observed-traded",
+    ]
+
+
+@pytest.mark.parametrize("field,value", [("volume", 0), ("volume", -1), ("volume", float("inf")), ("high", 0.5), ("close", 0)])
+def test_price_only_observation_does_not_promote_zero_negative_or_invalid_ohlc(field, value):
+    inputs = _input()
+    inputs["bars"][field] = inputs["bars"][field].astype(float)
+    inputs["bars"].loc[0, field] = value
+    with pytest.raises(ValueError):
+        daily_tradability_evidence(**inputs, allow_price_only=True)

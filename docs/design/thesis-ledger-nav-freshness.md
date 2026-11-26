@@ -2,7 +2,7 @@
 
 ## 历史与当前净值
 
-`GET /api/v3/thesis-ledger/market/fund-nav/history` 成功返回并通过标准净值历史合同校验的点使用 `freshness=delayed`。`navDate` 是历史事实日期，早于当前时间七天不能证明历史数据失效，不再逐点据此标记 `stale`。来源切换记录在 `fallbackUsed`，不直接代表缓存过期。
+`GET /api/v1/thesis-ledger/market/fund-nav/history` 成功返回并通过标准净值历史合同校验的点使用 `freshness=delayed`。`navDate` 是历史事实日期，早于当前时间七天不能证明历史数据失效，不再逐点据此标记 `stale`。来源切换记录在 `fallbackUsed`，不直接代表缓存过期。
 
 单点最新净值继续使用既有时效规则。抓取时间 `fetchedAt` 与净值日期分别保留，不能用抓取时间替代净值日期。此调整不修改净值数值、日期、排序、窗口和限量行为。
 

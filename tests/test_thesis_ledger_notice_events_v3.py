@@ -13,16 +13,16 @@ from api.thesis_ledger_events_v3 import router as event_router
 KEY, TARGET = notices.ROUTE_KEY, notices.ROUTE_TARGET
 configured_client = fee_routes.configured_client
 CONTROL_HEADERS, DATA_HEADERS = fee_routes.CONTROL_HEADERS, fee_routes.DATA_HEADERS
-URL = "/api/v3/thesis-ledger/market/events"
+URL = "/api/v1/thesis-ledger/market/events"
 
 
 @pytest.fixture(autouse=True)
 def expose_event_router(configured_client):
-    configured_client[0].app.include_router(event_router, prefix="/api/v3")
+    configured_client[0].app.include_router(event_router, prefix="/api/v1")
 
 
 def request(runtime):
-    return {"contractVersion": 3, "requestId": "notice-http", "symbol": "510300.SH",
+    return {"contractVersion": 1, "requestId": "notice-http", "symbol": "510300.SH",
             "routeKey": KEY, "routeTarget": {**TARGET, "routeIndex": 0},
             "desiredRevision": 1, "effectivePolicyRevision": 1,
             "catalogRevision": runtime.market_route_catalog_v3()["catalogRevision"],
@@ -41,7 +41,7 @@ def admit(store, evidence_digest=None):
         credential_revision=revisions["credentialRevision"], valid_from=(now - timedelta(minutes=1)).isoformat(),
         valid_until=(now + timedelta(days=1)).isoformat(), recorded_by="pytest-source-review",
     )
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "notice-policy",
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "notice-policy",
                            "revision": 1, "enabled": True, "routes": [{"key": KEY, "targets": [TARGET]}]})
 
 
@@ -59,7 +59,7 @@ def test_real_source_requires_admission_and_preserves_exact_cash_scope(configure
     assert sha256(wire["noticeDividendEvidence"]["content"].encode()).hexdigest() == wire["admission"]["evidenceSha256"]
     assert wire["providerRevision"] == notices.notice_dividend_revisions()["sourceRevision"]
     assert "recordedBy" not in wire["admission"]
-    providers = client.get("/api/v3/thesis-ledger/control/providers", headers=CONTROL_HEADERS).json()["providers"]
+    providers = client.get("/api/v1/thesis-ledger/control/providers", headers=CONTROL_HEADERS).json()["providers"]
     assert next(provider for provider in providers if provider["providerId"] == "official-dividends")["requiresCredential"] is False
     assert not any(entry["target"] == TARGET and entry["key"]["capability"] == "SPLIT_EVENT" for entry in entries)
 
@@ -93,7 +93,7 @@ def test_policy_revision_during_read_drops_late_result(configured_client):
 
     def late_read(*args):
         result = notices.OfficialNoticeDividendProvider().read(*args)
-        store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "disable-notice",
+        store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "disable-notice",
                                "revision": 2, "enabled": False, "routes": []})
         return result
 

@@ -11,10 +11,10 @@ from fastapi.testclient import TestClient
 from api.thesis_ledger_chart_v3 import router
 from src.services.thesis_ledger_provider_runtime import ProviderCallError
 
-PATH = "/api/v3/thesis-ledger/market/chart-bars"
+PATH = "/api/v1/thesis-ledger/market/chart-bars"
 TARGET = {"providerId": "akshare", "upstreamSource": "eastmoney", "routeIndex": 0}
 REQUEST = {
-    "contractVersion": 3, "purpose": "interactive-chart", "requestId": "chart-test",
+    "contractVersion": 1, "purpose": "interactive-chart", "requestId": "chart-test",
     "symbol": "159516.SZ", "start": "2026-05-18", "end": "2026-05-20",
     "routeKey": {"kind": "bar", "market": "CN", "assetType": "ETF",
                  "capability": "DAILY_BAR", "timeframe": "1d", "adjustment": "qfq"},
@@ -41,7 +41,7 @@ def setup(monkeypatch):
     monkeypatch.setattr(runtime, "get_thesis_ledger_runtime",
                         lambda: SimpleNamespace(execute_market_bars_v3=execute))
     app = FastAPI()
-    app.include_router(router, prefix="/api/v3")
+    app.include_router(router, prefix="/api/v1")
     return TestClient(app), execute, execution
 
 

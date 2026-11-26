@@ -43,7 +43,7 @@ def test_actual_endpoint_standard_error_and_request_correlation(monkeypatch, run
     response = FastApiClient(app).post('/market/status-capabilities', json=payload,
                                    headers={'authorization': 'Bearer synthetic-token', 'x-request-id': 'different-trace'})
     assert response.status_code == status
-    assert response.json() == {'detail': {'contractVersion': 3, 'requestId': payload['requestId'],
+    assert response.json() == {'detail': {'contractVersion': 1, 'requestId': payload['requestId'],
                                          'error': {'code': code, 'message': message}}}
     assert len(calls) == 1 and calls[0].request_id == payload['requestId']
     assert 'synthetic-secret' not in response.text
@@ -60,5 +60,5 @@ def test_invalid_capability_parameters_rejected_before_runtime(monkeypatch):
     response = FastApiClient(app).post('/market/status-capabilities', json=payload,
                                    headers={'authorization': 'Bearer synthetic-token'})
     assert response.status_code == 422 and calls == []
-    assert response.json()['detail'] == {'contractVersion': 3, 'requestId': payload['requestId'],
+    assert response.json()['detail'] == {'contractVersion': 1, 'requestId': payload['requestId'],
                                         'error': {'code': 'invalid_request', 'message': '来源拒绝请求参数'}}

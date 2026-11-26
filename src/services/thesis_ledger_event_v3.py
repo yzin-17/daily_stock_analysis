@@ -24,7 +24,7 @@ def parse_event_request(value: Any) -> dict[str, Any]:
               "effectivePolicyRevision", "catalogRevision", "start", "end", "dataAsOf"}
     if not isinstance(value, dict) or set(value) != fields:
         raise EventV3Error("invalid_request")
-    if type(value["contractVersion"]) is not int or value["contractVersion"] != 3:
+    if type(value["contractVersion"]) is not int or value["contractVersion"] != 1:
         raise EventV3Error("invalid_request")
     for name in ("requestId", "symbol"):
         if not isinstance(value[name], str) or not value[name].strip() or value[name] != value[name].strip():
@@ -63,7 +63,7 @@ def _admitted_state(runtime: Any, request: dict[str, Any]) -> dict[str, Any]:
     if (not isinstance(policy, dict) or policy.get("enabled") is not True
             or any(type(policy.get(field)) is not int for field in
                    ("contractVersion", "revision", "sourceDesiredRevision"))
-            or policy.get("contractVersion") != 3
+            or (type(policy.get("contractVersion")) is not int or policy.get("contractVersion") != 1)
             or policy.get("revision") != request["effectivePolicyRevision"]
             or policy.get("sourceDesiredRevision") != request["desiredRevision"]):
         raise EventV3Error("policy_not_applied")

@@ -59,9 +59,9 @@ def test_control_auth_strict_input_cas_idempotence_and_missing_job(tmp_path, mon
     monitor, calls = setup(tmp_path)
     monkeypatch.setenv("THESIS_LEDGER_CONTROL_TOKEN", "monitor-control")
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "monitor-data")
-    app = FastAPI(); app.state.rule_monitor = monitor; app.include_router(router, prefix="/api/v3")
+    app = FastAPI(); app.state.rule_monitor = monitor; app.include_router(router, prefix="/api/v1")
     headers = {"Authorization": "Bearer monitor-control"}
-    root = "/api/v3/thesis-ledger/control/rule-monitor"
+    root = "/api/v1/thesis-ledger/control/rule-monitor"
     with TestClient(app) as client:
         assert client.get(root).status_code == 401
         assert client.get(root + "/history").status_code == 401

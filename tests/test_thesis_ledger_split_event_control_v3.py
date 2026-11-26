@@ -21,7 +21,7 @@ def setup(tmp_path):
                "documentUrl": "https://example.invalid/fixture.pdf", "documentSha256": "a" * 64}
     evidence = MappingEvidenceStore(tmp_path / "thesis-ledger-mapping-evidence")
     reference = evidence.put(json.dumps({"contractVersion": 1, "kind": "split-date-mapping", "mappings": [mapping]}).encode())
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "split-policy",
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "split-policy",
                            "revision": 1, "enabled": True, "routes": [{"key": SPLIT_KEY, "targets": [EVENT_TARGET]}]})
     store.record_route_admission_v3(
         key=SPLIT_KEY, target=EVENT_TARGET, evidence_ref=reference, evidence_sha256=reference[7:],
@@ -30,7 +30,7 @@ def setup(tmp_path):
         adapter_revision=SPLIT_REVISIONS["adapterRevision"], source_revision=SPLIT_REVISIONS["sourceRevision"],
         credential_revision=SPLIT_REVISIONS["credentialRevision"],
     )
-    request = {"contractVersion": 3, "requestId": "split-fixture", "symbol": "159596.SZ", "routeKey": SPLIT_KEY,
+    request = {"contractVersion": 1, "requestId": "split-fixture", "symbol": "159596.SZ", "routeKey": SPLIT_KEY,
                "routeTarget": {**EVENT_TARGET, "routeIndex": 0}, "desiredRevision": 1, "effectivePolicyRevision": 1,
                "catalogRevision": runtime.market_route_catalog_v3()["catalogRevision"],
                "start": "2025-10-20", "end": "2025-10-20", "dataAsOf": "2099-01-01T00:00:00Z"}

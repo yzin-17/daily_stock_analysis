@@ -10,7 +10,7 @@ CAPABILITY = 'HISTORICAL_TRADING_STATUS'
 
 
 class StatusRequest(Model):
-    contractVersion: Literal[3]
+    contractVersion: Literal[1]
     consumer: Literal['thesis-ledger']
     requestId: Text
     routeKey: Key

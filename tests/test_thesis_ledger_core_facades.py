@@ -50,7 +50,7 @@ def _client(monkeypatch) -> TestClient:
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "test-token")
     monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "false")
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     return TestClient(app)
 
 
@@ -140,10 +140,10 @@ def test_core_facades_use_gateway_and_preserve_wire_provenance(monkeypatch):
         "x-request-id": "core-success-request",
     }
 
-    quote = client.get("/api/v3/thesis-ledger/market/quote?symbol=600519.SH", headers=headers)
-    nav = client.get("/api/v3/thesis-ledger/market/fund-nav?symbol=000001.OF", headers=headers)
+    quote = client.get("/api/v1/thesis-ledger/market/quote?symbol=600519.SH", headers=headers)
+    nav = client.get("/api/v1/thesis-ledger/market/fund-nav?symbol=000001.OF", headers=headers)
     history = client.get(
-        "/api/v3/thesis-ledger/market/fund-nav/history?symbol=000001.OF&limit=2",
+        "/api/v1/thesis-ledger/market/fund-nav/history?symbol=000001.OF&limit=2",
         headers=headers,
     )
 
@@ -186,7 +186,7 @@ def test_chip_facade_uses_gateway_without_native_manager(monkeypatch):
         "x-request-id": "derived-request",
     }
 
-    chip = client.get("/api/v3/thesis-ledger/market/chip?symbol=600519.SH", headers=headers)
+    chip = client.get("/api/v1/thesis-ledger/market/chip?symbol=600519.SH", headers=headers)
 
     assert chip.status_code == 200
     assert chip.json()["provider"] == "efinance"
@@ -235,10 +235,10 @@ def test_core_facades_map_no_eligible_gateway_error_to_stable_contract_error(mon
         "x-request-id": "known-core-request",
     }
     paths = (
-        "/api/v3/thesis-ledger/market/quote?symbol=600519.SH",
-        "/api/v3/thesis-ledger/market/fund-nav?symbol=000001.OF",
-        "/api/v3/thesis-ledger/market/fund-nav/history?symbol=000001.OF",
-        "/api/v3/thesis-ledger/market/chip?symbol=600519.SH",
+        "/api/v1/thesis-ledger/market/quote?symbol=600519.SH",
+        "/api/v1/thesis-ledger/market/fund-nav?symbol=000001.OF",
+        "/api/v1/thesis-ledger/market/fund-nav/history?symbol=000001.OF",
+        "/api/v1/thesis-ledger/market/chip?symbol=600519.SH",
     )
 
     responses = [client.get(path, headers=headers) for path in paths]
@@ -272,7 +272,7 @@ def _policy_store_with_provider_state(tmp_path, *, enabled=True, circuit="closed
         )
     store.apply_policy_v3(
         {
-            "contractVersion": 3,
+            "contractVersion": 1,
             "consumer": "thesis-ledger",
             "requestId": "state-test",
             "revision": 1,
@@ -352,7 +352,7 @@ def test_gateway_does_not_invoke_unconfigured_provider(tmp_path, monkeypatch):
     store = ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db"))
     store.apply_policy_v3(
         {
-            "contractVersion": 3,
+            "contractVersion": 1,
             "consumer": "thesis-ledger",
             "requestId": "unconfigured-test",
             "revision": 1,

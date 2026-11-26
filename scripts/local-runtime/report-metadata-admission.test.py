@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from data_provider.eastmoney_report_metadata import project_page
 from src.services.thesis_ledger_control import ThesisLedgerControlStore
-from src.services.thesis_ledger_report_metadata_contract_v1 import ReportMetadataRequest
+from src.services.thesis_ledger_report_metadata_contract import ReportMetadataRequest
 from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 
 spec = importlib.util.spec_from_file_location('report_admission', Path(__file__).with_name('report-metadata-admission.py'))

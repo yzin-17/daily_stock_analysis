@@ -41,7 +41,7 @@ def state(tmp_path, monkeypatch):
     proof = MappingEvidenceStore(tmp_path / "thesis-ledger-mapping-evidence").put(content)
     runtime = ThesisLedgerProviderRuntime(store)
     store.apply_policy_v3({
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "synthetic-policy",
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "synthetic-policy",
         "revision": 1, "enabled": True,
         "routes": [{"key": key, "targets": [RQDATA_TARGET]} for key in (EVENT_KEY, SPLIT_KEY)],
     })
@@ -58,7 +58,7 @@ def state(tmp_path, monkeypatch):
         )
 
     def request(key):
-        return {"contractVersion": 3, "requestId": "synthetic-rqdata-http", "symbol": "159516.SZ",
+        return {"contractVersion": 1, "requestId": "synthetic-rqdata-http", "symbol": "159516.SZ",
                 "routeKey": key, "routeTarget": {**RQDATA_TARGET, "routeIndex": 0},
                 "desiredRevision": 1, "effectivePolicyRevision": 1,
                 "catalogRevision": runtime.market_route_catalog_v3()["catalogRevision"],
@@ -143,7 +143,7 @@ def test_during_read_changes_reject_late_result_without_retry(state, monkeypatch
             store.save_provider_config("rqdata", {"enabled": True,"requestId": "synthetic-rotation", "credentials": {
                 "method": "username_password", "values": {"username": "new-user", "password": "new-password"}}})
         elif change == "policy":
-            store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "synthetic-disable",
+            store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "synthetic-disable",
                                    "revision": 2, "enabled": False,
                                    "routes": [{"key": SPLIT_KEY, "targets": [RQDATA_TARGET]}]})
         else:
@@ -164,8 +164,8 @@ def test_authenticated_http_reaches_real_spawn_without_external_service(state, m
     monkeypatch.setattr("src.services.thesis_ledger_rqdata_read.RqDataClientFactory", constructor)
     monkeypatch.setattr("src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime", lambda: runtime)
     app = FastAPI()
-    app.include_router(router, prefix="/api/v3")
-    response = TestClient(app).post("/api/v3/thesis-ledger/market/events", json=request(key),
+    app.include_router(router, prefix="/api/v1")
+    response = TestClient(app).post("/api/v1/thesis-ledger/market/events", json=request(key),
                                     headers={"Authorization": "Bearer synthetic-data-token"})
     assert response.status_code == 200, response.json()
     assert response.json()["identityEvidence"]["content"].encode() == content
@@ -180,8 +180,8 @@ def test_read_failure_http_does_not_expose_credentials_or_sdk_text(state, monkey
     read = Mock(side_effect=RuntimeError("synthetic-sensitive-detail"))
     monkeypatch.setattr("src.services.thesis_ledger_rqdata_read.read_rqdata_fund_event_isolated", read)
     app = FastAPI()
-    app.include_router(router, prefix="/api/v3")
-    response = TestClient(app).post("/api/v3/thesis-ledger/market/events", json=request(SPLIT_KEY),
+    app.include_router(router, prefix="/api/v1")
+    response = TestClient(app).post("/api/v1/thesis-ledger/market/events", json=request(SPLIT_KEY),
                                     headers={"Authorization": "Bearer synthetic-data-token"})
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "upstream_failure"

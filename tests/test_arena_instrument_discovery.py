@@ -54,7 +54,7 @@ def runtime(tmp_path):
 
 
 def request():
-    return service.InstrumentDiscoveryRequest(contractVersion=3, consumer="thesis-ledger", requestId="search",
+    return service.InstrumentDiscoveryRequest(contractVersion=1, consumer="thesis-ledger", requestId="search",
                                                market="CN", date="2026-11-02", query="510300")
 
 

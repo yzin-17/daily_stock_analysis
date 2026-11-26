@@ -1,4 +1,4 @@
-"""原Data V3认证的只读缓存代次上下文。"""
+"""dsa-data-v1 认证的只读缓存代次上下文。"""
 
 from typing import Any
 from uuid import uuid4
@@ -32,6 +32,6 @@ def cache_context(payload: Any = Body(...)):
         else:
             code, status, message = 'upstream_failure', 503, '行情上游暂时不可用'
     return JSONResponse(status_code=status, content={
-        'contractVersion': 3, 'requestId': request_id,
+        'contractVersion': 1, 'requestId': request_id,
         'error': {'code': code, 'message': message},
     })

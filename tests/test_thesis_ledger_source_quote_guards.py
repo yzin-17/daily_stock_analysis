@@ -80,7 +80,7 @@ def test_new_provider_guard_uses_original_query_and_snapshot(tmp_path, monkeypat
     monkeypatch.setattr(CAPABILITY_SOURCES, '_bindings', registry._bindings)
     monkeypatch.setitem(PROVIDER_MANIFESTS, provider, manifest())
     store = ThesisLedgerControlStore(str(tmp_path / 'guard.sqlite'))
-    store.apply_policy_v3({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'guard-test',
+    store.apply_policy_v3({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'guard-test',
         'revision': 1, 'enabled': True, 'routes': [{'key': binding.key.route_key(), 'targets': [target]}]})
     original_claim = store.claim_provider_request_budget
 

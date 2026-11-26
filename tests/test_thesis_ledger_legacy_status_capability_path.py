@@ -16,7 +16,7 @@ from src.services.thesis_ledger_multimarket_rules import SOURCES, BASE, Multimar
 from src.services.thesis_ledger_baostock_status_source import read_baostock_status_response
 from src.services.thesis_ledger_status_cache import HistoricalStatusCache
 from tests.test_configured_market_routes import store, apply, no_admissions
-from tests.test_thesis_ledger_baostock_status_routes import request as bao_request, value as bao_value
+from tests.test_thesis_ledger_baostock_status_routes import legacy_request as bao_request, value as bao_value
 from tests.test_thesis_ledger_baostock_lifecycle import normalize, frame as basic_frame
 
 NOW=datetime(2026,10,12,tzinfo=timezone.utc)
@@ -31,7 +31,7 @@ def wire(key,target):
     else:
         path=BASE/SOURCES[(key['market'],key['capability'],target['providerId'],target['upstreamSource'])]
     pack=json.loads(path.read_text())
-    return {'contractVersion':3,'consumer':'thesis-ledger','requestId':'legacy-status-standard',
+    return {'contractVersion':1,'consumer':'thesis-ledger','requestId':'legacy-status-standard',
         'routeKey':key,'routeTarget':{**target,'routeIndex':0},'symbol':pack['symbol'],'range':pack['coverage']}
 
 

@@ -32,7 +32,7 @@ def wire(key,target):
     else:
         name=SOURCES[(key['market'],key['capability'],target['providerId'],target['upstreamSource'])]
         pack=json.loads((BASE/name).read_text());symbol=pack['symbol']
-    return {'contractVersion':3,'consumer':'thesis-ledger','requestId':'fee-standard-contract',
+    return {'contractVersion':1,'consumer':'thesis-ledger','requestId':'fee-standard-contract',
         'routeKey':key,'routeTarget':{**target,'routeIndex':0},'symbol':symbol,'range':pack['coverage']}
 
 

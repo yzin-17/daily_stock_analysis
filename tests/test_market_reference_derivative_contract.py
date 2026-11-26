@@ -47,7 +47,7 @@ def test_single_day_and_current_quote_dates():
 def test_control_data_only_extension(asset):
     assert route_asset_type_allowed('data', asset)
     assert not route_asset_type_allowed('bar', asset)
-    policy = {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'x', 'revision': 1, 'enabled': True,
+    policy = {'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'x', 'revision': 1, 'enabled': True,
               'routes': [{'key': {'kind': 'data', 'market': 'CN', 'assetType': asset, 'capability': 'REFERENCE_TEST'},
                           'enabled': True, 'targets': [{'providerId': 'akshare', 'upstreamSource': 'sina'}]}]}
     assert normalize_policy_v3(policy)['routes'][0]['key']['assetType'] == asset

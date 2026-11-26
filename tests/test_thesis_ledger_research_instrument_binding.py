@@ -153,12 +153,12 @@ def test_authenticated_original_api_reads_original_fact_without_policy_write(mon
     pack, _, _, _ = source.load_share_window()
     monkeypatch.setenv('THESIS_LEDGER_DSA_TOKEN', 'research-fact-test-token')
     app = FastAPI()
-    app.include_router(router_v3, prefix='/api/v3')
+    app.include_router(router_v3, prefix='/api/v1')
     params = {'symbol': pack['symbol'], 'market': market, 'instrumentType': 'STOCK',
               'dataAsOf': NOW.isoformat(), **pack['coverage'], 'executionStart': pack['coverage']['start'],
               'executionEnd': pack['coverage']['end'], 'barAdjustment': 'none', 'barProviderId': 'yfinance',
               'barUpstreamSource': source.SOURCE, 'barRouteIndex': 0, 'identityOnly': 'true'}
-    endpoint = '/api/v3/thesis-ledger/backtest/instrument-facts'
+    endpoint = '/api/v1/thesis-ledger/backtest/instrument-facts'
     with TestClient(app) as client:
         assert client.get(endpoint, params=params).status_code == 401
         response = client.get(endpoint, params=params, headers={'Authorization': 'Bearer research-fact-test-token'})

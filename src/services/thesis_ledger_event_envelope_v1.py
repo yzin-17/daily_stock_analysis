@@ -50,7 +50,7 @@ class Target(TargetIdentity):
 
 
 class EventRequest(Model, Generic[KeyT]):
-    contractVersion: Literal[3]
+    contractVersion: Literal[1]
     requestId: Text
     symbol: Annotated[str, Field(pattern=r'^[0-9]{6}\.(SH|SZ)$')]
     routeKey: KeyT

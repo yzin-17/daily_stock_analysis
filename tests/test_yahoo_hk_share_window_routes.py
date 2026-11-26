@@ -22,16 +22,16 @@ def test_hk_share_window_wire_excludes_only_zero_volume_and_keeps_origin(tmp_pat
     monkeypatch.setattr(runtime_module, "_runtime_database_path", path)
     key = {"kind": "bar", "market": "HK", "assetType": "STOCK", "capability": "DAILY_BAR", "timeframe": "1d", "adjustment": "none"}
     target = {"providerId": "yfinance", "upstreamSource": "yahoo-hk-share-window"}
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "hk-share-policy",
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "hk-share-policy",
         "revision": 1, "enabled": True, "routes": [{"key": key, "targets": [target]}]})
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
-    request = {"contractVersion": 3, "requestId": "hk-share-wire", "symbol": "00147.HK",
+    app.include_router(router_v3, prefix="/api/v1")
+    request = {"contractVersion": 1, "requestId": "hk-share-wire", "symbol": "00147.HK",
         "routeKey": key, "routeTarget": {**target, "routeIndex": 0}, "start": "2025-08-06", "end": "2025-08-11",
         "tradabilityMode": "assume-untradable-no-bar"}
     headers = {"Authorization": "Bearer hk-share-data-token"}
     with TestClient(app) as client:
-        url = "/api/v3/thesis-ledger/market/bars"
+        url = "/api/v1/thesis-ledger/market/bars"
         assert client.post(url, json=request).status_code == 401
         response = client.post(url, json=request, headers=headers)
         assert response.status_code == 200, response.text

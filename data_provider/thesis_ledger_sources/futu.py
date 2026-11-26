@@ -78,6 +78,9 @@ def minute(query, context):
     try:
         attrs = value["attrs"]
         return {"symbol": query.symbol, "market": minute_market(query.symbol), "assetType": query.instrument_type,
+                **({"fieldUnits": {"volume": "share", "amount": "unknown"}}
+                   if minute_market(query.symbol) == "CN" and query.instrument_type == "STOCK" and query.timeframe == "1m" else {}),
+                **({"pagination": attrs["pagination"]} if "pagination" in attrs else {}),
                 "source": attrs["upstream_source"], "rows": value["rows"], "observedAt": attrs["observedAt"],
                 "timestampConvention": attrs.get("timestampConvention", "interval-start"),
                 "timeframe": query.timeframe, "timezone": attrs["timezone"], "session": attrs["session"], "responseSha256": attrs["responseSha256"]}
@@ -99,6 +102,15 @@ def lot_size(query, context):
         return context.adapter.get_security_lot_size(query.symbol)
     except LotSizeError as error:
         raise CapabilityContractError(error.code, str(error), retryable=error.code in {"timeout", "upstream_failure"}) from None
+
+
+def minute_revisions(market, asset, period):
+    if market != "CN":
+        return "futu-exact-minute-v1", "futu-complete-minute-sdk-pagination-v1"
+    if asset == "STOCK" and period == "1m":
+        return "futu-exact-cn-stock-minute-v4", "futu-observed-cn-stock-minute-sdk-v4"
+    revision = "v2" if period == "1m" else "v3"
+    return f"futu-exact-cn-minute-end-{revision}", f"futu-complete-cn-minute-end-sdk-pagination-{revision}"
 
 
 SOURCE = SourceDefinition("futu", manifest, factory, tuple(
@@ -129,8 +141,7 @@ SOURCE = SourceDefinition("futu", manifest, factory, tuple(
     for market, asset in (("HK", "STOCK"), ("HK", "ETF"), ("US", "STOCK"), ("US", "ETF"))
 ) + tuple(
     QueryBinding(MINUTE_CONTRACT, ExactKey(market, asset, "MINUTE_BAR", "none", period), "futu",
-        "futu-exact-cn-minute-end-v2" if market == 'CN' and period == '1m' else "futu-exact-minute-v1",
-        "futu-complete-cn-minute-end-sdk-pagination-v2" if market == 'CN' and period == '1m' else "futu-complete-minute-sdk-pagination-v1",
+        *minute_revisions(market, asset, period),
         minute, admission_required=False)
     for market in ("CN", "HK", "US") for asset in ("STOCK", "ETF")
     for period in ("1m", "5m", "15m", "30m", "60m")

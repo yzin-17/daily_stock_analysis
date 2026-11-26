@@ -92,7 +92,7 @@ def build_market_route_catalog_v3(provider_registry: Any, is_current: Callable[.
         elif requires_credential is False:
             if is_current(key, target, provider):
                 # Ready means an exact, current admission exists for its
-                # recorded scope. Data V3 checks that scope on every request.
+                # recorded scope. dsa-data-v1 checks that scope on every request.
                 state = "ready"
             else:
                 state = "not_admitted"
@@ -128,7 +128,7 @@ def build_market_route_catalog_v3(provider_registry: Any, is_current: Callable[.
     catalog_revision = int(hashlib.sha256(revision_input).hexdigest()[:13], 16) or 1
     generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     catalog = {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "consumer": "thesis-ledger",
         "catalogRevision": catalog_revision,
         "generatedAt": generated_at,

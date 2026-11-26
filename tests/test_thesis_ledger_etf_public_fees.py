@@ -23,7 +23,7 @@ def request(market):
     provider = "official-rules" if market == "CN" else f"official-{market.lower()}-rules"
     _, source, _, filename = SOURCES[provider]
     pack = json.loads((BASE / filename).read_text())
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "etf-fees",
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "etf-fees",
         "routeKey": {"kind": "data", "market": market, "assetType": "ETF", "capability": "HISTORICAL_PUBLIC_FEES"},
         "routeTarget": {"providerId": provider, "upstreamSource": source, "routeIndex": 0},
         "symbol": pack["symbol"], "range": pack["coverage"]}
@@ -95,14 +95,14 @@ def test_catalog_probe_policy_and_authenticated_gateway(configured_client, marke
     client, _, _ = configured_client
     wire = request(market)
     target = {key: value for key, value in wire["routeTarget"].items() if key != "routeIndex"}
-    catalog = client.get("/api/v3/thesis-ledger/control/routes/capabilities?contractVersion=3",
+    catalog = client.get("/api/v1/thesis-ledger/control/routes/capabilities?contractVersion=1",
         headers=routes.CONTROL_HEADERS)
     assert catalog.status_code == 200
     entry = next(row for row in catalog.json()["entries"] if row["key"] == wire["routeKey"] and row["target"] == target)
     assert entry["state"] == "ready"
-    policy = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "etf-fee-policy",
+    policy = {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "etf-fee-policy",
         "revision": 1, "enabled": True, "routes": [{"key": wire["routeKey"], "targets": [target]}]}
-    assert client.post("/api/v3/thesis-ledger/control/policies/apply", json=policy, headers=routes.CONTROL_HEADERS).status_code == 200
+    assert client.post("/api/v1/thesis-ledger/control/policies/apply", json=policy, headers=routes.CONTROL_HEADERS).status_code == 200
     assert client.post(routes.DATA_URL, json=wire, headers={}).status_code == 401
     result = client.post(routes.DATA_URL, json=wire, headers=routes.DATA_HEADERS)
     assert result.status_code == 200

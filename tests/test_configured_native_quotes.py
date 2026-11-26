@@ -112,7 +112,7 @@ def test_exact_etf_failure_falls_back_wholly_without_universe_request(monkeypatc
         raise native.requests.Timeout("synthetic timeout")
     monkeypatch.setattr(native.requests, "get", get)
     key = {"kind": "data", "market": "CN", "assetType": "ETF", "capability": "REALTIME_QUOTE"}
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "fallback", "revision": 1, "enabled": True,
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "fallback", "revision": 1, "enabled": True,
                            "routes": [{"key": key, "targets": [{"providerId": provider, "upstreamSource": "eastmoney"} for provider in ("akshare", "efinance")]}]})
     def single(symbol):
         calls.append("efinance-single")

@@ -16,7 +16,7 @@ args = parser.parse_args()
 clock = datetime(2026, 11, 6, tzinfo=timezone.utc)
 for provider, (market, source, _, filename) in SOURCES.items():
     pack = json.loads((BASE / filename).read_text())
-    request = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "etf-public-fees-fixture",
+    request = {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "etf-public-fees-fixture",
         "routeKey": {"kind": "data", "market": market, "assetType": "ETF", "capability": "HISTORICAL_PUBLIC_FEES"},
         "routeTarget": {"providerId": provider, "upstreamSource": source, "routeIndex": 0},
         "symbol": pack["symbol"], "range": pack["coverage"]}

@@ -72,7 +72,7 @@ def setup(monkeypatch, tmp_path, request):
 
     def query(start='2026-11-12', end='2026-11-12', symbol=None):
         return FeeRequest.model_validate({
-            'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'demand-rule',
+            'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'demand-rule',
             'symbol': symbol or default_symbol, 'routeKey': key,
             'routeTarget': {'providerId': 'local-materials', 'upstreamSource': 'local-materials', 'routeIndex': 0},
             'range': {'start': start, 'end': end}
@@ -244,12 +244,12 @@ def test_actual_data_http_read_refreshes_and_keeps_original_file(setup, configur
     if not facade:
         target = {'providerId': 'official-rules', 'upstreamSource': 'cn-stock-auction-fees'}
     store.apply_policy_v3({
-        'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'demand-policy',
+        'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'demand-policy',
         'revision': 1, 'enabled': True, 'routes': [{'key': s['key'], 'targets': [target]}]
     })
     payload = s['query']().model_dump(mode='json')
     payload['routeTarget'] = {**target, 'routeIndex': 0}
-    response = client.post('/api/v3/thesis-ledger/market/public-fees', json=payload, headers=DATA_HEADERS)
+    response = client.post('/api/v1/thesis-ledger/market/public-fees', json=payload, headers=DATA_HEADERS)
     assert response.status_code == 200, response.text
     assert response.json()['range']['end'] == '2026-11-12'
     assert len(s['calls']) == 1

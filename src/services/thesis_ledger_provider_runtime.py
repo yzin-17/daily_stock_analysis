@@ -134,7 +134,7 @@ class ProviderCallError(Exception):
         self.diagnostic_id = diagnostic_id or request_id
         self.diagnostics = dict(diagnostics or {})
 
-    def detail(self, *, contract_version: int = 3) -> dict[str, Any]:
+    def detail(self, *, contract_version: int = 1) -> dict[str, Any]:
         """Return a stable error projection without exposing upstream details."""
         request_id = self.request_id or str(uuid.uuid4())
         detail = {
@@ -279,7 +279,7 @@ class ThesisLedgerGatewayError(ProviderCallError):
         )
         self.request = request
 
-    def detail(self, *, contract_version: int = 3) -> dict[str, Any]:
+    def detail(self, *, contract_version: int = 1) -> dict[str, Any]:
         """Return a request-correlated stable Contract error projection."""
         return super().detail(contract_version=contract_version)
 
@@ -558,11 +558,11 @@ class ThesisLedgerProviderRuntime:
             raise ProviderCallError(error.code, str(error)) from None
 
     @classmethod
-    def _validate_bars(cls, frame: Any) -> Any:
+    def _validate_bars(cls, frame: Any, *, price_observation_only: bool = False) -> Any:
         from .thesis_ledger_daily_probe_validation import validate_bars
         from .thesis_ledger_capability_contracts import CapabilityContractError
         try:
-            return validate_bars(frame)
+            return validate_bars(frame, price_observation_only=price_observation_only)
         except CapabilityContractError as error:
             raise ProviderCallError(error.code, str(error)) from None
 
@@ -584,7 +584,7 @@ class ThesisLedgerProviderRuntime:
         quote_started = time.monotonic()
         logged_symbol = symbol or budget_symbol or "unknown"
         effective_policy = effective_policy_override
-        if effective_policy.get("contractVersion") != 3:
+        if (type(effective_policy.get("contractVersion")) is not int or effective_policy.get("contractVersion") != 1):
             raise ProviderCallError("unsupported_policy", "只接受当前 Control Policy")
         route_targets = list(route_targets_override)
         providers = [target.provider_id for target in route_targets]
@@ -795,8 +795,10 @@ class ThesisLedgerProviderRuntime:
             raise ProviderCallError("upstream_unavailable", "Provider 暂时不可用")
         if not budgeted_quote:
             exact_bar = (capability in {"DAILY_BAR", "MINUTE_BAR"} and isinstance(effective_policy_override, Mapping)
-                         and effective_policy_override.get("contractVersion") == 3)
-            if not exact_bar and capability not in LOCAL_RULE_CAPABILITIES and last_error.code in {"not_covered", "unsupported"}:
+                         and effective_policy_override.get("contractVersion") == 1)
+            from src.services.thesis_ledger_status_capabilities_v1 import NAMES as STATUS_CAPABILITIES
+            if (not exact_bar and capability not in LOCAL_RULE_CAPABILITIES and capability not in STATUS_CAPABILITIES
+                    and last_error.code in {"not_covered", "unsupported"}):
                 raise ProviderCallError(
                     "upstream_unavailable",
                     "没有 Provider 返回可用数据",

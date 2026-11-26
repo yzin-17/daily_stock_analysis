@@ -25,10 +25,12 @@ def _number(value, field):
     return result
 
 
-def validate_bars(frame):
+def validate_bars(frame, *, price_observation_only=False):
     if frame is None or getattr(frame, 'empty', True):
         raise CapabilityContractError('not_covered', 'Provider 未覆盖该标的')
     required = {'date', 'open', 'high', 'low', 'close', 'volume', 'amount'}
+    if price_observation_only:
+        required -= {'volume', 'amount'}
     if not required.issubset(set(getattr(frame, 'columns', []))):
         raise CapabilityContractError('invalid_response', 'Provider Bar 响应缺少必要字段')
     timestamps = set()

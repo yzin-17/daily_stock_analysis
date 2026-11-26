@@ -31,7 +31,7 @@ def _execute(runtime, source, operation):
         "DAILY_BAR",
         "ETF",
         operation,
-        effective_policy_override={"contractVersion": 3, "revision": 17},
+        effective_policy_override={"contractVersion": 1, "revision": 17},
         route_targets_override=[RouteTarget("akshare", source, 0)],
     )
 

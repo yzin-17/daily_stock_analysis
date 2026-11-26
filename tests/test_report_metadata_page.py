@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from data_provider import eastmoney_report_metadata as source
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError, ReadContext
-from src.services.thesis_ledger_report_metadata_contract_v2 import CONTRACT, ReportMetadataRequest
+from src.services.thesis_ledger_report_metadata_contract import CONTRACT, ReportMetadataRequest
 
 
 def query(**changes):
@@ -166,7 +166,7 @@ def test_optional_filters_do_not_add_hidden_dates(start, end):
     assert params['beginTime'] == [start or '']
     assert params['endTime'] == [end or '']
     assert result.start == start and result.end == end
-    assert result.metadataVersion == 'research-report-metadata-v2'
+    assert result.metadataVersion == 'market-external-report-metadata-v1'
     assert fetch.call_count == 1 and result.historyComplete is False
 
 
@@ -176,9 +176,9 @@ def test_single_date_filter_is_still_enforced_on_source_results(start, end):
         source.project_page(payload(), query(start=start, end=end), '2026-10-22T16:27:04Z')
 
 
-def test_omitted_filters_are_valid_without_changing_legacy_contract():
-    from src.services.thesis_ledger_report_metadata_contract_v1 import ReportMetadataRequest as LegacyRequest
+def test_named_metadata_contract_accepts_omitted_date_filters():
     values = {'symbol': '000001.SZ', 'requestId': 'no-date', 'page': 1, 'pageSize': 2, 'requestBudgetMs': 3000}
-    assert ReportMetadataRequest(**values).start is None
+    request = ReportMetadataRequest(**values)
+    assert request.start is None and request.end is None
     with pytest.raises(ValidationError):
-        LegacyRequest(**values)
+        ReportMetadataRequest(**values, start='2026-09-01', end='2026-08-01')

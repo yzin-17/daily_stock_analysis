@@ -49,7 +49,7 @@ def runtime(tmp_path, monkeypatch):
             source_revision=source.PROFILES[provider][2], credential_revision="not-required",
             valid_from=(now-timedelta(minutes=1)).isoformat(), valid_until=(now+timedelta(hours=1)).isoformat(),
             recorded_by="controlled-test")
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-policy",
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-policy",
                            "revision": 1, "enabled": True, "routes": [{"key": KEY, "targets": TARGETS, "enabled": True}]})
     return ThesisLedgerProviderRuntime(store), store
 
@@ -91,8 +91,8 @@ def test_explicit_source_cannot_fall_back_after_disable_or_revoke(runtime, actio
 
 
 def test_auth_and_stock_or_foreign_market_payloads_never_execute(runtime):
-    app = FastAPI();app.include_router(build_news_router(lambda:runtime[0]),prefix="/api/v3/thesis-ledger")
-    client = TestClient(app);path="/api/v3/thesis-ledger/market/news-feed"
+    app = FastAPI();app.include_router(build_news_router(lambda:runtime[0]),prefix="/api/v1/thesis-ledger")
+    client = TestClient(app);path="/api/v1/thesis-ledger/market/news-feed"
     assert client.post(path,json=query().model_dump()).status_code == 401
     headers={"authorization":"Bearer controlled-feed-token"}
     for changes in [{"market":"US"},{"instrument":{"symbol":"000001.SZ","market":"CN","assetType":"STOCK"}}]:

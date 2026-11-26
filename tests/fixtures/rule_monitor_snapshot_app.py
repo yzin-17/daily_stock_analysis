@@ -43,7 +43,7 @@ for rate in ["0.1%", "0.2%"]:
 
 app = FastAPI()
 app.state.rule_monitor = RuleMonitorRuntime(RuleMonitorStore(path), registry=lambda: {identity: source})
-app.include_router(router, prefix="/api/v3")
+app.include_router(router, prefix="/api/v1")
 
 if __name__ == "__main__":
     listener = socket.socket()

@@ -40,12 +40,12 @@ def state(monkeypatch):
     store.providers.extend({**PROVIDER_MANIFESTS[provider], 'configured': True, 'enabled': True,
                             'credentialConfigured': False, 'tombstone': None}
                            for provider in sorted(required - present))
-    policy = {'contractVersion': 3, 'enabled': True, 'revision': 5, 'sourceDesiredRevision': 5,
+    policy = {'contractVersion': 1, 'enabled': True, 'revision': 5, 'sourceDesiredRevision': 5,
               'routes': [{'key': deepcopy(NAV_KEY), 'targets': [
                   {**NAV_TARGET, 'routeIndex': 0, 'eligible': True, 'reason': None}]}]}
     store.effective_policy_v3 = lambda: deepcopy(policy)
     runtime = ThesisLedgerProviderRuntime(store=store)
-    request = {'contractVersion': 3, 'requestId': 'nav-test', 'symbol': '161725.OF', 'fundType': 'domestic',
+    request = {'contractVersion': 1, 'requestId': 'nav-test', 'symbol': '161725.OF', 'fundType': 'domestic',
                'routeKey': deepcopy(NAV_KEY), 'routeTarget': {**NAV_TARGET, 'routeIndex': 0},
                'desiredRevision': 5, 'effectivePolicyRevision': 5,
                'catalogRevision': runtime.market_route_catalog_v3()['catalogRevision'],
@@ -170,9 +170,9 @@ def test_http_authentication_and_actual_router_production(state, monkeypatch):
     for name, reader in state[2].items():
         monkeypatch.setattr(production, {'identity_reader': 'read_fund_identity', 'nav_reader': 'read_fund_nav_evidence'}[name], reader)
     app = FastAPI()
-    app.include_router(api.router, prefix='/api/v3')
+    app.include_router(api.router, prefix='/api/v1')
     with TestClient(app) as client:
-        path = '/api/v3/thesis-ledger/backtest/nav-inputs'
+        path = '/api/v1/thesis-ledger/backtest/nav-inputs'
         assert client.post(path, json=state[1]).status_code == 401
         state[2]['identity_reader'].assert_not_called()
         headers = {'Authorization': 'Bearer test-token'}

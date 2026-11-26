@@ -53,7 +53,7 @@ def build_reference_data_router(get_runtime=get_thesis_ledger_runtime):
     def read_lot_size(payload: dict = Body(...)):
         request_id = payload.get("requestId")
         if (set(payload) != {"contractVersion", "consumer", "requestId", "symbol"}
-                or payload.get("contractVersion") != 3 or payload.get("consumer") != "thesis-ledger"
+                or (type(payload.get("contractVersion")) is not int or payload.get("contractVersion") != 1) or payload.get("consumer") != "thesis-ledger"
                 or not isinstance(request_id, str) or not request_id.strip()):
             _error("bad_request", "每手股数请求格式无效", 422)
         try:
@@ -64,7 +64,7 @@ def build_reference_data_router(get_runtime=get_thesis_ledger_runtime):
             request = ThesisLedgerDataRequest(CAPABILITY, symbol, instrument_type="STOCK", request_id=request_id)
             result = get_runtime().execute_request(request)
             return {
-                "contractVersion": 3, "consumer": "thesis-ledger", "requestId": request_id,
+                "contractVersion": 1, "consumer": "thesis-ledger", "requestId": request_id,
                 **result.value, "fetchedAt": datetime.now(timezone.utc).isoformat(),
                 "routeTarget": {"providerId": result.provider, "upstreamSource": result.upstream_source,
                                 "routeIndex": result.route_index},

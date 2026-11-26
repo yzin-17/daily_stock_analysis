@@ -17,7 +17,7 @@ from src.services.thesis_ledger_provider_runtime import ThesisLedgerProviderRunt
 KEY = {"kind": "bar", "market": "CN", "assetType": "ETF", "capability": "DAILY_BAR",
        "timeframe": "1d", "adjustment": "none"}
 TARGET = {"providerId": "tushare", "upstreamSource": "tushare"}
-REQUEST = {"contractVersion": 3, "requestId": "tushare-v3-fixture", "symbol": "159516.SZ",
+REQUEST = {"contractVersion": 1, "requestId": "tushare-v3-fixture", "symbol": "159516.SZ",
            "routeKey": KEY, "start": "2026-06-22", "end": "2026-06-23"}
 
 
@@ -32,11 +32,11 @@ def setup(monkeypatch, tmp_path):
     runtime = ThesisLedgerProviderRuntime(store)
     monkeypatch.setattr("src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime", lambda: runtime)
     store.apply_policy_v3({
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "fixture-policy", "revision": 1,
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "fixture-policy", "revision": 1,
         "enabled": True, "routes": [{"key": KEY, "targets": [TARGET]}],
     })
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     client = TestClient(app)
     return store, runtime, client, config
 
@@ -63,7 +63,7 @@ def response(days=("20260622", "20260623")):
 
 
 def read(client):
-    return client.post("/api/v3/thesis-ledger/market/bars", json=REQUEST,
+    return client.post("/api/v1/thesis-ledger/market/bars", json=REQUEST,
                        headers={"Authorization": "Bearer fixture-data-token"})
 
 

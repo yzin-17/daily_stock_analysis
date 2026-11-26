@@ -50,10 +50,10 @@ def test_cached_fx_preserves_rate_and_only_emits_verifiable_timestamp(monkeypatc
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "fx-test-token")
     monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "false")
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     base, currency = ("USD", "CNY") if inverse else ("CNY", "USD")
     response = ApiClient(app).get(
-        "/api/v3/thesis-ledger/market/fx-rates",
+        "/api/v1/thesis-ledger/market/fx-rates",
         params={"baseCurrency": base, "currencies": currency, "asOf": "2026-10-16"},
         headers={"authorization": "Bearer fx-test-token"},
     )

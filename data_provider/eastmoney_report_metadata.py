@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError
-from src.services.thesis_ledger_report_metadata_contract_v2 import (
+from src.services.thesis_ledger_report_metadata_contract import (
     CONTRACT, ReportMetadataItem, ReportMetadataResult,
 )
 from src.services.thesis_ledger_capability_registry import ExactKey, QueryBinding

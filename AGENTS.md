@@ -59,7 +59,7 @@ python scripts/check_ai_assets.py
 ## 3. 仓库速览
 
 - 项目定位：ThesisLedger 的独立数据服务，获取、标准化、校验、缓存并提供市场事实。
-- 主流程：显式来源/策略与准入 -> 数据获取和校验 -> Data/Control V3；保留来源失败、权限、时钟和覆盖未知状态。
+- 主流程：显式来源、策略与准入 → 数据获取和校验 → `dsa-data-v1` 和 `dsa-control-v1`。保留来源失败、权限、时钟和覆盖未知状态。
 - 关键入口：
   - `server.py` / `api/data_app.py`：FastAPI 数据服务入口
   - `scripts/data-runtime-contract.json`：镜像与快更载荷合同

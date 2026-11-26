@@ -18,7 +18,7 @@ def client_and_store(monkeypatch, tmp_path):
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "synthetic-encryption-key")
     monkeypatch.setattr(control, "_environment_credential_values", lambda _: {})
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     with TestClient(app) as client:
         yield client, control.ThesisLedgerControlStore()
 
@@ -29,10 +29,10 @@ def provider(store, provider_id):
 
 def save(client, provider_id, **values):
     return client.post(
-        f"/api/v3/thesis-ledger/control/providers/{provider_id}/config",
+        f"/api/v1/thesis-ledger/control/providers/{provider_id}/config",
         headers={"authorization": "Bearer synthetic-control-token"},
         json={
-            "contractVersion": 3,
+            "contractVersion": 1,
             "consumer": "thesis-ledger",
             "requestId": "first-credential-save",
             "expectedConfigVersion": 0,

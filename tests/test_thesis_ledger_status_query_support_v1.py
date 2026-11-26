@@ -10,6 +10,7 @@ from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from src.services.thesis_ledger_status_query_support_v1 import SUPPORT
 from src.services.thesis_ledger_route_catalog import build_market_route_catalog_v3
 from src.services.thesis_ledger_provider_manifests import PROVIDER_MANIFESTS
+from src.services.thesis_ledger_exact_route_inventory import exact_route_inventory
 
 FIXTURES = json.loads((Path(__file__).parent / 'fixtures/market-status-capabilities-v1.shared.json').read_text())['querySupport']
 
@@ -38,7 +39,9 @@ def test_catalog_and_binding_have_one_parameter_fact_source(monkeypatch):
                  for manifest in PROVIDER_MANIFESTS.values()]
     catalog = build_market_route_catalog_v3(providers, lambda *args: True)
     projected = [entry for entry in catalog['entries'] if 'querySupport' in entry]
-    assert len(projected) == 14
+    expected = [(key, target) for key, target, _ in exact_route_inventory()
+                if getattr(CAPABILITY_SOURCES.resolve(key, target), 'query_support', None) is not None]
+    assert [(entry['key'], entry['target']) for entry in projected] == expected
     for entry in projected:
         binding = CAPABILITY_SOURCES.resolve(entry['key'], entry['target'])
         assert entry['querySupport'] == binding.query_support.model_dump()

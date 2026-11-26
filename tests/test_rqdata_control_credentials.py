@@ -18,7 +18,7 @@ from src.services.thesis_ledger_rqdata_read import read_rqdata_fund_event_with_c
 USERNAME = "synthetic-rqdata-account"
 PASSWORD = " synthetic-rqdata-password "
 HEADERS = {"authorization": "Bearer synthetic-control-token"}
-CONFIG_URL = "/api/v3/thesis-ledger/control/providers/rqdata/config"
+CONFIG_URL = "/api/v1/thesis-ledger/control/providers/rqdata/config"
 
 
 @pytest.fixture
@@ -31,14 +31,14 @@ def runtime(monkeypatch, tmp_path):
     monkeypatch.setenv("RQDATA_USERNAME", "unused-environment-account")
     monkeypatch.setenv("RQDATA_PASSWORD", "unused-environment-password")
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     with HttpClient(app) as client:
         yield client, ThesisLedgerControlStore(str(database)), database
 
 
 def post(client, **values):
     return client.post(CONFIG_URL, headers=HEADERS, json={
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "rqdata-credentials",
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "rqdata-credentials",
         **values,
     })
 
@@ -62,7 +62,7 @@ def assert_redacted(value):
 
 def test_registered_event_capabilities_do_not_configure_account_or_routes(runtime):
     client, _store, _database = runtime
-    response = client.get("/api/v3/thesis-ledger/control/providers", headers=HEADERS)
+    response = client.get("/api/v1/thesis-ledger/control/providers", headers=HEADERS)
     assert response.status_code == 200
     provider = next(item for item in response.json()["providers"] if item["providerId"] == "rqdata")
     assert provider["requiresCredential"] is True

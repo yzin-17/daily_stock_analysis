@@ -121,7 +121,7 @@ def test_independent_data_app_http_contract_matrix_and_clean_shutdown(environmen
     env_path = tmp_path / "empty.env"
     env_path.write_text("")
     with running_data_http(store.database_path, env_path) as (origin, session):
-        url = origin + "/api/v3/thesis-ledger/market/news"
+        url = origin + "/api/v1/thesis-ledger/market/news"
         assert session.post(url, json=gateway_tests.payload(), timeout=3).status_code == 401
         private = session.post(url, headers=gateway_tests.HEADERS,
                                json=gateway_tests.payload(privateHolding="controlled-private-input"), timeout=3)

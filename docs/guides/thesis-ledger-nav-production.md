@@ -2,7 +2,7 @@
 
 ## 入口与范围
 
-`POST /api/v3/thesis-ledger/backtest/nav-inputs` 使用 `THESIS_LEDGER_DSA_TOKEN` 鉴权。首个适配器固定为 `CN / MUTUAL_FUND / FUND_NAV_HISTORY / efinance / eastmoney`；请求须给出准确 `routeIndex`、Desired/Effective/Catalog 版本、基金类型、区间、预热和处理尾部预算。
+`POST /api/v1/thesis-ledger/backtest/nav-inputs` 使用 `THESIS_LEDGER_DSA_TOKEN` 鉴权。首个适配器固定为 `CN / MUTUAL_FUND / FUND_NAV_HISTORY / efinance / eastmoney`；请求须给出准确 `routeIndex`、Desired/Effective/Catalog 版本、基金类型、区间、预热和处理尾部预算。
 
 精确历史净值适配器与来源修订分别为 `efinance-fund-nav-raw-v1`、`eastmoney-fund-nav-raw-v1`。旧版本准入不能授权新接口；审核和部署由独立阶段实施。
 

@@ -6,6 +6,7 @@ import time
 from typing import Callable
 from zoneinfo import ZoneInfo
 
+from src.services.thesis_ledger_daily_tradability import DAILY_TRADABILITY_CONTRACT
 from src.services.thesis_ledger_multi_window_response import build_multi_window_response
 from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from src.services.thesis_ledger_capability_registry import DailyBinding
@@ -16,12 +17,18 @@ def execute_market_window_v3(request_data: dict, runtime, timeout_seconds: float
     from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest
 
     key = request_data["routeKey"]
+    parameters = {} if timeout_seconds is None else {"target_timeout_seconds": timeout_seconds}
+    if request_data.get("tradabilityMode") == "observed-bars-only":
+        parameters["historical_reconstruction"] = True
+    elif request_data.get("tradabilityMode") == "assume-untradable-no-bar":
+        parameters["historical_tradability"] = True
+        if request_data.get("dailyObservationContract") == DAILY_TRADABILITY_CONTRACT:
+            parameters["allow_price_only"] = True
     request = ThesisLedgerDataRequest(
         capability=key["capability"], symbol=request_data["symbol"], timeframe=key["timeframe"],
         start=request_data["start"], end=request_data["end"], instrument_type=key["assetType"],
         adjustment=key["adjustment"], request_id=request_data["requestId"],
-        parameters={**({} if timeout_seconds is None else {"target_timeout_seconds": timeout_seconds}),
-                    **({"historical_tradability": True} if request_data.get("tradabilityMode") else {})},
+        parameters=parameters,
     )
     if "routeTarget" in request_data:
         return runtime.execute_market_bars_v3(request, key, route_target=request_data["routeTarget"])

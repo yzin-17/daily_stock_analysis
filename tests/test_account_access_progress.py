@@ -14,7 +14,7 @@ from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 
 
 def envelope(**extra):
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "progress-test", **extra}
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "progress-test", **extra}
 
 
 def response(limited=False):

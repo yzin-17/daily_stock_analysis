@@ -26,5 +26,8 @@ case "$mode" in
     [[ $# == 0 ]] || exit 2
     node "$app_dir/scripts/deployment/export-state.mjs" "$mode"
     ;;
-  *) printf '用法：local-deployment.sh <sync-preflight|sync-payload|build-config|prepare-build|cleanup-build|snapshot-state|archive-state> <参数>\n' >&2; exit 2 ;;
+  stage-named-v1-state) python3 "$app_dir/scripts/local-runtime/preview_named_v1_policy.py" "$@" ;;
+  snapshot-state-program) [[ $# == 0 ]] || exit 2; cat "$app_dir/scripts/deployment/snapshot-state.py" ;;
+  state-tree-program) [[ $# == 0 ]] || exit 2; cat "$app_dir/scripts/deployment/state-tree-digest.py" ;;
+  *) printf '用法：local-deployment.sh <sync-preflight|sync-payload|build-config|prepare-build|cleanup-build|snapshot-state|archive-state|stage-named-v1-state|snapshot-state-program|state-tree-program> <参数>\n' >&2; exit 2 ;;
 esac

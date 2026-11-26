@@ -14,7 +14,7 @@ from tests.test_thesis_ledger_notice_events_v3 import configured_client, admit, 
 
 
 def query(symbol='00147.HK', start='2025-08-06', end='2025-08-11'):
-    return FeeRequest.model_validate({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'local-test',
+    return FeeRequest.model_validate({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'local-test',
         'routeKey': {'kind': 'data', 'market': 'HK', 'assetType': 'STOCK', 'capability': 'HISTORICAL_PUBLIC_FEES'},
         'routeTarget': {'providerId': 'local-materials', 'upstreamSource': 'local-materials', 'routeIndex': 0},
         'symbol': symbol, 'range': {'start': start, 'end': end}})
@@ -83,7 +83,7 @@ def test_cash_facade_uses_original_admission_and_original_bytes(configured_clien
     admit(store)
     legacy = execute_event_request(runtime, cash_request(runtime))
     admission_before = store.get_route_admission_v3(key=key, target=notices.ROUTE_TARGET)
-    store.apply_policy_v3({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'facade-policy',
+    store.apply_policy_v3({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'facade-policy',
         'revision': 2, 'enabled': True, 'routes': [{'key': key, 'targets': [target]}]})
     payload = {**cash_request(runtime), 'desiredRevision': 2, 'effectivePolicyRevision': 2,
                'routeTarget': {**target, 'routeIndex': 0}}
@@ -103,7 +103,7 @@ def test_every_unified_fee_scope_uses_original_parser(binding, configured_client
     source, original = candidates[-1]
     pack = json.loads(selection.material_path(source, original).read_bytes())
     sample = FeeRequest.model_validate({
-        'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'all-fee-scopes',
+        'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'all-fee-scopes',
         'routeKey': binding.key.route_key(), 'routeTarget': {
             'providerId': 'local-materials', 'upstreamSource': 'local-materials', 'routeIndex': 0},
         'symbol': pack.get('symbol', '600000.SH'), 'range': pack['coverage'],
@@ -112,7 +112,7 @@ def test_every_unified_fee_scope_uses_original_parser(binding, configured_client
     assert result.range == sample.range
     assert result.routeKey == sample.routeKey
     assert result.provenance.historicalAvailability == 'notVerified'
-    store.apply_policy_v3({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'fee-facade-policy',
+    store.apply_policy_v3({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'fee-facade-policy',
         'revision': 1, 'enabled': True, 'routes': [{'key': binding.key.route_key(),
             'targets': [{'providerId': 'local-materials', 'upstreamSource': 'local-materials'}]}]})
     outer = ThesisLedgerDataRequest('HISTORICAL_PUBLIC_FEES', sample.symbol,
@@ -127,7 +127,7 @@ def test_unified_historical_status_preserves_original_evidence(binding):
     source, original = local.origin_candidates(binding.key.route_key())[-1]
     pack = json.loads(selection.material_path(source, original).read_bytes())
     sample = binding.contract.request_schema.model_validate({
-        'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'all-status-scopes',
+        'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'all-status-scopes',
         'routeKey': binding.key.route_key(), 'routeTarget': {
             'providerId': 'local-materials', 'upstreamSource': 'local-materials', 'routeIndex': 0},
         'symbol': pack['symbol'], 'range': pack['coverage'],

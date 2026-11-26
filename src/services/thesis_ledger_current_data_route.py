@@ -49,9 +49,12 @@ def current_data_adapter_revisions(
 
 def iter_current_data_adapters():
     for key, target, binding in CAPABILITY_SOURCES.routes():
-        if key["kind"] == "data" and getattr(binding, 'execution_domain', 'current-data') != 'event':
+        if (key["kind"] == "data" and key["capability"] != "HISTORICAL_TRADING_STATUS"
+                and getattr(binding, 'execution_domain', 'current-data') != 'event'):
             yield key, target
     for market, asset_type, capability, provider_id, source in sorted(_DATA_ADAPTERS):
+        if capability == "HISTORICAL_TRADING_STATUS":
+            continue
         yield (
             {"kind": "data", "market": market, "assetType": asset_type,
              "capability": capability},
@@ -88,7 +91,7 @@ def select_current_data_targets(
     instrument_type: str,
     symbol: str,
 ) -> list[tuple[str, str, int]]:
-    if not isinstance(policy, Mapping) or policy.get("contractVersion") != 3:
+    if not isinstance(policy, Mapping) or (type(policy.get("contractVersion")) is not int or policy.get("contractVersion") != 1):
         raise CurrentDataRouteError("NO_ELIGIBLE_PROVIDER", "当前 Control 路由策略不可用")
     if policy.get("enabled") is not True:
         raise CurrentDataRouteError("NO_ELIGIBLE_PROVIDER", "当前 Control 路由策略已禁用")

@@ -13,7 +13,6 @@ from src.services.thesis_ledger_provider_runtime import (
     ProviderCallError, ThesisLedgerDataRequest, get_thesis_ledger_runtime,
 )
 from src.services.thesis_ledger_public_fees import CAPABILITY as FEES_CAPABILITY
-from src.services.thesis_ledger_trading_status import CAPABILITY as STATUS_CAPABILITY
 
 
 def build_rule_data_router(capability: str, path: str, label: str,
@@ -25,7 +24,7 @@ def build_rule_data_router(capability: str, path: str, label: str,
         request_id = payload.get("requestId")
         if not isinstance(request_id, str) or not request_id.strip():
             market_data_error_v3("invalid_request", 422, str(uuid4()))
-        if payload.get("contractVersion") != 3:
+        if (type(payload.get("contractVersion")) is not int or payload.get("contractVersion") != 1):
             market_data_error_v3("unsupported_data_contract_version", 422, request_id)
         if payload.get("consumer") != "thesis-ledger":
             market_data_error_v3("invalid_request", 422, request_id)
@@ -56,5 +55,4 @@ def build_local_rule_router(get_runtime: Callable[..., Any] = get_thesis_ledger_
     router = APIRouter()
     router.include_router(build_announcement_router())
     router.include_router(build_rule_data_router(FEES_CAPABILITY, "/market/public-fees", "公共收费", get_runtime))
-    router.include_router(build_rule_data_router(STATUS_CAPABILITY, "/market/trading-status", "交易状态", get_runtime))
     return router

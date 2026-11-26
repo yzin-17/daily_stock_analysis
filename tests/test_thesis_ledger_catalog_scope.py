@@ -10,7 +10,7 @@ from src.services import thesis_ledger_catalog_refresh as refresh
 from src.services.thesis_ledger_catalog_contract import require_catalog_request
 from src.services.thesis_ledger_control import ControlContractError, ThesisLedgerControlStore
 
-ENVELOPE = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "scope"}
+ENVELOPE = {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "scope"}
 HK_US = [{"canonicalCode": "00700", "market": "HK", "instrumentType": "STOCK", "displayName": "腾讯控股"},
          {"canonicalCode": "SPY", "market": "US", "instrumentType": "ETF", "displayName": "标普500ETF"}]
 

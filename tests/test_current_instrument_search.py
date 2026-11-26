@@ -26,11 +26,11 @@ def endpoint(monkeypatch):
     ))
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "test-token")
     app = FastAPI()
-    app.include_router(build_reference_data_router(lambda: SimpleNamespace(store=store)), prefix="/api/v3/thesis-ledger")
+    app.include_router(build_reference_data_router(lambda: SimpleNamespace(store=store)), prefix="/api/v1/thesis-ledger")
     return store, Client(app)
 
 
-URL = "/api/v3/thesis-ledger/instruments/search"
+URL = "/api/v1/thesis-ledger/instruments/search"
 AUTH = {"Authorization": "Bearer test-token"}
 
 
@@ -50,7 +50,7 @@ def test_cn_name_query_and_full_code_use_bounded_search_and_return_real_name(end
     for query in ("沪深300", "510300", "510300.sh"):
         result = client.get(URL, params={"query": query, "instrumentType": "ETF"}, headers=AUTH)
         assert result.status_code == 200
-        assert result.json() == {"contractVersion": 3, "providerId": "hithink", "items": [
+        assert result.json() == {"contractVersion": 1, "providerId": "hithink", "items": [
             {"canonicalCode": "510300", "market": "SH", "instrumentType": "ETF", "displayName": "沪深300ETF"},
         ]}
         params = http.call_args.kwargs["params"]
@@ -95,7 +95,7 @@ def test_futu_exact_query_uses_returned_type_and_filters_delisted(endpoint, monk
         return find_futu_instrument(sdk, "localhost", 11111, symbol)
     monkeypatch.setattr(service.FutuMarketAdapter, "find_instrument", read)
     assert client.get(URL, params={"query": query}, headers=AUTH).json() == {
-        "contractVersion": 3, "providerId": "futu", "items": [
+        "contractVersion": 1, "providerId": "futu", "items": [
             {"canonicalCode": code, "market": market, "instrumentType": kind, "displayName": "源证券名称"}]}
     context.get_stock_basicinfo.assert_called_once_with(market, code_list=[row["code"]])
     context.close.assert_called_once()

@@ -20,7 +20,7 @@ class RoutesTest(unittest.TestCase):
         self.store = ThesisLedgerControlStore(self.database)
         self.old = {'key': {'kind': 'data', 'market': 'CN', 'assetType': 'STOCK', 'capability': 'REALTIME_QUOTE'},
                     'targets': [{'providerId': 'akshare', 'upstreamSource': 'sina'}]}
-        self.store.apply_policy_v3({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'before',
+        self.store.apply_policy_v3({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'before',
                                    'revision': 1, 'enabled': True, 'routes': [self.old]})
         from data_provider.market_reference_bindings import READERS
         self.patchers = [patch('src.services.thesis_ledger_control._database_path', return_value=self.database),
@@ -42,7 +42,7 @@ class RoutesTest(unittest.TestCase):
 
     def test_stale_plan_never_overwrites_concurrent_policy(self):
         plan = module.main({'mode': 'plan', 'expected': None})
-        self.store.apply_policy_v3({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'concurrent',
+        self.store.apply_policy_v3({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'concurrent',
                                    'revision': 2, 'enabled': True, 'routes': [self.old]})
         after = module.main({'mode': 'plan', 'expected': None})
         self.assertNotEqual(plan['policySha256'], after['policySha256'])

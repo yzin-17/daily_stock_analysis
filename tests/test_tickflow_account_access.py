@@ -11,7 +11,7 @@ from data_provider.tickflow_account_access import failure_result
 
 
 def envelope(**extra):
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "tickflow-check", **extra}
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "tickflow-check", **extra}
 
 
 @pytest.fixture

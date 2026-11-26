@@ -32,7 +32,7 @@ def request(**overrides):
 
 
 def policy(key=KEY, target=TARGET):
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "binding-proof",
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "binding-proof",
             "revision": 1, "enabled": True, "routes": [{"key": key, "targets": [target]}]}
 
 
@@ -202,7 +202,7 @@ def test_tencent_query_reaches_real_executor_and_standard_http(tmp_path, monkeyp
     monkeypatch.delenv("THESIS_LEDGER_FIXTURE_MODE", raising=False)
     app = FastAPI()
     app.include_router(router)
-    payload = {"contractVersion": 3, "requestId": "first-binding-query",
+    payload = {"contractVersion": 1, "requestId": "first-binding-query",
                "symbol": "510300.SH", "routeKey": KEY, "routeTarget": {**TARGET, "routeIndex": 0},
                "start": "2026-09-29", "end": "2026-09-30", "purpose": "interactive-chart"}
     with TestClient(app) as client:

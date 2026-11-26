@@ -1,5 +1,7 @@
 # ThesisLedger 富途 OpenAPI 接入
 
+沪深股票未复权一分钟的正式回测读取支持固定富途目标的 `observed-bars-only`。逐日对照连续交易时段，保留结束标签；09:30 竞价留在来源归档，回测量纲按原始股数处理。实收页数在 SDK 结束游标处记录；日期缺失、时段缺口或传输证明不足时拒绝返回已完成窗口。见[单日实读与回放](../../../thesis-ledger/docs/evidence/2026-11-19-backtest-session-futu-minute-live.md)。
+
 完整范围与产品验收由主仓 `docs/specs/2026-10-08-futu-openapi-full-integration.md`、对应 Task 管理；本文拥有 Provider 端接口盘点及实际适配说明。
 
 ## 连接与当前适配
@@ -8,7 +10,9 @@
 
 已验收的每手股数仍仅覆盖港股股票，见[每手股数接口](thesis-ledger-security-lot-size.md)。新增精确快照当前覆盖港美股票/ETF：先查询静态资料核验证券类型，再调用单标 `get_market_snapshot`；关闭上下文、进程总预算 4.5 秒，不使用历史收盘价补当前价。代码测试与真实行情验收分开记录，未完成的下列接口不显示为可执行数据源能力。
 
-用户已确认无需账户与交易，本任务仅使用 `OpenQuoteContext`。`SECURITY_STATIC_INFO` 新增港美股票/ETF 独立路由，按规范证券代码和类型读取当前静态资料，返回字符串证券 ID、每手股数、名称、上市日期及当前退市标志等字段；未知字段保持未知，不接受历史参数，不自动写入目录。Data Contract 入口为 `/api/v3/thesis-ledger/market/security-static-info`，局部测试、真实读取与页面分别记录。
+港股快照当前状态复用同次已经返回的 `suspension`、`sec_status`、`delisting` 和 `lot_size`，与美股共同使用市场关联的当前观察合同。这些字段不提供结算、收费和法定价位。腾讯股票的报价币种复用已登记的富途／Yahoo 当前身份观察，按证券、市场、资产与可见时点核对，不因香港市场代码给其他柜台统一赋值 HKD。US 官方规则读取只在 US 分支执行。源码与目标状态由主仓 [G03](../../../thesis-ledger/docs/tasks/2026-11-12-autonomous-model-arena.md) 管理。
+
+用户已确认无需账户与交易，本任务仅使用 `OpenQuoteContext`。`SECURITY_STATIC_INFO` 新增港美股票/ETF 独立路由，按规范证券代码和类型读取当前静态资料，返回字符串证券 ID、每手股数、名称、上市日期及当前退市标志等字段；未知字段保持未知，不接受历史参数，不自动写入目录。Data Contract 入口为 `/api/v1/thesis-ledger/market/security-static-info`，局部测试、真实读取与页面分别记录。
 
 ## 沪深 ETF 日线
 

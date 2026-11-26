@@ -62,7 +62,7 @@ def test_disabled_catalog_does_not_construct_adapter():
     store.provider_registry.return_value = [{'providerId': 'tushare', 'enabled': False, 'configVersion': 5}]
     runtime = SimpleNamespace(store=store, _adapter=Mock())
     with pytest.raises(ProviderCallError, match='未启用'):
-        read_catalog(runtime, HistoryRequest(contractVersion=3, consumer='thesis-ledger', requestId='x', market='CN', date='2026-11-02'))
+        read_catalog(runtime, HistoryRequest(contractVersion=1, consumer='thesis-ledger', requestId='x', market='CN', date='2026-11-02'))
     runtime._adapter.assert_not_called()
 
 
@@ -86,7 +86,7 @@ def test_catalog_download_preserves_source_archive_and_checks_configuration_epoc
     store.effective_policy_v3.return_value = {'enabled': True}
     store.provider_credential_snapshot.return_value = 'synthetic-snapshot'
     runtime = SimpleNamespace(store=store, _adapter=Mock())
-    request = HistoryRequest(contractVersion=3, consumer='thesis-ledger', requestId='catalog', market='CN', date='2026-11-02')
+    request = HistoryRequest(contractVersion=1, consumer='thesis-ledger', requestId='catalog', market='CN', date='2026-11-02')
     result = read_catalog(runtime, request)
     assert client.query.call_count == 7 and len(result['items']) == 4
     assert result['observedAt'] > request.date and (tmp_path / result['archiveRef']).exists()
@@ -110,7 +110,7 @@ def test_historical_minute_uses_configured_route_real_clock_and_persistent_archi
     app = FastAPI()
     app.include_router(build_arena_history_router(lambda: ThesisLedgerProviderRuntime(store)))
     client = TestClient(app)
-    payload = {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'history', 'market': 'CN',
+    payload = {'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'history', 'market': 'CN',
                'date': '2026-05-18', 'symbol': '600000.SH', 'assetType': 'STOCK'}
     assert client.post('/arena/history/minutes', json=payload).status_code == 401
     response = client.post('/arena/history/minutes', json=payload, headers={'authorization': 'Bearer synthetic-history-token'})

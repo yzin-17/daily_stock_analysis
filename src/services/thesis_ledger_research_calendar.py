@@ -52,7 +52,17 @@ def research_calendar_evidence(start: str, end: str, observed_at: datetime) -> d
     }
 
 
+def futu_minute_research(request: Mapping[str, Any]) -> bool:
+    target = request.get("routeTarget")
+    return (request.get("tradabilityMode") == "observed-bars-only" and isinstance(target, Mapping)
+            and target.get("providerId") == target.get("upstreamSource") == "futu"
+            and request.get("routeKey") == {"kind": "bar", "market": "CN", "assetType": "STOCK",
+                                            "capability": "MINUTE_BAR", "timeframe": "1m", "adjustment": "none"})
+
+
 def _research_request(request: Mapping[str, Any]) -> bool:
+    if futu_minute_research(request):
+        return True
     key, target = request.get("routeKey"), request.get("routeTarget")
     if (request.get('tradabilityMode') != 'assume-untradable-no-bar'
             or not isinstance(key, Mapping) or not isinstance(target, Mapping)):

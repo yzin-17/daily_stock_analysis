@@ -15,7 +15,7 @@ class KnownCashReadError(ValueError):
 
 def capture_known_cash_control_v3(runtime, request):
     policy = runtime.store.effective_policy_v3()
-    if (not isinstance(policy, dict) or policy.get("contractVersion") != 3 or policy.get("enabled") is not True
+    if (not isinstance(policy, dict) or (type(policy.get("contractVersion")) is not int or policy.get("contractVersion") != 1) or policy.get("enabled") is not True
             or any(type(policy.get(field)) is not int for field in ("contractVersion", "revision", "sourceDesiredRevision"))
             or policy.get("revision") != request["effectivePolicyRevision"]
             or policy.get("sourceDesiredRevision") != request["desiredRevision"]):

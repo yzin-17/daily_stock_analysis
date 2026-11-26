@@ -16,7 +16,7 @@ from src.services.thesis_ledger_market_v3_adapters import HITHINK_STOCK_SINGLE_R
 
 
 def payload():
-    return {"contractVersion": 3, "requestId": "stock-research-test", "symbol": "300757.SZ",
+    return {"contractVersion": 1, "requestId": "stock-research-test", "symbol": "300757.SZ",
             "start": "2023-08-21", "end": "2023-09-05", "tradabilityMode": "assume-untradable-no-bar",
             "routeKey": {"kind": "bar", "market": "CN", "assetType": "STOCK", "capability": "DAILY_BAR",
                          "timeframe": "1d", "adjustment": "qfq"},
@@ -99,10 +99,10 @@ def test_authenticated_api_uses_real_adapter_and_checks_actual_days(monkeypatch,
                 route_index=0, effective_revision=73, provider_revision="synthetic")
     monkeypatch.setattr(runtime, "get_thesis_ledger_runtime", lambda: Provider())
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "synthetic")
-    app = FastAPI(); app.include_router(router_v3, prefix="/api/v3")
+    app = FastAPI(); app.include_router(router_v3, prefix="/api/v1")
     client = TestClient(app)
-    assert client.post("/api/v3/thesis-ledger/market/bars", json=payload()).status_code == 401
-    r = client.post("/api/v3/thesis-ledger/market/bars", json=payload(), headers={"Authorization": "Bearer synthetic"})
+    assert client.post("/api/v1/thesis-ledger/market/bars", json=payload()).status_code == 401
+    r = client.post("/api/v1/thesis-ledger/market/bars", json=payload(), headers={"Authorization": "Bearer synthetic"})
     assert r.status_code == expected, r.text
     if expected == 200:
         d = r.json(); assert len(d["bars"]) == len(dates)

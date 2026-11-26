@@ -17,7 +17,7 @@ from src.services.thesis_ledger_provider_runtime import ThesisLedgerProviderRunt
 
 PAGE_KEY = "synthetic-page-hithink-api-key"
 ENV_KEY = "synthetic-environment-hithink-api-key"
-BASE = "/api/v3/thesis-ledger/control/providers/hithink"
+BASE = "/api/v1/thesis-ledger/control/providers/hithink"
 HEADERS = {"authorization": "Bearer synthetic-control-token"}
 ETF_KEY = {"kind": "bar", "market": "CN", "assetType": "ETF", "capability": "DAILY_BAR",
            "timeframe": "1d", "adjustment": "qfq"}
@@ -32,7 +32,7 @@ def runtime(monkeypatch, tmp_path):
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "synthetic-control-encryption-key")
     monkeypatch.setenv("HITHINK_API_KEY", ENV_KEY)
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     store = ThesisLedgerControlStore(str(database))
     with HttpClient(app) as client:
         yield client, store, database
@@ -40,7 +40,7 @@ def runtime(monkeypatch, tmp_path):
 
 def post(client, **values):
     return client.post(BASE + "/config", headers=HEADERS, json={
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "page-key-test", **values,
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "page-key-test", **values,
     })
 
 
@@ -55,7 +55,7 @@ def redacted(value):
 
 def test_actual_http_exposes_write_only_key_and_encrypts_reopened_value(runtime):
     client, store, database = runtime
-    providers = client.get("/api/v3/thesis-ledger/control/providers", headers=HEADERS).json()
+    providers = client.get("/api/v1/thesis-ledger/control/providers", headers=HEADERS).json()
     provider = next(p for p in providers["providers"] if p["providerId"] == "hithink")
     assert provider["credentialSchema"]["methods"] == [{
         "method": "api_key", "fields": [{"name": "apiKey", "secret": True, "required": True}],
@@ -130,7 +130,7 @@ def test_draft_http_probe_uses_input_for_all_capabilities_without_saving_or_admi
     monkeypatch.setattr("src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime",
                         lambda: ThesisLedgerProviderRuntime(store))
     response = client.post(BASE + "/test", headers=HEADERS, json={
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "probe-input",
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "probe-input",
         "credentials": {"method": "api_key", "values": {"apiKey": PAGE_KEY}},
     })
     assert response.status_code == 200

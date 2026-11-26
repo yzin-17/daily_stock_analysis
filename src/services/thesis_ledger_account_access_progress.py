@@ -113,6 +113,6 @@ def check_response(source, provider, value, report, ready):
     status = "healthy" if included and all(r["access"]["state"] == "allowed" for r in included) else "degraded"
     if not ready and provider.get("requiresCredential", True):
         status = "unconfigured"
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "providerId": source.provider_id,
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "providerId": source.provider_id,
             "requestId": value["requestId"], "purpose": "account_access", "status": status,
             "credentialConfigured": ready, "capabilityResults": {}, "accountAccess": report}

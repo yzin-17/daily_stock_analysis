@@ -48,7 +48,7 @@ def synthetic_post(url, **options):
 fetcher.requests.post = synthetic_post
 
 if sys.argv[1] == "save":
-    configure_provider(store, "tushare", {"contractVersion": 3, "consumer": "thesis-ledger",
+    configure_provider(store, "tushare", {"contractVersion": 1, "consumer": "thesis-ledger",
         "requestId": "synthetic-target-check", "enabled": False,
         "credentials": {"method": "token", "values": {"token": "synthetic-target-token"}},
         "settings": {"accountLevel": {"points": 120, "independentApis": []}}})

@@ -59,7 +59,7 @@ def test_exact_quote_never_uses_broad_daily_source_fallback():
 
 
 def test_data_daily_key_is_rejected_before_control_target_eligibility():
-    policy = {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'isolated-key-contract',
+    policy = {'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'isolated-key-contract',
         'revision': 1, 'enabled': True, 'routes': [{'key': {'kind': 'data', 'market': 'CN',
         'assetType': 'STOCK', 'capability': 'DAILY_BAR'}, 'targets': [{'providerId': 'hithink',
         'upstreamSource': 'hithink-financial-api'}]}]}

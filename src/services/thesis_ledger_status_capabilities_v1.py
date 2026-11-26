@@ -92,7 +92,7 @@ class PhaseKey(Key):
 
 
 class Request(Model):
-    contractVersion: Literal[3]
+    contractVersion: Literal[1]
     capabilityVersion: Literal[1]
     consumer: Literal["thesis-ledger"]
     requestId: Text
@@ -212,6 +212,7 @@ class Fact(Model):
 class Halt(Model):
     startedAt: str
     endedAt: str | None
+    reason: Text | None = None
 
     @model_validator(mode="after")
     def ordered(self):

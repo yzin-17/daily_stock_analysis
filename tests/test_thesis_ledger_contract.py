@@ -12,48 +12,53 @@ def _client(monkeypatch, *, fixture: bool = True) -> TestClient:
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "test-token")
     monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "true" if fixture else "false")
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     return TestClient(app)
 
 
 def test_contract_requires_independent_bearer_token(monkeypatch):
     client = _client(monkeypatch)
-    response = client.get("/api/v3/thesis-ledger/market/quote?symbol=600519.SH")
+    response = client.get("/api/v1/thesis-ledger/market/quote?symbol=600519.SH",
+                          headers={"x-request-id": "data-auth-check"})
     assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "unauthorized"
+    assert response.json()["detail"] == {
+        "contractVersion": 1, "code": "unauthorized",
+        "message": "需要有效的 ThesisLedger DSA Bearer Token",
+        "requestId": "data-auth-check", "diagnosticId": "data-auth-check",
+    }
 
 
 def test_contract_fixture_exposes_capabilities_and_daily_quote(monkeypatch):
     client = _client(monkeypatch)
     headers = {"authorization": "Bearer test-token"}
 
-    capabilities_response = client.get("/api/v3/thesis-ledger/capabilities")
+    capabilities_response = client.get("/api/v1/thesis-ledger/capabilities")
     quote_response = client.get(
-        "/api/v3/thesis-ledger/market/quote?symbol=600519.SH",
+        "/api/v1/thesis-ledger/market/quote?symbol=600519.SH",
         headers=headers,
     )
 
     assert capabilities_response.status_code == 200
-    assert capabilities_response.json()["dataContractVersions"] == [3]
+    assert capabilities_response.json()["dataContract"] == "dsa-data-v1"
     assert capabilities_response.json()["serviceCapabilities"] == {"fundNav": True}
     assert quote_response.status_code == 200
     assert quote_response.json()["symbol"] == "600519.SH"
-    assert quote_response.json()["version"] == 3
-    assert client.get("/api/v1/thesis-ledger/capabilities", headers=headers).status_code == 404
+    assert quote_response.json()["version"] == 1
+    assert client.get("/api/v3/thesis-ledger/capabilities", headers=headers).status_code == 404
     assert client.get(
-        "/api/v1/thesis-ledger/market/quote?symbol=600519.SH",
+        "/api/v3/thesis-ledger/market/quote?symbol=600519.SH",
         headers=headers,
     ).status_code == 404
     assert client.get(
-        "/api/v1/thesis-ledger/market/chip?symbol=600519.SH",
+        "/api/v3/thesis-ledger/market/chip?symbol=600519.SH",
         headers=headers,
     ).status_code == 404
     assert client.get(
-        "/api/v1/thesis-ledger/market/fund-holdings?symbol=000001.OF",
+        "/api/v3/thesis-ledger/market/fund-holdings?symbol=000001.OF",
         headers=headers,
     ).status_code == 404
     assert client.get(
-        "/api/v1/thesis-ledger/market/fx-rates?baseCurrency=CNY&currencies=CNY",
+        "/api/v3/thesis-ledger/market/fx-rates?baseCurrency=CNY&currencies=CNY",
         headers=headers,
     ).status_code == 404
 
@@ -102,17 +107,17 @@ def test_session_close_is_pit_safe_for_unclosed_and_future_bars():
 def test_contract_fixture_exposes_fund_nav(monkeypatch):
     client = _client(monkeypatch)
     response = client.get(
-        "/api/v3/thesis-ledger/market/fund-nav?symbol=000001.OF",
+        "/api/v1/thesis-ledger/market/fund-nav?symbol=000001.OF",
         headers={"authorization": "Bearer test-token"},
     )
     assert response.status_code == 200
     payload = response.json()
-    assert payload["version"] == 3
+    assert payload["version"] == 1
     assert payload["symbol"] == "000001.OF"
     assert payload["unitNav"] == 1.2345
     assert payload["freshness"] == "delayed"
     assert client.get(
-        "/api/v1/thesis-ledger/market/fund-nav?symbol=000001.OF",
+        "/api/v3/thesis-ledger/market/fund-nav?symbol=000001.OF",
         headers={"authorization": "Bearer test-token"},
     ).status_code == 404
 
@@ -120,12 +125,12 @@ def test_contract_fixture_exposes_fund_nav(monkeypatch):
 def test_contract_fixture_exposes_fx_rates_with_age_contract(monkeypatch):
     client = _client(monkeypatch)
     response = client.get(
-        "/api/v3/thesis-ledger/market/fx-rates?baseCurrency=CNY&currencies=HKD,USD&asOf=2025-01-10",
+        "/api/v1/thesis-ledger/market/fx-rates?baseCurrency=CNY&currencies=HKD,USD&asOf=2025-01-10",
         headers={"authorization": "Bearer test-token"},
     )
     assert response.status_code == 200
     payload = response.json()
-    assert payload["version"] == 3
+    assert payload["version"] == 1
     assert payload["baseCurrency"] == "CNY"
     assert payload["maxAgeDays"] == 7
     assert {row["fromCurrency"] for row in payload["rates"]} == {"CNY", "HKD", "USD"}
@@ -138,7 +143,7 @@ def test_contract_fixture_exposes_fx_rates_with_age_contract(monkeypatch):
 def test_contract_fixture_supports_inverse_and_cross_currency_rates(monkeypatch):
     client = _client(monkeypatch)
     response = client.get(
-        "/api/v3/thesis-ledger/market/fx-rates?baseCurrency=HKD&currencies=CNY,USD&asOf=2025-01-10",
+        "/api/v1/thesis-ledger/market/fx-rates?baseCurrency=HKD&currencies=CNY,USD&asOf=2025-01-10",
         headers={"authorization": "Bearer test-token"},
     )
     assert response.status_code == 200
@@ -150,7 +155,7 @@ def test_contract_fixture_supports_inverse_and_cross_currency_rates(monkeypatch)
 def test_contract_rejects_unknown_fx_currency(monkeypatch):
     client = _client(monkeypatch)
     response = client.get(
-        "/api/v3/thesis-ledger/market/fx-rates?baseCurrency=CNY&currencies=JPY",
+        "/api/v1/thesis-ledger/market/fx-rates?baseCurrency=CNY&currencies=JPY",
         headers={"authorization": "Bearer test-token"},
     )
     assert response.status_code == 422

@@ -37,7 +37,7 @@ def test_indicator_calculation_is_batch_and_provider_free():
     ) == "9f35a1b9f4dba8483e6acb2b6214ec2fbaf5d450b91096ce591ada057623cfc5"
     result = calculate_indicators(
         {
-            "contractVersion": 3,
+            "contractVersion": 1,
             "identity": IDENTITY,
             "inputFingerprint": _bar_series_fingerprint(points, IDENTITY),
             "points": points,
@@ -48,7 +48,7 @@ def test_indicator_calculation_is_batch_and_provider_free():
             ],
         }
     )
-    assert result["contractVersion"] == 3
+    assert result["contractVersion"] == 1
     assert [item["name"] for item in result["results"]] == ["MA", "MACD", "RSI"]
     assert all(item["inputFingerprint"] == result["inputFingerprint"] for item in result["results"])
 
@@ -75,7 +75,7 @@ def test_indicator_rejects_mismatched_fingerprint():
     try:
         calculate_indicators(
             {
-                "contractVersion": 3,
+                "contractVersion": 1,
                 "identity": IDENTITY,
                 "inputFingerprint": "wrong",
                 "points": points,
@@ -92,6 +92,6 @@ def test_indicator_rejects_old_contract_before_calculation():
     try:
         calculate_indicators({"contractVersion": 2})
     except Exception as error:
-        assert "Contract V3" in str(error.detail["message"])
+        assert "dsa-data-v1" in str(error.detail["message"])
     else:
         raise AssertionError("old indicator contract must fail")

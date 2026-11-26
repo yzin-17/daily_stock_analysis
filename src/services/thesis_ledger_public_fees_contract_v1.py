@@ -70,7 +70,7 @@ class Window(Model):
 
 
 class FeeRequest(Model):
-    contractVersion: Literal[3]
+    contractVersion: Literal[1]
     consumer: Literal['thesis-ledger']
     requestId: Text
     routeKey: FeeKey

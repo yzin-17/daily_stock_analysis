@@ -35,7 +35,10 @@ def multimarket_rule_path(key, target):
         return etf_path
     if not isinstance(key, dict) or key.get("kind") != "data" or key.get("assetType") != "STOCK":
         return None
-    identity = (key.get("market"), key.get("capability"), target.get("providerId"), target.get("upstreamSource"))
+    capability = key.get("capability")
+    if capability == "DAILY_TRADING_STATUS":
+        capability = "HISTORICAL_TRADING_STATUS"
+    identity = (key.get("market"), capability, target.get("providerId"), target.get("upstreamSource"))
     name = SOURCES.get(identity)
     return BASE / name if name else None
 
@@ -54,6 +57,9 @@ def multimarket_rule_manifests():
         for source in manifest["upstreamSources"]:
             capability = next(identity[1] for identity, _ in entries if identity[3] == source["sourceId"])
             source["capabilities"] = {capability: ["STOCK"]}
+            if capability == "HISTORICAL_TRADING_STATUS":
+                manifest["capabilities"]["DAILY_TRADING_STATUS"] = ["STOCK"]
+                source["capabilities"]["DAILY_TRADING_STATUS"] = ["STOCK"]
         from src.services.thesis_ledger_local_history_manifest import attach_local_history
         attach_local_history(manifest, {identity[3]: BASE / name for identity, name in entries})
         from src.services.thesis_ledger_local_history_manifest import attach_local_history
@@ -76,7 +82,7 @@ class MultimarketRuleProvider:
             path = multimarket_rule_path(key, target)
             if path is None:
                 raise error("unsupported_capability", "请求未选择本精确市场规则来源")
-            if (request.get("contractVersion") != 3 or request.get("consumer") != "thesis-ledger"
+            if ((type(request.get("contractVersion")) is not int or request.get("contractVersion") != 1) or request.get("consumer") != "thesis-ledger"
                     or not request.get("requestId") or type(target.get("routeIndex")) is not int
                     or target["routeIndex"] not in (0, 1)):
                 raise error("invalid_request", "规则请求合同无效")

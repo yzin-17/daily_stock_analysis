@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [变更] ThesisLedger 独立 Data 与 Control 使用具名 V1 合同和单一 API 路径。日级观察以具名合同声明窗口，价格可用但成交量未知时按调用配置处理。外部研报元数据使用单一具名版本。
+
 - [chore] 新闻准入工具统一使用 `news-admission` 名称，移除已退役官方新闻来源的专属分支及默认值，要求显式选择来源并同步同花顺入口和当前合同。
 
 - [修复] 富途美股精确报价保留美元单位及股票、ETF 当前执行资料，包含来源时钟、交易所、证券状态和每手股数；缺失资料保持未知，不再丢失到标准结果与公开响应之间。

@@ -22,7 +22,7 @@ TARGET = {'providerId': 'futu', 'upstreamSource': 'futu'}
 
 
 def request(**changes):
-    return {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'bar-cache',
+    return {'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'bar-cache',
             'purpose': 'interactive-chart', 'capability': 'MINUTE_BAR', 'symbol': 'AAPL.US',
             'routeKey': KEY, 'routeTarget': {**TARGET, 'routeIndex': 0},
             'start': '2026-11-11', 'end': '2026-11-11', **changes}

@@ -1,4 +1,4 @@
-"""五种强类型独立状态能力的 Data V3 入口；仍交给既有执行器。"""
+"""五种强类型独立状态能力的 dsa-data-v1 入口；仍交给既有执行器。"""
 
 from fastapi import APIRouter, Body, Depends
 from pydantic import ValidationError
