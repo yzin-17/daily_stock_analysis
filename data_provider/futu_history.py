@@ -62,7 +62,13 @@ def read_futu_history(sdk, host, port, request, *, timeframe):
                 raise ExactDailyError("invalid_response", "富途历史 K 线日期无效或超出窗口") from None
             pages.append(frame)
             if next_cursor is None:
-                return pd.concat(pages, ignore_index=True), zone
+                combined = pd.concat(pages, ignore_index=True)
+                if timeframe != "1d":
+                    combined.attrs["pagination"] = {
+                        "requestedStart": start.isoformat(), "requestedEnd": end.isoformat(),
+                        "pagesFetched": len(pages), "continuationPending": False,
+                    }
+                return combined, zone
             if not isinstance(next_cursor, bytes) or not next_cursor or next_cursor in seen:
                 raise ExactDailyError("invalid_response", "富途历史 K 线分页游标无效或循环")
             seen.add(next_cursor)

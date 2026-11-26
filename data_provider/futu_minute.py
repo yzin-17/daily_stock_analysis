@@ -1,4 +1,4 @@
-"""富途历史 1 分钟投影：保留市场时区与完整分钟身份，不合成缺失值。"""
+"""富途历史分钟投影：保留市场时区与完整分钟身份，不合成缺失值。"""
 
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -29,9 +29,9 @@ def normalize_futu_minute(raw, zone, *, observed_at=None, timeframe="1m"):
     if observed_at.tzinfo is None:
         raise ExactDailyError("invalid_request", "分钟观察时间必须包含时区")
     rows, seen = [], set()
-    # A 股原生 1 分钟标签含 09:30 竞价点，连续时段为 09:31..11:30、13:01..15:00。
-    # 保留原标签；回放消费方依据真实日历排除开盘竞价点。
-    convention = "interval-end" if zone == "Asia/Shanghai" and timeframe == "1m" else "interval-start"
+    # A 股原生各分钟周期均按结束时刻标注，午休前最后一根均为 11:30。
+    # 一分钟另含 09:30 竞价点；保留原标签，由消费方依据真实日历区分。
+    convention = "interval-end" if zone == "Asia/Shanghai" else "interval-start"
     try:
         for item in raw.to_dict(orient="records"):
             stamp = datetime.strptime(str(item["time_key"]), "%Y-%m-%d %H:%M:%S")
@@ -66,4 +66,6 @@ def normalize_futu_minute(raw, zone, *, observed_at=None, timeframe="1m"):
 
 def read_futu_minute(sdk, host, port, request):
     raw, zone = read_futu_history(sdk, host, port, request, timeframe=request.get("timeframe", "1m"))
-    return normalize_futu_minute(raw, zone, timeframe=request.get("timeframe", "1m"))
+    frame = normalize_futu_minute(raw, zone, timeframe=request.get("timeframe", "1m"))
+    frame.attrs["pagination"] = raw.attrs["pagination"]
+    return frame

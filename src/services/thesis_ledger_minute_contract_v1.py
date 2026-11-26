@@ -72,6 +72,14 @@ class MinutePoint(BaseModel):
         return self
 
 
+class MinutePagination(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    requestedStart: str
+    requestedEnd: str
+    pagesFetched: int = Field(ge=1, le=64)
+    continuationPending: bool = Field(strict=True)
+
+
 class MinuteResult(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     symbol: str
@@ -86,6 +94,7 @@ class MinuteResult(BaseModel):
     fieldUnits: dict[str, str] = Field(default_factory=lambda: {"volume": "unknown", "amount": "unknown"})
     session: Literal["regular"]
     responseSha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    pagination: MinutePagination | None = None
 
     @model_validator(mode="after")
     def observation(self):
@@ -110,6 +119,9 @@ def validate_binding(request, key, target):
 
 
 def correlate(request, result, target):
+    pages = result.pagination
+    if pages and (pages.continuationPending or (pages.requestedStart, pages.requestedEnd) != (request.start, request.end)):
+        raise ValueError("分钟分页未结束或分页日期与请求不一致")
     if (result.symbol, result.assetType, result.market, result.source, result.timeframe) != (
             request.symbol, request.instrument_type, minute_market(request.symbol), target["upstreamSource"], request.timeframe):
         raise ValueError("分钟响应与请求或来源不匹配")
