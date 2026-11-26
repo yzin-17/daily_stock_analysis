@@ -106,6 +106,7 @@ jobs:
         env:
           CUTOVER_REF: ${{ startsWith(github.ref_name, 'codex/named-v1-cutover-') && github.ref_name || '' }}
         run: |
+          ln -s "$GITHUB_WORKSPACE" ../daily-stock-analysis
           git clone --depth 1 --branch "${CUTOVER_REF:-main}" https://github.com/yzin-17/thesis-ledger-infra.git ../thesis-ledger-infra
           git -C ../thesis-ledger-infra rev-parse HEAD
           node --test scripts/local-runtime/*.test.mjs scripts/deployment/*.test.mjs scripts/prepare-local-sdk-source.test.mjs
