@@ -63,6 +63,26 @@ def _compatible_fees(left, right):
     return True
 
 
+def _cn_stock_fee_primary(matches):
+    from src.services.thesis_ledger_public_fees import ARCHIVE_SOURCE, PROVIDER_ID, UPSTREAM_SOURCE
+
+    if len(matches) != 2:
+        return None
+    by_identity = {(source.provider_id, binding.upstream_source): (source, binding, pack)
+                   for source, binding, pack in matches}
+    main = by_identity.get((PROVIDER_ID, UPSTREAM_SOURCE))
+    archive = by_identity.get((PROVIDER_ID, ARCHIVE_SOURCE))
+    if main is None or archive is None:
+        return None
+    left, right = main[2], archive[2]
+    basis = ('scope', 'calculationSettings', 'historicalAvailability')
+    if (all(left.get(key) == right.get(key) for key in basis)
+            and _fee_dimensions(left) == _fee_dimensions(right)
+            and _compatible_fees(left, right)):
+        return main[:2]
+    return None
+
+
 def select_material(candidates, query):
     import json
     matches = []
@@ -95,6 +115,9 @@ def select_material(candidates, query):
             for other in matches)]
         if len(complete) == 1:
             return complete[0][:2]
+        primary = _cn_stock_fee_primary(matches)
+        if primary is not None:
+            return primary
     # 相同内容的归档别名可确定性复用；内容不同则需要维护资料消歧。
     contents = [{key: value for key, value in item[2].items()
                  if key not in {'datasetId', 'upstreamSource'}} for item in matches]

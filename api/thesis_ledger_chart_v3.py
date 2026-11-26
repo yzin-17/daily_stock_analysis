@@ -103,7 +103,7 @@ def chart_response(request: Mapping[str, Any], execution: Any) -> dict[str, Any]
         for point in points if not minute and point["completionStatus"] == "complete"
     ]
     return {
-        "contractVersion": 3, "purpose": "interactive-chart",
+        "contractVersion": 1, "purpose": "interactive-chart",
         "requestId": request_id, "symbol": request["symbol"], "routeKey": dict(key),
         "bars": points,
         "coverage": {

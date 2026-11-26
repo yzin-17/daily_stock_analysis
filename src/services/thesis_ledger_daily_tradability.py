@@ -8,11 +8,17 @@ from typing import Any, Mapping
 from src.services.thesis_ledger_listing_information import daily_listing_date
 
 
+DAILY_TRADABILITY_CONTRACT = "market-daily-tradability-window-v1"
+
+
 def daily_tradability_evidence(
     *, bars: Any, symbol: str, instrument_type: str, start: str, end: str,
     data_as_of: datetime, route_key: Mapping[str, Any], route_target: Mapping[str, Any],
     provider_revision: str,
+    allow_price_only: bool = False,
 ) -> dict[str, Any]:
+    if type(allow_price_only) is not bool:
+        raise ValueError("日级观察版本无效")
     metadata = getattr(bars, "attrs", {}).get("daily_tradability_input")
     if not isinstance(metadata, dict) or metadata.get("symbol") != symbol or metadata.get("range") != {"start": start, "end": end}:
         raise ValueError("日级来源证据缺失或范围不符")
@@ -57,14 +63,20 @@ def daily_tradability_evidence(
         day = str(row["date"])
         if day not in expected or day in by_day:
             raise ValueError("Bar 日期重复或与日历不符")
-        values = {name: float(row[name]) for name in ("open", "high", "low", "close", "volume")}
+        values = {name: float(row[name]) for name in ("open", "high", "low", "close")}
+        raw_volume = row.get("volume")
+        volume = None if raw_volume is None or math.isnan(float(raw_volume)) else float(raw_volume)
+        if volume is not None:
+            values["volume"] = volume
         if row.get("amount") is not None and not math.isnan(float(row["amount"])):
             values["amount"] = float(row["amount"])
-        if any(not math.isfinite(value) or value < 0 for value in values.values()) or values["volume"] <= 0:
+        if (any(not math.isfinite(value) or value < 0 for value in values.values())
+                or (volume is None and not allow_price_only)
+                or (volume is not None and volume <= 0)):
             raise ValueError("Bar 量价非法或成交量为零")
         if min(values[name] for name in ("open", "high", "low", "close")) <= 0 or values["high"] < max(values["open"], values["low"], values["close"]) or values["low"] > min(values["open"], values["high"], values["close"]):
             raise ValueError("Bar OHLC 非法")
-        by_day[day] = row
+        by_day[day] = "observed-price-only" if volume is None else "observed-traded"
     missing = [day for day in expected if day not in by_day]
     excluded = metadata.get("excludedZeroVolumeObservations", {})
     if any(day not in missing for day in excluded):
@@ -72,7 +84,7 @@ def daily_tradability_evidence(
     if metadata.get("missingSessions") != missing:
         raise ValueError("缺失日期与实际 Bar 不一致")
     return {
-        "contractVersion": 1, "symbol": symbol, "market": market, "instrumentType": instrument_type,
+        "contract": DAILY_TRADABILITY_CONTRACT, "priceOnlyAllowed": allow_price_only, "symbol": symbol, "market": market, "instrumentType": instrument_type,
         "range": {"start": start, "end": end}, "listing": listing, "calendar": calendar,
         "barSource": {
             "routeKey": dict(route_key),
@@ -80,7 +92,7 @@ def daily_tradability_evidence(
             "providerRevision": provider_revision, "responseSha256": metadata["responseSha256"],
             "observedAt": observed_at, "requestComplete": True, "paginationComplete": True,
         },
-        "days": [{"date": day, "state": "observed-traded" if day in by_day else "assumed-untradable-no-bar",
+        "days": [{"date": day, "state": by_day.get(day, "assumed-untradable-no-bar"),
                   **({"excludedZeroVolumeObservation": excluded[day]} if day in excluded else {})}
                  for day in expected],
     }

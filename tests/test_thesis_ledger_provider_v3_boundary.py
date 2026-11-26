@@ -15,8 +15,8 @@ def test_all_provider_envelopes_and_old_requests_preserve_sqlite(monkeypatch, tm
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "provider-secret-key")
     monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "true")
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
-    base = "/api/v3/thesis-ledger/control/providers"
+    app.include_router(router_v3, prefix="/api/v1")
+    base = "/api/v1/thesis-ledger/control/providers"
     headers = {"authorization": "Bearer provider-test"}
 
     def snapshot():
@@ -25,29 +25,29 @@ def test_all_provider_envelopes_and_old_requests_preserve_sqlite(monkeypatch, tm
 
     with TestClient(app) as client:
         registry = client.get(base, headers=headers).json()
-        assert registry["contractVersion"] == 3
+        assert registry["contractVersion"] == 1
         assert registry["consumer"] == "thesis-ledger"
         provider_ids = [item["providerId"] for item in registry["providers"]]
         assert len(provider_ids) == len(set(provider_ids))
         assert "longbridge" in provider_ids
         for provider_id in provider_ids:
-            envelope = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": f"current-{provider_id}"}
+            envelope = {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": f"current-{provider_id}"}
             saved = client.post(f"{base}/{provider_id}/config", headers=headers, json=envelope)
             assert saved.status_code == 200, saved.text
             saved_body = saved.json()
-            assert saved_body["contractVersion"] == 3
+            assert saved_body["contractVersion"] == 1
             assert saved_body["consumer"] == "thesis-ledger"
             assert saved_body["providerId"] == provider_id
             assert saved_body["requestId"] == envelope["requestId"]
             before = snapshot()
             tested = client.post(f"{base}/{provider_id}/test", headers=headers, json=envelope)
             assert tested.status_code == 200, tested.text
-            assert tested.json()["contractVersion"] == 3
+            assert tested.json()["contractVersion"] == 1
             assert tested.json()["providerId"] == provider_id
             assert tested.json()["requestId"] == envelope["requestId"]
             assert snapshot() == before
             for action in ("config", "test", "remove"):
-                for version in (1, 2):
+                for version in (2, 3):
                     old = client.post(f"{base}/{provider_id}/{action}", headers=headers,
                                       json={**envelope, "contractVersion": version, "enabled": False})
                     assert old.status_code == 422
@@ -55,7 +55,7 @@ def test_all_provider_envelopes_and_old_requests_preserve_sqlite(monkeypatch, tm
                     assert snapshot() == before
             removed = client.post(f"{base}/{provider_id}/remove", headers=headers, json=envelope)
             assert removed.status_code == 200, removed.text
-            assert removed.json()["contractVersion"] == 3
+            assert removed.json()["contractVersion"] == 1
             assert removed.json()["providerId"] == provider_id
             assert removed.json()["tombstone"]["providerId"] == provider_id
 

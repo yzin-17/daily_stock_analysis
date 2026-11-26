@@ -29,7 +29,7 @@ def client(monkeypatch, value, provider='hithink'):
     monkeypatch.setattr('src.services.thesis_ledger_provider_runtime.get_thesis_ledger_data_gateway',
                         lambda: SimpleNamespace(quote=read))
     app = FastAPI()
-    app.include_router(router_v3, prefix='/api/v3')
+    app.include_router(router_v3, prefix='/api/v1')
     return TestClient(app), calls
 
 
@@ -40,7 +40,7 @@ def test_original_units_are_projected_after_one_gateway_read(monkeypatch, source
     value = quote('hithink/' + source, raw)
     api, calls = client(monkeypatch, value)
     with api:
-        result = api.get('/api/v3/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
+        result = api.get('/api/v1/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
                          headers={'Authorization': 'Bearer quote-unit-test-token'})
     assert result.status_code == 200, result.text
     assert result.json()['units'] == {'priceCurrency': 'CNY', 'volume': volume, 'turnoverCurrency': turnover}
@@ -52,12 +52,12 @@ def test_original_units_are_projected_after_one_gateway_read(monkeypatch, source
 def test_bad_stock_units_preserve_original_http_error_without_another_read(monkeypatch, bad):
     api, calls = client(monkeypatch, quote(units=bad))
     with api:
-        result = api.get('/api/v3/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
+        result = api.get('/api/v1/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
                          headers={'Authorization': 'Bearer quote-unit-test-token'})
     assert result.status_code == 502
     detail = result.json()['detail']
     assert set(detail) == {'contractVersion', 'code', 'message', 'requestId', 'diagnosticId'}
-    assert detail['contractVersion'] == 3 and detail['code'] == 'upstream_invalid_response'
+    assert detail['contractVersion'] == 1 and detail['code'] == 'upstream_invalid_response'
     assert detail['message'] == 'HiThink 报价单位合同无效'
     assert detail['requestId'] and detail['diagnosticId'] == detail['requestId']
     assert len(calls) == 1
@@ -66,7 +66,7 @@ def test_bad_stock_units_preserve_original_http_error_without_another_read(monke
 def test_undeclared_source_keeps_original_omission(monkeypatch):
     api, calls = client(monkeypatch, quote(units={'sdkData': 'opaque'}), provider='efinance')
     with api:
-        result = api.get('/api/v3/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
+        result = api.get('/api/v1/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
                          headers={'Authorization': 'Bearer quote-unit-test-token'})
     assert result.status_code == 200 and 'units' not in result.json() and len(calls) == 1
 
@@ -103,16 +103,16 @@ def test_new_source_only_declares_projection_and_uses_original_http(monkeypatch,
     monkeypatch.setattr(CAPABILITY_SOURCES, '_bindings', registry._bindings)
     monkeypatch.setitem(PROVIDER_MANIFESTS, 'unit-source', source.manifest())
     store = ThesisLedgerControlStore(str(tmp_path / 'unit-source.sqlite'))
-    store.apply_policy_v3({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'unit-source-policy',
+    store.apply_policy_v3({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'unit-source-policy',
         'revision': 1, 'enabled': True, 'routes': [{'key': source.bindings[0].key.route_key(),
         'targets': [{'providerId': 'unit-source', 'upstreamSource': 'tencent'}]}]})
     gateway = ThesisLedgerDataGateway(ThesisLedgerProviderRuntime(store))
     monkeypatch.setattr('src.services.thesis_ledger_provider_runtime.get_thesis_ledger_data_gateway', lambda: gateway)
     monkeypatch.setenv('THESIS_LEDGER_DSA_TOKEN', 'quote-unit-test-token')
     app = FastAPI()
-    app.include_router(router_v3, prefix='/api/v3')
+    app.include_router(router_v3, prefix='/api/v1')
     with TestClient(app) as api:
-        result = api.get('/api/v3/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
+        result = api.get('/api/v1/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
                          headers={'Authorization': 'Bearer quote-unit-test-token'})
     assert result.status_code == 200, result.text
     assert result.json()['provider'] == 'unit-source' and result.json()['units']['volume'] == 'share'
@@ -125,7 +125,7 @@ def test_untyped_result_is_rejected_after_gateway(monkeypatch, value):
     monkeypatch.setattr(units_api, 'CAPABILITY_SOURCES', registry)
     api, calls = client(monkeypatch, quote(), provider='unit-source')
     with api:
-        result = api.get('/api/v3/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
+        result = api.get('/api/v1/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
                          headers={'Authorization': 'Bearer quote-unit-test-token'})
     assert result.status_code == 502 and result.json()['detail']['code'] == 'upstream_invalid_response'
     assert len(calls) == 1
@@ -142,7 +142,7 @@ def test_wrong_actual_source_preserves_unit_error(monkeypatch):
     api, calls = client(monkeypatch, quote('hithink/unknown',
         {'price_currency': 'CNY', 'volume': 'share', 'turnover_currency': 'CNY'}))
     with api:
-        result = api.get('/api/v3/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
+        result = api.get('/api/v1/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
                          headers={'Authorization': 'Bearer quote-unit-test-token'})
     assert result.status_code == 502 and result.json()['detail']['message'] == 'HiThink 报价单位合同无效'
     assert len(calls) == 1
@@ -154,7 +154,7 @@ def test_constructed_invalid_units_cannot_bypass_schema(monkeypatch):
     monkeypatch.setattr(units_api, 'CAPABILITY_SOURCES', registry)
     api, calls = client(monkeypatch, quote(), provider='unit-source')
     with api:
-        result = api.get('/api/v3/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
+        result = api.get('/api/v1/thesis-ledger/market/quote', params={'symbol': '600519.SH'},
                          headers={'Authorization': 'Bearer quote-unit-test-token'})
     assert result.status_code == 502 and result.json()['detail']['code'] == 'upstream_invalid_response'
     assert len(calls) == 1

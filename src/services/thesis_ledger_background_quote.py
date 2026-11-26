@@ -37,7 +37,7 @@ def constrain_background_quote(runtime, request, targets):
     from .thesis_ledger_provider_runtime import ProviderCallError
     if not isinstance(pin, dict) or set(pin) != {'generation'}:
         raise ProviderCallError('invalid_request', '后台报价执行身份无效')
-    plan = background_quote_plan(runtime, {'contractVersion': 3, 'consumer': 'thesis-ledger',
+    plan = background_quote_plan(runtime, {'contractVersion': 1, 'consumer': 'thesis-ledger',
         'requestId': request.request_id, 'symbol': request.symbol, 'assetType': request.instrument_type})
     if plan['acquisition'] != 'public-snapshot' or plan['generation'] != pin['generation']:
         raise ProviderCallError('not_admitted', '后台报价来源或控制版本已变化')

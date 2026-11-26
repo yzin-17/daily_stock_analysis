@@ -24,10 +24,9 @@ def test_four_quote_bindings_replace_central_entries_with_identical_revisions():
         key, target = binding.key.route_key(), {'providerId': 'futu', 'upstreamSource': 'futu'}
         assert CAPABILITY_SOURCES.resolve(key, target) is binding
         assert (key['market'], key['assetType'], 'REALTIME_QUOTE', 'futu', 'futu') not in _DATA_ADAPTERS
-        revision = 'v2' if key['market'] == 'US' else 'v1'
         assert current_data_adapter_revisions(key, target) == {
-            'adapterRevision': f"futu-{key['market'].lower()}-{key['assetType'].lower()}-exact-quote-{revision}",
-            'sourceRevision': 'futu-current-us-execution-v2' if key['market'] == 'US' else 'futu-direct-quote-v1',
+            'adapterRevision': f"futu-{key['market'].lower()}-{key['assetType'].lower()}-exact-quote-v2",
+            'sourceRevision': f"futu-current-{key['market'].lower()}-execution-v2",
             'credentialRevision': 'not-required'}
 
 
@@ -62,7 +61,10 @@ def test_four_quotes_run_control_factory_worker_single_security_and_standard_clo
         assert rule_contexts[0].database_path == store.database_path
         assert rule_contexts[0].publish_guard()
     else:
-        assert value.units is None and value.execution_facts is None
+        assert value.units is None
+        assert value.execution_facts.market == 'HK' and value.execution_facts.symbol == symbol
+        assert value.execution_facts.tradingState == 'unknown'
+        assert not rule_contexts
     assert value.provider_timestamp == expected and value.fetched_at != expected
     assert value.source == result.provider == result.upstream_source == 'futu'
     assert len(calls) == 1 and calls[0][1]['timeout'] == 4.5

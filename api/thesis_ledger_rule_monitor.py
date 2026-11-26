@@ -18,7 +18,7 @@ router = APIRouter(prefix="/thesis-ledger/control/rule-monitor", dependencies=[D
 class Input(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     version: Literal["rule-source-monitor-v1"]
-    sourceIds: list[str] = Field(max_length=9)
+    sourceIds: list[str]
 
 
 class Configuration(Input):

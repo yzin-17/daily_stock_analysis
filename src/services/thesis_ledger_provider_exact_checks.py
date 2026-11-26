@@ -114,6 +114,6 @@ def check_provider(runtime, provider_id, value, *, fixture=False):
         status = "unconfigured"
     elif tested and all(r["status"] == "healthy" and r["attempted"] for r in tested):
         status = "healthy"
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "providerId": provider["providerId"],
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "providerId": provider["providerId"],
             "requestId": value["requestId"], "status": status, "credentialConfigured": credential_ready,
             "capabilityResults": capabilities, "routeResults": routes}

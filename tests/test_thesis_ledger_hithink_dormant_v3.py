@@ -54,7 +54,7 @@ class _NeverCallAdapter:
 
 def _policy():
     return {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": "hithink-dormant-v3-policy",
         "revision": 1,
@@ -136,7 +136,7 @@ def test_hithink_disabled_policy_prevents_call_despite_ready_basic_catalog(
     assert catalog["integrity"] == "complete"
     assert hithink_entries == [{"key": ROUTE_KEY, "target": TARGET, "state": "ready",
                                "verification": {"state": "unverified"}, 'barQuery': {
-        'contractVersion': 3, 'operation': 'query', 'adjustment': 'qfq', 'priceBasis': 'provider-native',
+        'contractVersion': 1, 'operation': 'query', 'adjustment': 'qfq', 'priceBasis': 'provider-native',
         'readScope': 'single-target-whole-window', 'coverageValidation': 'per-request',
         'transportProtocol': HITHINK_ETF_LOCAL_PAGINATION_PROTOCOL_V1,
     }}]
@@ -167,13 +167,13 @@ def test_hithink_disabled_policy_prevents_call_despite_ready_basic_catalog(
 
     monkeypatch.setattr(provider_runtime, "get_thesis_ledger_runtime", lambda: runtime)
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     add_error_handlers(app)
     response = TestClient(app).post(
-        "/api/v3/thesis-ledger/market/bars",
+        "/api/v1/thesis-ledger/market/bars",
         headers={"Authorization": "Bearer dsa-test-token"},
         json={
-            "contractVersion": 3,
+            "contractVersion": 1,
             "requestId": "hithink-dormant-v3-api",
             "symbol": SYMBOL,
             "routeKey": ROUTE_KEY,

@@ -38,7 +38,7 @@ def read_baostock_status_response(adapter: Any, request: Mapping[str, Any], *,
     target = request.get("routeTarget", {})
     if request.get("routeKey") != ROUTE_KEY or {key: target.get(key) for key in TARGET} != TARGET:
         raise TradingStatusSourceError("unsupported_capability", "未选择 BaoStock 股票状态路由")
-    if (request.get("contractVersion") != 3 or request.get("consumer") != "thesis-ledger"
+    if ((type(request.get("contractVersion")) is not int or request.get("contractVersion") != 1) or request.get("consumer") != "thesis-ledger"
             or not request.get("requestId") or type(target.get("routeIndex")) is not int
             or target["routeIndex"] not in (0, 1)):
         raise TradingStatusSourceError("invalid_request", "BaoStock 状态请求合同不匹配")
@@ -80,7 +80,7 @@ def read_baostock_status_response(adapter: Any, request: Mapping[str, Any], *,
         days.append(day)
     coverage = {**value["coverage"], "expectedSessions": value["expectedSessions"]}
     return attach_basic_lifecycle({
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": request["requestId"],
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": request["requestId"],
         "routeKey": dict(ROUTE_KEY), "routeTarget": dict(target), "symbol": symbol,
         "range": {"start": start.isoformat(), "end": end.isoformat()}, "status": "supported",
         "days": days, "sourceDocuments": [], "structuredCoverage": coverage,

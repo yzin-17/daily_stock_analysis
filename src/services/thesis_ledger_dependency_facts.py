@@ -45,7 +45,7 @@ def response(
 ) -> dict[str, Any]:
     """Build the dependency-scoped response envelope."""
     return {
-        "version": 3,
+        "version": 1,
         "status": status,
         "provider": provider,
         "providerRevision": provider_revision,

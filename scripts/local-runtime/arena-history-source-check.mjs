@@ -36,10 +36,10 @@ export async function checkSources(plan, io = {}) {
     const requestId = randomUUID();
     const { kind, ...identity } = scope;
     try {
-      const response = await (io.fetch ?? fetch)(`http://127.0.0.1:8000/api/v3/thesis-ledger/arena/history/${kind}`, {
+      const response = await (io.fetch ?? fetch)(`http://127.0.0.1:8000/api/v1/thesis-ledger/arena/history/${kind}`, {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(35000),
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ contractVersion: 3, consumer: 'thesis-ledger', requestId, market: 'CN', date: plan.date, ...identity }),
+        body: JSON.stringify({ contractVersion: 1, consumer: 'thesis-ledger', requestId, market: 'CN', date: plan.date, ...identity }),
       });
       const raw = await response.json();
       await writeFile(`${output}.${kind}${identity.assetType ? '-' + identity.assetType : ''}.json`, JSON.stringify(raw), { flag: 'wx', mode: 0o600 });

@@ -13,8 +13,9 @@ def _text(value):
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def current_us_execution(code, asset_type, static, snapshot, market_time, observed_at):
-    if not code.startswith('US.'):
+def current_execution(code, asset_type, static, snapshot, market_time, observed_at):
+    market = code.split('.', 1)[0]
+    if market not in {'HK', 'US'}:
         return None
     suspended = _scalar(snapshot.get('suspension'))
     delisted = _scalar(static.get('delisting'))
@@ -26,7 +27,7 @@ def current_us_execution(code, asset_type, static, snapshot, market_time, observ
         state = 'normal'
     lot, security_id = _scalar(snapshot.get('lot_size')), _scalar(static.get('stock_id'))
     result = {
-        'version': 1, 'symbol': code[3:] + '.US', 'market': 'US', 'assetType': asset_type,
+        'version': 1, 'symbol': code[3:] + '.' + market, 'market': market, 'assetType': asset_type,
         'exchange': _text(static.get('exchange_type')),
         'securityId': str(security_id) if isinstance(security_id, Integral) and not isinstance(security_id, bool) and security_id > 0 else None,
         'sharesPerLot': str(lot) if isinstance(lot, Integral) and not isinstance(lot, bool) and lot > 0 else None,

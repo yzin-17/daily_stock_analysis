@@ -14,7 +14,7 @@ from src.services.thesis_ledger_provider_exact_checks import check_provider
 
 
 def envelope(**extra):
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "account-check", **extra}
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "account-check", **extra}
 
 
 @pytest.fixture
@@ -46,6 +46,8 @@ def states(result):
 
 
 def test_mixed_rights_use_six_exact_endpoints_without_admission_or_writes(runtime, monkeypatch):
+    # 本用例验证六个模拟响应的权限映射；预算耗尽由独立用例推进时钟验证。
+    runtime.clock = lambda: 0.0
     calls = []
     def post(url, **options):
         calls.append(options)
@@ -149,10 +151,10 @@ def test_control_http_keeps_account_report_separate_with_offline_upstream(runtim
     monkeypatch.setattr("src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime", lambda: runtime)
     monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", lambda *a, **k: response(2002, "权限不足"))
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     before = db_state(runtime)
     with TestClient(app) as client:
-        actual = client.post("/api/v3/thesis-ledger/control/providers/tushare/test",
+        actual = client.post("/api/v1/thesis-ledger/control/providers/tushare/test",
             headers={"authorization": "Bearer synthetic-control-token"}, json=envelope(purpose="account_access"))
     assert actual.status_code == 200
     result = actual.json()

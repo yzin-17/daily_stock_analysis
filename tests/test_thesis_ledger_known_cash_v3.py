@@ -21,7 +21,7 @@ def state(monkeypatch):
     request = deepcopy(EXCHANGE["request"])
     request["researchPolicy"]["uncertainRecords"] = "exclude"
     target = request["routeTarget"]
-    policy = {"contractVersion": 3, "revision": 1, "sourceDesiredRevision": 1, "enabled": True,
+    policy = {"contractVersion": 1, "revision": 1, "sourceDesiredRevision": 1, "enabled": True,
               "routes": [{"key": request["routeKey"], "reason": "not_admitted",
                           "targets": [{**target, "eligible": False, "reason": "not_admitted"}]}]}
     catalog = {"integrity": "complete", "catalogRevision": 1,
@@ -159,8 +159,8 @@ def test_real_http_auth_dispatch_and_recheck_during_read(state, monkeypatch):
     monkeypatch.setattr(runtime_module, "get_thesis_ledger_runtime", lambda: state.runtime)
     monkeypatch.setitem(known.READERS, ("hithink", "fund-corporate-actions-dividends"), state.read)
     monkeypatch.setattr(api, "execute_event_request", lambda *_args, **_kwargs: {"legacy": True})
-    app = FastAPI(); app.include_router(router, prefix="/api/v3"); client = TestClient(app)
-    endpoint = "/api/v3/thesis-ledger/market/events"
+    app = FastAPI(); app.include_router(router, prefix="/api/v1"); client = TestClient(app)
+    endpoint = "/api/v1/thesis-ledger/market/events"
     assert client.post(endpoint, json=state.request).status_code == 401 and not state.calls
     headers = {"Authorization": "Bearer test-token"}
     response = client.post(endpoint, json=state.request, headers=headers)
@@ -180,8 +180,8 @@ def test_http_safe_error_reason_preserved(state, monkeypatch):
     monkeypatch.setattr(runtime_module, "get_thesis_ledger_runtime", lambda: state.runtime)
     def denied(*_args): raise KnownCashReadError("upstream_failure", "permission_denied")
     monkeypatch.setitem(known.READERS, ("hithink", "fund-corporate-actions-dividends"), denied)
-    app = FastAPI(); app.include_router(router, prefix="/api/v3")
-    response = TestClient(app).post("/api/v3/thesis-ledger/market/events", json=state.request,
+    app = FastAPI(); app.include_router(router, prefix="/api/v1")
+    response = TestClient(app).post("/api/v1/thesis-ledger/market/events", json=state.request,
                                     headers={"Authorization": "Bearer test-token"})
     assert response.status_code == 503
     assert response.json()["error"] == {"code": "upstream_failure", "message": "方案读取失败：permission_denied", "reason": "permission_denied"}

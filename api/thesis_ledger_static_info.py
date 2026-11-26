@@ -14,7 +14,7 @@ def build_static_info_router(get_runtime):
     def read_static_info(payload: dict = Body(...)):
         request_id = payload.get("requestId")
         if (set(payload) != {"contractVersion", "consumer", "requestId", "symbol", "assetType"}
-                or payload.get("contractVersion") != 3 or payload.get("consumer") != "thesis-ledger"
+                or (type(payload.get("contractVersion")) is not int or payload.get("contractVersion") != 1) or payload.get("consumer") != "thesis-ledger"
                 or not isinstance(request_id, str) or not request_id.strip()):
             _error("bad_request", "静态资料请求格式无效", 422)
         try:
@@ -26,7 +26,7 @@ def build_static_info_router(get_runtime):
                                              request_id=request_id)
             result = get_runtime().execute_request(request)
             return {
-                **result.value, "contractVersion": 3, "consumer": "thesis-ledger", "requestId": request_id,
+                **result.value, "contractVersion": 1, "consumer": "thesis-ledger", "requestId": request_id,
                 "fetchedAt": datetime.now(timezone.utc).isoformat(), "policyRevision": result.effective_revision,
                 "routeTarget": {"providerId": result.provider, "upstreamSource": result.upstream_source,
                                 "routeIndex": result.route_index},

@@ -15,11 +15,13 @@ from src.services.thesis_ledger_market_v3_facts import market_coverage_context_v
 from src.services.thesis_ledger_market_daily_tradability import market_daily_tradability
 from src.services.thesis_ledger_provider_runtime import ProviderCallError
 
+OBSERVATION_CONTRACT = "market-daily-tradability-window-v1"
+
 
 def sample():
     days = ["2026-07-09", "2026-07-10"]
     request = {
-        "contractVersion": 3, "requestId": "common-daily-state", "symbol": "159516.SZ",
+        "contractVersion": 1, "requestId": "common-daily-state", "symbol": "159516.SZ",
         "routeKey": {"kind": "bar", "market": "CN", "assetType": "ETF", "capability": "DAILY_BAR",
                      "timeframe": "1d", "adjustment": "hfq"},
         "start": days[0], "end": days[-1], "tradabilityMode": "assume-untradable-no-bar",
@@ -113,3 +115,68 @@ def test_incomplete_pagination_is_rejected_before_day_state_generation():
     with pytest.raises(HTTPException) as error:
         _market_data_v3_response(request, execution, context)
     assert error.value.status_code in {422, 502}
+
+
+def test_named_daily_observation_keeps_prices_without_volume():
+    from api.thesis_ledger import market_data_capabilities_v3, _market_data_v3_request
+    request, execution, context, days = sample()
+    request["dailyObservationContract"] = OBSERVATION_CONTRACT
+    assert _market_data_v3_request(request, "fallback")["dailyObservationContract"] == OBSERVATION_CONTRACT
+    execution.value.loc[0, "volume"] = None
+    response = _market_data_v3_response(request, execution, context)
+    assert response["bars"][0]["volume"] is None
+    assert response["bars"][0]["close"] == 1.1
+    evidence = response["historicalTradabilityWindows"][0]
+    assert evidence["contract"] == OBSERVATION_CONTRACT
+    assert evidence["priceOnlyAllowed"] is True
+    assert evidence["days"] == [{"date": days[0], "state": "observed-price-only"},
+                                {"date": days[1], "state": "observed-traded"}]
+    assert market_data_capabilities_v3()["dailyObservationContract"] == OBSERVATION_CONTRACT
+    del request["dailyObservationContract"]
+    with pytest.raises(HTTPException):
+        _market_data_v3_response(request, execution, context)
+
+
+def test_named_price_only_observation_changes_fingerprint_and_preserves_prices(monkeypatch):
+    import api.thesis_ledger as contract
+    request, execution, context, _ = sample()
+    monkeypatch.setattr(contract, "_now_iso", lambda: "2026-11-20T00:00:00Z")
+    original = _market_data_v3_response(request, execution, context)
+    price_only_allowed = _market_data_v3_response(
+        {**request, "dailyObservationContract": OBSERVATION_CONTRACT}, execution, context,
+    )
+    assert price_only_allowed["bars"] == original["bars"]
+    assert price_only_allowed["inputFingerprint"] != original["inputFingerprint"]
+    assert original["historicalTradabilityWindows"][0]["contract"] == OBSERVATION_CONTRACT
+    assert original["historicalTradabilityWindows"][0]["priceOnlyAllowed"] is False
+    assert price_only_allowed["historicalTradabilityWindows"][0]["priceOnlyAllowed"] is True
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("dailyObservationVersion", 1),
+    ("dailyObservationVersion", 2),
+    ("dailyObservationContract", True),
+    ("dailyObservationContract", "market-daily-tradability-window-v2"),
+])
+def test_daily_observation_request_rejects_retired_or_unknown_contracts(field, value):
+    from api.thesis_ledger import _market_data_v3_request
+    request, _, _, _ = sample()
+    with pytest.raises(HTTPException):
+        _market_data_v3_request({**request, field: value}, "fallback")
+
+
+def test_exact_dispatch_carries_explicit_observation_mode_to_runtime_validation():
+    from api.thesis_ledger_multi_window_v3 import execute_market_window_v3
+    from src.services.thesis_ledger_capability_contracts import DailyQuery
+    from src.services.thesis_ledger_provider_runtime import ThesisLedgerProviderRuntime, ProviderCallError
+    request, execution, _, _ = sample()
+    request["dailyObservationContract"] = OBSERVATION_CONTRACT
+    runtime = SimpleNamespace(execute_market_bars_v3=lambda query, *args, **kwargs: query)
+    query = execute_market_window_v3(request, runtime)
+    assert DailyQuery.from_request(query).parameters.allow_price_only is True
+    frame = execution.value.drop(columns=["volume", "amount"])
+    with pytest.raises(ProviderCallError):
+        ThesisLedgerProviderRuntime._validate_bars(frame)
+    assert ThesisLedgerProviderRuntime._validate_bars(frame, price_observation_only=True) is frame
+    with pytest.raises(ValueError):
+        DailyQuery.from_request(SimpleNamespace(**{**query.__dict__, "parameters": {"allow_price_only": True}}))

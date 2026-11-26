@@ -21,7 +21,7 @@ def _client(monkeypatch, tmp_path) -> TestClient:
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "0123456789abcdef-secret-key")
     monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "true")
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     return TestClient(app)
 
 
@@ -38,7 +38,7 @@ def _fixture(name: str):
 
 def _v3_policy(*, revision=1, enabled=True, request_id="control-v3-test", routes=None):
     return {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": request_id,
         "revision": revision,
@@ -91,12 +91,12 @@ def test_provider_changes_return_only_current_policy_projection(tmp_path):
     saved = store.save_provider_config(
         "akshare", {"requestId": "save-current-provider", "enabled": True, "settings": {}},
     )
-    assert saved["effective"]["contractVersion"] == 3
+    assert saved["effective"]["contractVersion"] == 1
     assert saved["effective"]["sourceDesiredRevision"] == 1
     assert saved["effective"]["routes"][0]["key"] == _v3_policy()["routes"][0]["key"]
 
     removed = store.remove_provider("akshare", {"requestId": "remove-current-provider"})
-    assert removed["effective"]["contractVersion"] == 3
+    assert removed["effective"]["contractVersion"] == 1
     assert removed["effective"]["routes"][0]["targets"][0]["reason"] == "disabled"
     with store._connect() as connection:
         assert connection.execute(
@@ -161,39 +161,38 @@ def test_v3_handshake_matches_shared_fixture_and_rejects_old_versions(monkeypatc
     headers = {"authorization": "Bearer control-token"}
     request = _fixture("market-control-v3.handshake.request.json")
     response = client.post(
-        "/api/v3/thesis-ledger/control/handshake", headers=headers, json=request
+        "/api/v1/thesis-ledger/control/handshake", headers=headers, json=request
     )
 
     assert response.status_code == 200, response.text
     assert response.json() == _fixture("market-control-v3.handshake.response.json")
 
-    for version in (1, 2):
+    for version in (2, 3):
         legacy = client.post(
-            "/api/v3/thesis-ledger/control/handshake",
+            "/api/v1/thesis-ledger/control/handshake",
             headers=headers,
             json={
+                **request,
                 "contractVersion": version,
-                "consumer": "thesis-ledger",
                 "requestId": f"legacy-v{version}",
-                "supportedVersions": [version],
             },
         )
         assert legacy.status_code == 422, legacy.text
         assert legacy.json()["detail"]["code"] == "CONTROL_CONTRACT_UNSUPPORTED"
-        assert legacy.json()["detail"]["supportedVersions"] == [3]
+        assert legacy.json()["detail"]["expectedContract"] == "dsa-control-v1"
 
 
 def test_v3_handshake_rejects_unsupported_versions_with_safe_error(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     headers = {"authorization": "Bearer control-token"}
     response = client.post(
-        "/api/v3/thesis-ledger/control/handshake",
+        "/api/v1/thesis-ledger/control/handshake",
         headers=headers,
         json={
-            "contractVersion": 3,
+            "contractVersion": 1,
             "consumer": "thesis-ledger",
             "requestId": "market-control-v3-handshake-fixture",
-            "supportedVersions": [2],
+            "contract": "dsa-control-v3",
         },
     )
 
@@ -203,9 +202,9 @@ def test_v3_handshake_rejects_unsupported_versions_with_safe_error(monkeypatch, 
     for field in ("code", "requestId", "diagnosticId"):
         assert detail[field] == fixture_error[field]
     assert detail["code"] == "CONTROL_CONTRACT_UNSUPPORTED"
-    assert detail["message"] == "没有共同的 Control Contract 版本"
-    assert detail["contractVersion"] == 3
-    assert detail["supportedVersions"] == [3]
+    assert detail["message"] == "Control 握手需要 dsa-control-v1"
+    assert detail["contractVersion"] == 1
+    assert detail["expectedContract"] == "dsa-control-v1"
 
 
 def test_v3_policy_apply_matches_wire_and_is_default_read(monkeypatch, tmp_path):
@@ -225,7 +224,7 @@ def test_v3_policy_apply_matches_wire_and_is_default_read(monkeypatch, tmp_path)
     ]
 
     applied = client.post(
-        "/api/v3/thesis-ledger/control/policies/apply", headers=headers, json=desired
+        "/api/v1/thesis-ledger/control/policies/apply", headers=headers, json=desired
     )
     assert applied.status_code == 200, applied.text
     payload = applied.json()
@@ -243,7 +242,7 @@ def test_v3_policy_apply_matches_wire_and_is_default_read(monkeypatch, tmp_path)
         "routes",
         "appliedAt",
     }
-    assert effective["contractVersion"] == 3
+    assert effective["contractVersion"] == 1
     assert effective["requestId"] == desired["requestId"]
     assert effective["revision"] == desired["revision"]
     assert effective["sourceDesiredRevision"] == desired["revision"]
@@ -254,25 +253,25 @@ def test_v3_policy_apply_matches_wire_and_is_default_read(monkeypatch, tmp_path)
     _assert_route_identity_alignment(desired["routes"], effective["routes"])
 
     explicit_v3 = client.get(
-        "/api/v3/thesis-ledger/control/policies/effective?contractVersion=3",
+        "/api/v1/thesis-ledger/control/policies/effective?contractVersion=1",
         headers=headers,
     )
     assert explicit_v3.status_code == 200
-    assert explicit_v3.json()["contractVersion"] == 3
+    assert explicit_v3.json()["contractVersion"] == 1
     projected_effective = explicit_v3.json()["projection"]["effective"]
     assert projected_effective["requestId"] == desired["requestId"]
     _assert_route_identity_alignment(desired["routes"], projected_effective["routes"])
 
     current_default = client.get(
-        "/api/v3/thesis-ledger/control/policies/effective", headers=headers
+        "/api/v1/thesis-ledger/control/policies/effective", headers=headers
     )
     assert current_default.status_code == 200
-    assert current_default.json()["contractVersion"] == 3
+    assert current_default.json()["contractVersion"] == 1
     default_effective = current_default.json()["projection"]["effective"]
     assert default_effective["requestId"] == projected_effective["requestId"]
     _assert_route_identity_alignment(desired["routes"], default_effective["routes"])
     old_version = client.get(
-        "/api/v3/thesis-ledger/control/policies/effective?contractVersion=2",
+        "/api/v1/thesis-ledger/control/policies/effective?contractVersion=2",
         headers=headers,
     )
     assert old_version.status_code == 422
@@ -287,23 +286,23 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     client = _client(monkeypatch, tmp_path)
     headers = {"authorization": "Bearer control-token"}
     assert client.get(
-        "/api/v1/thesis-ledger/control/routes/capabilities?contractVersion=3",
+        "/api/v3/thesis-ledger/control/routes/capabilities?contractVersion=1",
         headers=headers,
     ).status_code == 404
 
     missing_version = client.get(
-        "/api/v3/thesis-ledger/control/routes/capabilities", headers=headers
+        "/api/v1/thesis-ledger/control/routes/capabilities", headers=headers
     )
     wrong_version = client.get(
-        "/api/v3/thesis-ledger/control/routes/capabilities?contractVersion=2",
+        "/api/v1/thesis-ledger/control/routes/capabilities?contractVersion=2",
         headers=headers,
     )
     assert missing_version.status_code == 422
     assert wrong_version.status_code == 422
-    assert missing_version.json()["detail"]["contractVersion"] == 3
+    assert missing_version.json()["detail"]["contractVersion"] == 1
     assert missing_version.json()["detail"]["code"] == "CONTROL_CONTRACT_UNSUPPORTED"
 
-    url = "/api/v3/thesis-ledger/control/routes/capabilities?contractVersion=3"
+    url = "/api/v1/thesis-ledger/control/routes/capabilities?contractVersion=1"
     response = client.get(url, headers=headers)
     repeated = client.get(url, headers=headers)
 
@@ -312,7 +311,7 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     assert set(catalog) == {
         "contractVersion", "consumer", "catalogRevision", "generatedAt", "integrity", "entries"
     }
-    assert catalog["contractVersion"] == 3
+    assert catalog["contractVersion"] == 1
     assert catalog["consumer"] == "thesis-ledger"
     assert catalog["integrity"] == "complete"
     assert catalog["catalogRevision"] > 0
@@ -325,7 +324,7 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
             assert entry["key"]["capability"] == "DAILY_BAR"
             assert entry["key"]["timeframe"] == "1d"
             assert entry["barQuery"] == {
-                "contractVersion": 3, "operation": "query",
+                "contractVersion": 1, "operation": "query",
                 "adjustment": entry["key"]["adjustment"], "priceBasis": "provider-native",
                 "readScope": "single-target-whole-window", "coverageValidation": "per-request",
                 "transportProtocol": entry["barQuery"]["transportProtocol"],
@@ -426,7 +425,11 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
         "key": {"kind": "data", "market": "CN", "assetType": "ETF", "capability": "CASH_DISTRIBUTION"},
         "target": {"providerId": "official-dividends", "upstreamSource": "cn-etf-cash-notices"},
         "state": "not_admitted",
-    }], key=event_identity)
+    }, *[{
+        "key": {"kind": "data", "market": "CN", "assetType": "ETF", "capability": capability},
+        "target": {"providerId": "official-event-archive", "upstreamSource": "sse-disclosure-history"},
+        "state": "not_admitted",
+    } for capability in ("CASH_DISTRIBUTION", "SPLIT_EVENT")]], key=event_identity)
     assert all(
         set(entry["key"]) == {
             "kind", "market", "assetType", "capability", "timeframe", "adjustment"
@@ -552,7 +555,7 @@ def test_v3_revisions_are_isolated_atomic_and_idempotent(tmp_path):
         store.apply_policy_v3({**first, "enabled": False})
     except Exception as error:  # assertions inspect the stable contract error fields.
         assert getattr(error, "code", None) == "REVISION_CONFLICT"
-        assert getattr(error, "contract_version", None) == 3
+        assert getattr(error, "contract_version", None) == 1
     else:
         raise AssertionError("same revision with different content must conflict")
 
@@ -582,7 +585,7 @@ def test_v3_unsupported_adjustment_after_old_contract_rejected(monkeypatch, tmp_
         },
     }
     v2_result = client.post(
-        "/api/v3/thesis-ledger/control/policies/apply", headers=headers, json=v2
+        "/api/v1/thesis-ledger/control/policies/apply", headers=headers, json=v2
     )
     assert v2_result.status_code == 422
     assert v2_result.json()["detail"]["code"] == "CONTROL_CONTRACT_UNSUPPORTED"
@@ -605,7 +608,7 @@ def test_v3_unsupported_adjustment_after_old_contract_rejected(monkeypatch, tmp_
         ]
     )
     v3_result = client.post(
-        "/api/v3/thesis-ledger/control/policies/apply",
+        "/api/v1/thesis-ledger/control/policies/apply",
         headers=headers,
         json=unsupported,
     )
@@ -615,10 +618,10 @@ def test_v3_unsupported_adjustment_after_old_contract_rejected(monkeypatch, tmp_
     assert target["reason"] == "unsupported_adjustment"
 
     effective_read = client.get(
-        "/api/v3/thesis-ledger/control/policies/effective?contractVersion=3", headers=headers
+        "/api/v1/thesis-ledger/control/policies/effective?contractVersion=1", headers=headers
     )
     assert effective_read.status_code == 200
-    assert effective_read.json()["contractVersion"] == 3
+    assert effective_read.json()["contractVersion"] == 1
     assert effective_read.json()["projection"]["effective"]["sourceDesiredRevision"] == unsupported["revision"]
 
 
@@ -626,19 +629,19 @@ def test_v3_policy_rejects_unknown_version_and_non_strict_shape(monkeypatch, tmp
     client = _client(monkeypatch, tmp_path)
     headers = {"authorization": "Bearer control-token"}
     unsupported = client.post(
-        "/api/v3/thesis-ledger/control/policies/apply",
+        "/api/v1/thesis-ledger/control/policies/apply",
         headers=headers,
         json={**_v3_policy(), "contractVersion": 4},
     )
     assert unsupported.status_code == 422
     assert unsupported.json()["detail"]["code"] == "CONTROL_CONTRACT_UNSUPPORTED"
-    assert unsupported.json()["detail"]["contractVersion"] == 3
+    assert unsupported.json()["detail"]["contractVersion"] == 1
 
     malformed = client.post(
-        "/api/v3/thesis-ledger/control/policies/apply",
+        "/api/v1/thesis-ledger/control/policies/apply",
         headers=headers,
         json={**_v3_policy(), "unexpected": True},
     )
     assert malformed.status_code == 422
-    assert malformed.json()["detail"]["contractVersion"] == 3
+    assert malformed.json()["detail"]["contractVersion"] == 1
     assert malformed.json()["detail"]["code"] == "INVALID_POLICY_SCHEMA"

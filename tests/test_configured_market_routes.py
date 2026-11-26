@@ -20,7 +20,7 @@ def store(monkeypatch, tmp_path):
 
 def apply(store, key, target):
     return store.apply_policy_v3({
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "configured-route",
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "configured-route",
         "revision": 1, "enabled": True, "routes": [{"key": key, "targets": [target]}],
     })
 

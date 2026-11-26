@@ -18,7 +18,7 @@ def _client(monkeypatch, *, fixture: bool) -> TestClient:
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "test-token")
     monkeypatch.setenv("THESIS_LEDGER_FIXTURE_MODE", "true" if fixture else "false")
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     return TestClient(app)
 
 
@@ -43,7 +43,7 @@ def test_instrument_facts_http_passes_exact_qfq_route_and_target(monkeypatch):
         "barAdjustment": "qfq", "barProviderId": "hithink",
         "barUpstreamSource": "fund-market-historical", "barRouteIndex": 0,
     }
-    response = client.get("/api/v3/thesis-ledger/backtest/instrument-facts", params=params, headers=_headers())
+    response = client.get("/api/v1/thesis-ledger/backtest/instrument-facts", params=params, headers=_headers())
     assert response.status_code == 200
     assert observed[0]["route_key"] == {
         "kind": "bar", "market": "CN", "assetType": "ETF",
@@ -54,7 +54,7 @@ def test_instrument_facts_http_passes_exact_qfq_route_and_target(monkeypatch):
     }
     del params["barRouteIndex"]
     assert client.get(
-        "/api/v3/thesis-ledger/backtest/instrument-facts", params=params, headers=_headers(),
+        "/api/v1/thesis-ledger/backtest/instrument-facts", params=params, headers=_headers(),
     ).status_code == 422
     assert len(observed) == 1
 
@@ -70,12 +70,12 @@ def test_http_calendar_allows_bounded_settlement_dates_without_relaxing_prices(m
     client = _client(monkeypatch, fixture=False)
     params = {"start": "2026-05-18", "end": "2026-06-06",
               "dataAsOf": "2026-05-21T00:00:00Z", "market": "CN"}
-    response = client.get("/api/v3/thesis-ledger/backtest/calendar", params=params, headers=_headers())
+    response = client.get("/api/v1/thesis-ledger/backtest/calendar", params=params, headers=_headers())
     assert response.status_code == 200
     assert response.json()["status"] == "supported"
     assert response.json()["facts"][0]["range"]["end"] == "2026-06-06"
     params["end"] = "2027-01-01"
-    assert client.get("/api/v3/thesis-ledger/backtest/calendar", params=params, headers=_headers()).status_code == 422
+    assert client.get("/api/v1/thesis-ledger/backtest/calendar", params=params, headers=_headers()).status_code == 422
     with pytest.raises(dependencies.DependencyFactError):
         dependencies.validate_range("2026-05-18", "2026-06-06",
                                        datetime(2026, 5, 21, tzinfo=timezone.utc))
@@ -85,12 +85,12 @@ def test_http_calendar_respects_verified_package_publication(monkeypatch):
     client = _client(monkeypatch, fixture=False)
     params = {"start": "2020-01-30", "end": "2020-02-03", "market": "CN",
               "dataAsOf": "2026-03-10T03:24:37.055241Z"}
-    response = client.get("/api/v3/thesis-ledger/backtest/calendar", params=params, headers=_headers())
+    response = client.get("/api/v1/thesis-ledger/backtest/calendar", params=params, headers=_headers())
     assert response.status_code == 200
     assert response.json()["status"] == "unavailable"
     assert response.json()["facts"] == []
     params["dataAsOf"] = "2026-03-10T03:24:37.055242Z"
-    response = client.get("/api/v3/thesis-ledger/backtest/calendar", params=params, headers=_headers())
+    response = client.get("/api/v1/thesis-ledger/backtest/calendar", params=params, headers=_headers())
     assert response.status_code == 200
     assert response.json()["status"] == "supported"
     assert response.json()["facts"][0]["availableAt"] == "2026-03-10T03:24:37.055242+00:00"
@@ -125,7 +125,7 @@ def test_calendar_fact_rejects_requests_outside_provider_coverage(monkeypatch):
 
     client = _client(monkeypatch, fixture=False)
     response = client.get(
-        "/api/v3/thesis-ledger/backtest/calendar",
+        "/api/v1/thesis-ledger/backtest/calendar",
         params={
             "market": "CN",
             "start": "2024-12-31",
@@ -148,9 +148,9 @@ def test_v2_dependency_routes_have_auditable_fixture_envelope(monkeypatch):
         "end": "2025-01-10",
         "dataAsOf": "2025-01-10T07:00:00Z",
     }
-    calendar = client.get("/api/v3/thesis-ledger/backtest/calendar", params=params, headers=_headers())
+    calendar = client.get("/api/v1/thesis-ledger/backtest/calendar", params=params, headers=_headers())
     instrument = client.get(
-        "/api/v3/thesis-ledger/backtest/instrument-facts",
+        "/api/v1/thesis-ledger/backtest/instrument-facts",
         params={**params, "symbol": "600519.SH", "instrumentType": "STOCK", "executionStart": params["start"], "executionEnd": params["end"]},
         headers=_headers(),
     )
@@ -158,7 +158,7 @@ def test_v2_dependency_routes_have_auditable_fixture_envelope(monkeypatch):
         assert response.status_code == 200
         payload = response.json()
         assert set(("version", "status", "coverage", "facts", "providerRevision", "reason")) <= set(payload)
-        assert payload["version"] == 3
+        assert payload["version"] == 1
         assert payload["coverage"]["complete"] is True
         assert payload["facts"]
     assert calendar.json()["facts"][0]["availableAt"] < params["dataAsOf"]
@@ -184,7 +184,7 @@ def test_v2_rejects_symbol_type_mismatch_and_never_leaks_fixture_facts(monkeypat
     )
     client = _client(monkeypatch, fixture=False)
     response = client.get(
-        "/api/v3/thesis-ledger/backtest/instrument-facts",
+        "/api/v1/thesis-ledger/backtest/instrument-facts",
         params={
             "symbol": "510300.SH",
             "start": "2025-01-01", "end": "2025-01-10",
@@ -199,7 +199,7 @@ def test_v2_rejects_symbol_type_mismatch_and_never_leaks_fixture_facts(monkeypat
     assert response.json()["detail"]["code"] == "invalid_request"
 
     calendar = client.get(
-        "/api/v3/thesis-ledger/backtest/calendar",
+        "/api/v1/thesis-ledger/backtest/calendar",
         params={
             "market": "CN",
             "start": "2025-01-01",
@@ -212,7 +212,7 @@ def test_v2_rejects_symbol_type_mismatch_and_never_leaks_fixture_facts(monkeypat
     assert all("fixture" not in str(value).lower() for value in calendar.json().values())
 
     instrument = client.get(
-        "/api/v3/thesis-ledger/backtest/instrument-facts",
+        "/api/v1/thesis-ledger/backtest/instrument-facts",
         params={
             "symbol": "600519.SH",
             "market": "CN",
@@ -254,7 +254,7 @@ def test_v2_etf_facts_keep_exchange_identity_and_bar_provenance(monkeypatch):
     )
     client = _client(monkeypatch, fixture=False)
     response = client.get(
-        "/api/v3/thesis-ledger/backtest/instrument-facts",
+        "/api/v1/thesis-ledger/backtest/instrument-facts",
         params={
             "symbol": "159516.SZ",
             "market": "CN",
@@ -293,7 +293,7 @@ def test_instrument_facts_reject_missing_or_invalid_ranges(monkeypatch, override
         "executionStart": "2025-01-02", "executionEnd": "2025-01-10",
         "dataAsOf": "2025-01-10T07:00:00Z", **overrides,
     }
-    result = client.get("/api/v3/thesis-ledger/backtest/instrument-facts",
+    result = client.get("/api/v1/thesis-ledger/backtest/instrument-facts",
                         params={key: value for key, value in params.items() if value is not None},
                         headers=_headers())
     assert result.status_code == 422

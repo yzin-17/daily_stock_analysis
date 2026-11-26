@@ -13,9 +13,9 @@ from src.services.thesis_ledger_public_fees_contract_v1 import FeeRequest
 from tests.test_thesis_ledger_notice_events_v3 import configured_client, admit, request as cash_request
 
 
-def query(symbol='00147.HK', start='2025-08-06', end='2025-08-11'):
-    return FeeRequest.model_validate({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'local-test',
-        'routeKey': {'kind': 'data', 'market': 'HK', 'assetType': 'STOCK', 'capability': 'HISTORICAL_PUBLIC_FEES'},
+def query(symbol='00147.HK', start='2025-08-06', end='2025-08-11', *, market='HK'):
+    return FeeRequest.model_validate({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'local-test',
+        'routeKey': {'kind': 'data', 'market': market, 'assetType': 'STOCK', 'capability': 'HISTORICAL_PUBLIC_FEES'},
         'routeTarget': {'providerId': 'local-materials', 'upstreamSource': 'local-materials', 'routeIndex': 0},
         'symbol': symbol, 'range': {'start': start, 'end': end}})
 
@@ -67,6 +67,29 @@ def test_conflicting_overlap_rejected(monkeypatch, tmp_path):
     assert error.value.code == 'basis_incompatible'
 
 
+def test_cn_stock_main_and_archive_agree_but_differ_in_coverage(monkeypatch, tmp_path):
+    from src.services.thesis_ledger_public_fees import DATA_PATH, ARCHIVE_DATA_PATH
+
+    request = query('600036.SH', '2023-08-25', '2023-08-29', market='CN')
+    context = ReadContext(object())
+    assert local.read(request, context).provenance.datasetId == json.loads(DATA_PATH.read_bytes())['datasetId']
+    archive_only = request.model_copy(update={'range': request.range.model_copy(update={'start': '2023-08-22'})})
+    backup = json.loads(ARCHIVE_DATA_PATH.read_bytes())
+    assert local.read(archive_only, context).provenance.datasetId == backup['datasetId']
+
+    changed = tmp_path / 'archive.json'
+    backup['segments'][1]['charges'][0]['rate'] = '0.0004'
+    changed.write_text(json.dumps(backup))
+    original_path = selection.material_path
+    def material_path(source, binding):
+        path = original_path(source, binding)
+        return changed if path == ARCHIVE_DATA_PATH else path
+
+    monkeypatch.setattr(selection, 'material_path', material_path)
+    with pytest.raises(CapabilityContractError, match='重叠冲突'):
+        local.read(request, context)
+
+
 def test_cash_notices_do_not_gain_admission_through_facade():
     binding = next(item for item in local.SOURCE.bindings if item.key.capability == 'CASH_DISTRIBUTION')
     assert binding.admission_required is True
@@ -83,7 +106,7 @@ def test_cash_facade_uses_original_admission_and_original_bytes(configured_clien
     admit(store)
     legacy = execute_event_request(runtime, cash_request(runtime))
     admission_before = store.get_route_admission_v3(key=key, target=notices.ROUTE_TARGET)
-    store.apply_policy_v3({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'facade-policy',
+    store.apply_policy_v3({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'facade-policy',
         'revision': 2, 'enabled': True, 'routes': [{'key': key, 'targets': [target]}]})
     payload = {**cash_request(runtime), 'desiredRevision': 2, 'effectivePolicyRevision': 2,
                'routeTarget': {**target, 'routeIndex': 0}}
@@ -103,7 +126,7 @@ def test_every_unified_fee_scope_uses_original_parser(binding, configured_client
     source, original = candidates[-1]
     pack = json.loads(selection.material_path(source, original).read_bytes())
     sample = FeeRequest.model_validate({
-        'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'all-fee-scopes',
+        'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'all-fee-scopes',
         'routeKey': binding.key.route_key(), 'routeTarget': {
             'providerId': 'local-materials', 'upstreamSource': 'local-materials', 'routeIndex': 0},
         'symbol': pack.get('symbol', '600000.SH'), 'range': pack['coverage'],
@@ -112,7 +135,7 @@ def test_every_unified_fee_scope_uses_original_parser(binding, configured_client
     assert result.range == sample.range
     assert result.routeKey == sample.routeKey
     assert result.provenance.historicalAvailability == 'notVerified'
-    store.apply_policy_v3({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'fee-facade-policy',
+    store.apply_policy_v3({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'fee-facade-policy',
         'revision': 1, 'enabled': True, 'routes': [{'key': binding.key.route_key(),
             'targets': [{'providerId': 'local-materials', 'upstreamSource': 'local-materials'}]}]})
     outer = ThesisLedgerDataRequest('HISTORICAL_PUBLIC_FEES', sample.symbol,
@@ -127,7 +150,7 @@ def test_unified_historical_status_preserves_original_evidence(binding):
     source, original = local.origin_candidates(binding.key.route_key())[-1]
     pack = json.loads(selection.material_path(source, original).read_bytes())
     sample = binding.contract.request_schema.model_validate({
-        'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'all-status-scopes',
+        'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'all-status-scopes',
         'routeKey': binding.key.route_key(), 'routeTarget': {
             'providerId': 'local-materials', 'upstreamSource': 'local-materials', 'routeIndex': 0},
         'symbol': pack['symbol'], 'range': pack['coverage'],

@@ -87,7 +87,13 @@ def refresh_selection(candidates, query, context):
     if query.range.end > today.isoformat():
         raise _unavailable('requested_window_unverified')
     storage = RuleCoverageStore(monitor.store)
-    cache_key = sha256(json.dumps([digest, context.control_epoch]).encode()).hexdigest()
+    registered = monitor.registry().get(identity)
+    if registered is None or registered.digest != digest:
+        raise _unavailable('source_registry_changed')
+    cache_identity = [digest, context.control_epoch]
+    if registered.refresh_baseline is not None:
+        cache_identity.append(registered.refresh_baseline)
+    cache_key = sha256(json.dumps(cache_identity, sort_keys=True).encode()).hexdigest()
 
     def guard():
         return context.publish_guard() and path.read_bytes() == raw
@@ -100,10 +106,6 @@ def refresh_selection(candidates, query, context):
         return source, binding, material
     if cached and cached['next_check'] > monitor.store.clock():
         raise _unavailable(cached['outcome'])
-    registry = monitor.registry()
-    registered = registry.get(identity)
-    if registered is None or registered.digest != digest:
-        raise _unavailable('source_registry_changed')
     if not storage.begin_check(identity, cache_key, guard):
         raise _unavailable('refresh_in_progress')
     evidence = {}
@@ -117,7 +119,7 @@ def refresh_selection(candidates, query, context):
         ):
             raise _unavailable('rule_refresh_incomplete')
         # 基线必须与当前资料包绑定；缺基线的首次正文属于新增，不会被下次相同抓取洗成无变化。
-        baseline = original.get('refreshBaseline', {})
+        baseline = original.get('refreshBaseline', registered.refresh_baseline or {})
         changed = [url for url, value in documents.items() if baseline.get(url) != value['contentHash']]
         # 指南引用的正文附件必须进入登记资料集合；不能仅凭引用页未变认证附件未变。
         attachments = set()

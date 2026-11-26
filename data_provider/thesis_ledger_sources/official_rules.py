@@ -32,7 +32,7 @@ def exact_probe(context):
     pack = json.loads(before)
     symbol = pack.get('symbol', '600519.SH')
     start, end = pack['coverage']['start'], pack['coverage']['end']
-    OfficialPublicFeeProvider(path).read({'contractVersion': 3, 'consumer': 'thesis-ledger',
+    OfficialPublicFeeProvider(path).read({'contractVersion': 1, 'consumer': 'thesis-ledger',
         'requestId': 'source-check', 'symbol': symbol, 'range': {'start': start, 'end': end},
         'routeKey': dict(context.key), 'routeTarget': {**context.target, 'routeIndex': 0}})
     if path.read_bytes() != before:

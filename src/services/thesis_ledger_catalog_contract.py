@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from src.services.thesis_ledger_control import (
-    ControlContractError, CONSUMER_NAMESPACE, CONTROL_CONTRACT_V3_VERSION,
+    ControlContractError, CONSUMER_NAMESPACE, CONTROL_CONTRACT_VERSION,
     _json_load, _utc_now,
 )
 
@@ -18,7 +18,7 @@ def require_catalog_request(payload: dict[str, Any], *, ack: bool = False) -> No
     allowed = fields if ack else fields | {"scope"}
     if (not fields.issubset(payload) or not set(payload).issubset(allowed)
             or (not ack and payload.get("scope", "CN") not in ("CN", "HK_US"))
-            or payload.get("contractVersion") != 3
+            or (type(payload.get("contractVersion")) is not int or payload.get("contractVersion") != 1)
             or payload.get("consumer") != CONSUMER_NAMESPACE
             or not isinstance(payload.get("requestId"), str)
             or not payload["requestId"].strip()):
@@ -42,7 +42,7 @@ def current_catalog_row(row) -> dict[str, Any]:
     encoded = json.dumps(items, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     if len(set(keys)) != len(keys) or keys != sorted(keys) or hashlib.sha256(encoded.encode("utf-8")).hexdigest() != row["checksum"]:
         raise ControlContractError("CATALOG_INVALID_STATE", "Catalog checksum 或条目身份无效", status_code=409)
-    return {"contractVersion": CONTROL_CONTRACT_V3_VERSION, "generation": generation,
+    return {"contractVersion": CONTROL_CONTRACT_VERSION, "generation": generation,
             "checksum": row["checksum"], "cursor": row["cursor"], "complete": True, "items": items}
 
 
@@ -63,7 +63,7 @@ def catalog_delta(self, cursor: str) -> dict[str, Any]:
         current_catalog_row(latest)
         if cursor == latest["cursor"]:
             return {
-                "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+                "contractVersion": CONTROL_CONTRACT_VERSION,
                 "generation": int(latest["generation"]),
                 "checksum": latest["checksum"],
                 "cursor": latest["cursor"],
@@ -105,7 +105,7 @@ def catalog_delta(self, cursor: str) -> dict[str, Any]:
             for key in sorted(set(previous_items) - set(latest_items))
         ]
         return {
-            "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+            "contractVersion": CONTROL_CONTRACT_VERSION,
             "generation": int(latest["generation"]),
             "checksum": latest["checksum"],
             "cursor": latest["cursor"],
@@ -135,5 +135,5 @@ def catalog_ack(self, payload: dict[str, Any]) -> dict[str, Any]:
         except Exception:
             connection.rollback()
             raise
-    return {"contractVersion": 3, "consumer": CONSUMER_NAMESPACE, "requestId": payload["requestId"],
+    return {"contractVersion": 1, "consumer": CONSUMER_NAMESPACE, "requestId": payload["requestId"],
             "acknowledged": True, "generation": snapshot["generation"], "checksum": snapshot["checksum"], "cursor": snapshot["cursor"]}

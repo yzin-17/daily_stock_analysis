@@ -1,5 +1,7 @@
 # ThesisLedger 日级停复牌来源
 
+现行日级交易状态、风险警示、日级价格规则、上市与摘牌日期及上市阶段经 `POST /api/v1/thesis-ledger/market/status-capabilities` 读取。请求使用 Data Token，以 `contractVersion=1`、`capabilityVersion=1` 和精确能力标识选择当前已准入来源。旧聚合状态材料继续作为历史冻结证据。 [具名 V1 切换规格](../../../thesis-ledger/docs/specs/2026-11-24-named-v1-cutover.md)
+
 ## 独立风险警示与价格限制扩展
 
 新增精确来源 `official-states / cn-stock-risk-price-limits`，读取独立生产包 `data_provider/trading_status/000995-2023-08-risk-limits.json`。窗口仍为 000995.SZ、2023-08-16～21；实际重读同一2023-029原件的三页，SHA-256为 `d98685515a9022db66f689cfbe782991575f3de03b0fc7d70c340170ba9b73a2`，实际核验时钟 `2026-10-07T06:18:28.685988+00:00`，原件153115字节。08-18开市起撤销退市风险警示，日涨跌幅5%改10%；其他风险警示按公告明确范围记录，16日的该维度保留unknown。
@@ -14,7 +16,7 @@
 
 生产包位于 `data_provider/trading_status/000995-2023-08-suspension.json`，读取器为 `src.services.thesis_ledger_trading_status.OfficialTradingStatusProvider.read(request)`。身份采用现有 V3 data route，能力 `HISTORICAL_TRADING_STATUS`，Provider `official-states`，精确来源 `cn-stock-daily-suspension`。已注册正式网关和控制目录，主仓P5.4于2026-10-07完成000995、08-16～21的真实腾讯价格／独立状态冻结、执行、离线重放及Web验收；配置与实际边界以主仓活跃Spec／Task为准。
 
-正式入口为 `POST /api/v3/thesis-ledger/market/trading-status`，要求现有 Data Token；Control Token 不能替代它。来源是内置本地输入，无供应商凭据或人工准入前置。精确目录按实际包是否存在报告 ready；调用只读取当前生效策略中明确选中的 target，Provider 不自行切源。配置在读取中变更时拒绝晚到旧结果。
+切换前的聚合入口为 `POST /api/v3/thesis-ledger/market/trading-status`，使用 Data Token。来源为内置本地输入。原精确目录按实际包是否存在报告 ready，调用只读取当时生效策略明确选中的目标。配置在读取中发生变更时拒绝晚到旧结果。
 
 本地收费和状态来源复用 `src/services/thesis_ledger_local_rules.py` 的精确来源匹配、就绪与错误适配；路由策略、调用预算和修订约束仍由原 runtime 拥有。读取模块通过调用方传入错误类型，不反向依赖 runtime。HTTP 共用 `api/thesis_ledger_local_rules.py` 的原认证/错误边界，公共收费原工厂入口保留兼容。
 

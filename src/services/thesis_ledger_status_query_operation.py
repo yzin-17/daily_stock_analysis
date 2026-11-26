@@ -6,13 +6,15 @@ from .thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from .thesis_ledger_status_capabilities_v1 import NAMES, REQUESTS
 from .thesis_ledger_feature_policy import feature_provider_epoch
 from .thesis_ledger_status_acquisition import status_acquisition_cache
+from .thesis_ledger_historical_execution import CAPABILITY as EXECUTION_CAPABILITY, ExecutionRequest
 
 
 def status_query_operation(request, error_type, runtime=None):
-    if request.capability not in NAMES:
+    if request.capability not in (*NAMES, EXECUTION_CAPABILITY):
         return None
     try:
-        query = REQUESTS.validate_python(request.parameters or {})
+        query = (ExecutionRequest.model_validate(request.parameters or {})
+                 if request.capability == EXECUTION_CAPABILITY else REQUESTS.validate_python(request.parameters or {}))
         window = getattr(query, "range", None)
         if (query.routeKey.capability != request.capability or query.symbol != request.symbol or
                 query.requestId != request.request_id or query.routeKey.assetType != request.instrument_type or

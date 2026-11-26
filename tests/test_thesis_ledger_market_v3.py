@@ -1,4 +1,4 @@
-"""ThesisLedger Data Contract V3 的严格路由和 BarSeries 边界。"""
+"""dsa-data-v1 的严格路由和 BarSeries 边界。"""
 
 from __future__ import annotations
 
@@ -29,8 +29,8 @@ ROUTE_KEY = {
     "adjustment": "qfq",
 }
 REQUEST = {
-    "contractVersion": 3,
-    "requestId": "data-v3-test-1",
+    "contractVersion": 1,
+    "requestId": "data-v1-test-1",
     "symbol": "159516.SZ",
     "routeKey": ROUTE_KEY,
     "start": "2026-05-16",
@@ -38,14 +38,15 @@ REQUEST = {
 }
 
 
-def test_old_market_v2_routes_are_absent_and_indicator_uses_v3():
+def test_retired_market_routes_are_absent_and_indicator_uses_v1():
     app = create_app()
     client = TestClient(app)
-    assert client.get("/api/v2/thesis-ledger/market/bars").status_code == 404
-    assert client.get("/api/v1/thesis-ledger/market/bars").status_code == 404
+    for retired_version in (2, 3):
+        assert client.post(f"/api/v{retired_version}/thesis-ledger/market/bars").status_code == 404
+        assert client.post(f"/api/v{retired_version}/thesis-ledger/market/indicators/calculate").status_code == 404
+    assert client.get("/api/v1/thesis-ledger/market/bars").status_code == 405
     assert client.get("/api/v1/thesis-ledger/market/indicators/MA").status_code == 404
-    assert client.post("/api/v2/thesis-ledger/market/indicators/calculate").status_code in {404, 405}
-    assert client.post("/api/v3/thesis-ledger/market/indicators/calculate").status_code not in {404, 405}
+    assert client.post("/api/v1/thesis-ledger/market/indicators/calculate").status_code not in {404, 405}
 
 
 def _target_session_dates() -> tuple[str, ...]:
@@ -110,29 +111,31 @@ def _execution(frame: pd.DataFrame | None = None, **overrides):
 
 def _client() -> TestClient:
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     add_error_handlers(app)
     return TestClient(app)
 
 
-def test_v3_capabilities_use_independent_data_versions():
-    response = _client().get("/api/v3/thesis-ledger/capabilities")
+def test_capabilities_identify_the_named_data_and_observation_contracts():
+    response = _client().get("/api/v1/thesis-ledger/capabilities")
 
     assert response.status_code == 200
-    assert response.json() == {"dataContractVersions": [3],
+    assert response.json() == {"dataContract": "dsa-data-v1",
                                "serviceCapabilities": {"fundNav": True},
-                               "multiWindowProtocols": ["market-multi-window-content-v1"]}
+                               "multiWindowProtocols": ["market-multi-window-content-v1"],
+                               "dailyObservationContract": "market-daily-tradability-window-v1"}
 
 
-def test_v3_routes_are_mounted_on_the_dsa_app(tmp_path):
+def test_v1_routes_are_mounted_on_the_dsa_app():
     app = create_app()
 
-    response = TestClient(app).get("/api/v3/thesis-ledger/capabilities")
+    response = TestClient(app).get("/api/v1/thesis-ledger/capabilities")
 
     assert response.status_code == 200
-    assert response.json() == {"dataContractVersions": [3],
+    assert response.json() == {"dataContract": "dsa-data-v1",
                                "serviceCapabilities": {"fundNav": True},
-                               "multiWindowProtocols": ["market-multi-window-content-v1"]}
+                               "multiWindowProtocols": ["market-multi-window-content-v1"],
+                               "dailyObservationContract": "market-daily-tradability-window-v1"}
 
 
 def test_v3_bars_reject_extra_request_fields_and_unsupported_versions(monkeypatch):
@@ -141,19 +144,19 @@ def test_v3_bars_reject_extra_request_fields_and_unsupported_versions(monkeypatc
     headers = {"Authorization": "Bearer data-token"}
 
     extra = client.post(
-        "/api/v3/thesis-ledger/market/bars",
+        "/api/v1/thesis-ledger/market/bars",
         headers=headers,
         json={**REQUEST, "limit": 90},
     )
     unsupported = client.post(
-        "/api/v3/thesis-ledger/market/bars",
+        "/api/v1/thesis-ledger/market/bars",
         headers=headers,
-        json={**REQUEST, "contractVersion": 2},
+        json={**REQUEST, "contractVersion": 3},
     )
 
     assert extra.status_code == 422
     assert extra.json() == {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "requestId": REQUEST["requestId"],
         "error": {"code": "invalid_response", "message": "行情上游响应格式无效"},
     }
@@ -185,7 +188,7 @@ def test_v3_bars_return_only_complete_covered_source_facts(monkeypatch):
     client = _client()
     headers = {"Authorization": "Bearer data-token"}
     responses = [
-        client.post("/api/v3/thesis-ledger/market/bars", headers=headers, json=REQUEST)
+        client.post("/api/v1/thesis-ledger/market/bars", headers=headers, json=REQUEST)
         for _ in range(3)
     ]
 
@@ -276,7 +279,7 @@ def test_v3_bars_fail_closed_when_session_coverage_is_incomplete(monkeypatch):
     client = _client()
     headers = {"Authorization": "Bearer data-token"}
 
-    insufficient = client.post("/api/v3/thesis-ledger/market/bars", headers=headers, json=REQUEST)
+    insufficient = client.post("/api/v1/thesis-ledger/market/bars", headers=headers, json=REQUEST)
 
     assert insufficient.status_code == 422
     assert insufficient.json()["error"]["code"] == "insufficient_coverage"
@@ -322,7 +325,7 @@ def test_v3_bars_refuse_missing_listing_or_calendar_facts_before_provider_call(m
     ]
 
     responses = [
-        client.post("/api/v3/thesis-ledger/market/bars", headers=headers, json=value)
+        client.post("/api/v1/thesis-ledger/market/bars", headers=headers, json=value)
         for value in invalid_requests
     ]
 
@@ -350,7 +353,7 @@ def test_v3_bars_reject_unknown_calendar_state_before_provider_call(monkeypatch)
 
     monkeypatch.setattr(provider_runtime, "get_thesis_ledger_runtime", lambda: _Runtime())
     response = _client().post(
-        "/api/v3/thesis-ledger/market/bars",
+        "/api/v1/thesis-ledger/market/bars",
         headers={"Authorization": "Bearer data-token"},
         json=REQUEST,
     )
@@ -383,9 +386,9 @@ def test_v3_bars_reject_duplicate_sessions_and_unknown_pagination_state(monkeypa
     )
     headers = {"Authorization": "Bearer data-token"}
 
-    duplicate = _client().post("/api/v3/thesis-ledger/market/bars", headers=headers, json=REQUEST)
+    duplicate = _client().post("/api/v1/thesis-ledger/market/bars", headers=headers, json=REQUEST)
     unknown_pagination = _client().post(
-        "/api/v3/thesis-ledger/market/bars",
+        "/api/v1/thesis-ledger/market/bars",
         headers=headers,
         json=REQUEST,
     )
@@ -436,7 +439,7 @@ def test_v3_wire_uses_runtime_pagination_evidence_for_the_exact_window(monkeypat
         recorded_by="pytest-fixture",
     )
     policy = {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": "coverage-proof-runtime-test",
         "enabled": True,
@@ -460,7 +463,7 @@ def test_v3_wire_uses_runtime_pagination_evidence_for_the_exact_window(monkeypat
     monkeypatch.setattr(provider_runtime, "get_thesis_ledger_runtime", lambda: runtime)
 
     response = _client().post(
-        "/api/v3/thesis-ledger/market/bars",
+        "/api/v1/thesis-ledger/market/bars",
         headers={"Authorization": "Bearer data-token"},
         json=REQUEST,
     )
@@ -512,14 +515,14 @@ def test_v3_bars_reject_unknown_price_basis_with_a_stable_error(monkeypatch):
     )
 
     response = _client().post(
-        "/api/v3/thesis-ledger/market/bars",
+        "/api/v1/thesis-ledger/market/bars",
         headers={"Authorization": "Bearer data-token"},
         json={**REQUEST, "routeKey": {**ROUTE_KEY, "adjustment": "hfq"}},
     )
 
     assert response.status_code == 422
     assert response.json() == {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "requestId": REQUEST["requestId"],
         "error": {"code": "unsupported_price_basis", "message": "来源不支持请求的价格口径"},
     }
@@ -589,7 +592,7 @@ def test_runtime_uses_exact_v3_policy_target_and_preserves_backup_index():
         **ROUTE_KEY,
     }
     v3_policy = {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "enabled": True,
         "revision": 12,
         "sourceDesiredRevision": 12,
@@ -691,7 +694,7 @@ def test_runtime_uses_exact_v3_policy_target_and_preserves_backup_index():
 )
 def test_basic_runtime_ignores_manual_scope_and_admission_state(admission, expected_code):
     policy = {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "enabled": True,
         "revision": 12,
         "routes": [
@@ -731,7 +734,7 @@ def test_basic_runtime_ignores_manual_scope_and_admission_state(admission, expec
 
 def test_runtime_rejects_unproven_v3_adjustment_without_calling_provider():
     policy = {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "enabled": True,
         "revision": 12,
         "routes": [
@@ -775,7 +778,7 @@ def test_runtime_rejects_unproven_v3_adjustment_without_calling_provider():
 def test_runtime_rejects_effective_policy_that_marks_unadapted_route_ready():
     unsupported_route_key = {**ROUTE_KEY, "adjustment": "qfq"}
     policy = {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "enabled": True,
         "revision": 12,
         "sourceDesiredRevision": 12,

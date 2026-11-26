@@ -37,7 +37,8 @@ def factory(context):
 
 def catalog_readiness(context):
     from src.services.thesis_ledger_trading_status import trading_status_route_matches, trading_status_source_ready
-    if trading_status_route_matches(context.key, context.target):
+    if any(item.key.route_key() == dict(context.key) and item.upstream_source == context.target['upstreamSource']
+           for item in BINDINGS) or trading_status_route_matches(context.key, context.target):
         return trading_status_source_ready(context.target)
     return None
 
@@ -53,7 +54,7 @@ def exact_probe(context):
     pack = json.loads(before)
     symbol = pack.get('symbol', '600519.SH')
     start, end = pack['coverage']['start'], pack['coverage']['end']
-    request = {'contractVersion': 3, 'consumer': 'thesis-ledger',
+    request = {'contractVersion': 1, 'consumer': 'thesis-ledger',
         'requestId': 'source-check', 'symbol': symbol, 'range': {'start': start, 'end': end},
         'routeKey': dict(context.key), 'routeTarget': {**context.target, 'routeIndex': 0}}
     adapter = OfficialTradingStatusProvider(path)
@@ -82,7 +83,7 @@ def read_probe_binding(binding, request, policy_revision, adapter):
 
 def legacy_request(query):
     # 仅适配来源读取 DTO；控制与执行始终使用请求中的独立能力 key。
-    return {"contractVersion": 3, "consumer": query.consumer, "requestId": query.requestId, "symbol": query.symbol,
+    return {"contractVersion": 1, "consumer": query.consumer, "requestId": query.requestId, "symbol": query.symbol,
             "routeKey": {**query.routeKey.model_dump(), "capability": "HISTORICAL_TRADING_STATUS"},
             "routeTarget": query.routeTarget.model_dump(), "range": query.range.model_dump()}
 

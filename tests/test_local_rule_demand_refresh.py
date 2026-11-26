@@ -72,7 +72,7 @@ def setup(monkeypatch, tmp_path, request):
 
     def query(start='2026-11-12', end='2026-11-12', symbol=None):
         return FeeRequest.model_validate({
-            'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'demand-rule',
+            'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'demand-rule',
             'symbol': symbol or default_symbol, 'routeKey': key,
             'routeTarget': {'providerId': 'local-materials', 'upstreamSource': 'local-materials', 'routeIndex': 0},
             'range': {'start': start, 'end': end}
@@ -86,6 +86,23 @@ def setup(monkeypatch, tmp_path, request):
 def rows(s):
     with s['store'].connection() as db:
         return [dict(row) for row in db.execute('SELECT * FROM rule_material_coverage_v1')]
+
+
+def test_review_matches_only_the_registered_cn_primary_pack_and_all_documents():
+    from src.services import rule_monitor_registry as registry
+    from src.services.thesis_ledger_public_fees import DATA_PATH, ARCHIVE_DATA_PATH
+
+    sources = registry.sources()
+    primary = sources[registry.CN_STOCK_FEE_SOURCE]
+    archive = sources[registry.CN_STOCK_FEE_SOURCE + '-archive']
+    assert primary.digest == sha256(DATA_PATH.read_bytes()).hexdigest()
+    assert archive.digest == sha256(ARCHIVE_DATA_PATH.read_bytes()).hexdigest()
+    assert archive.refresh_baseline is None
+    assert set(primary.refresh_baseline) == {doc['url'] for doc in primary.documents}
+    assert len(primary.documents) == len(archive.documents) + 1
+    assert any(doc['url'].endswith('.docx') for doc in primary.documents)
+    assert all(len(digest) == 64 for digest in primary.refresh_baseline.values())
+    assert registry._cn_stock_fee_review('0' * 64, []) == ([], None)
 
 
 def test_complete_empty_changes_advance_coverage_and_reopen_reuses_evidence(setup, monkeypatch):
@@ -244,12 +261,12 @@ def test_actual_data_http_read_refreshes_and_keeps_original_file(setup, configur
     if not facade:
         target = {'providerId': 'official-rules', 'upstreamSource': 'cn-stock-auction-fees'}
     store.apply_policy_v3({
-        'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'demand-policy',
+        'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'demand-policy',
         'revision': 1, 'enabled': True, 'routes': [{'key': s['key'], 'targets': [target]}]
     })
     payload = s['query']().model_dump(mode='json')
     payload['routeTarget'] = {**target, 'routeIndex': 0}
-    response = client.post('/api/v3/thesis-ledger/market/public-fees', json=payload, headers=DATA_HEADERS)
+    response = client.post('/api/v1/thesis-ledger/market/public-fees', json=payload, headers=DATA_HEADERS)
     assert response.status_code == 200, response.text
     assert response.json()['range']['end'] == '2026-11-12'
     assert len(s['calls']) == 1

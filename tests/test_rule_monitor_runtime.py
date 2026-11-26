@@ -42,7 +42,7 @@ def test_persisted_queued_job_runs_once_deduplicates_documents_and_reopen_is_qui
     assert all(item["versionCount"] == 1 and item["status"] == "unchanged" for item in monitor.status()["observations"])
 
 
-def test_catalog_growth_does_not_expand_single_job_document_budget(tmp_path):
+def test_catalog_growth_checks_all_registered_documents_once(tmp_path):
     monitor, calls = setup(tmp_path)
     source = monitor.registry()[IDENTITY]
     from dataclasses import replace
@@ -51,17 +51,18 @@ def test_catalog_growth_does_not_expand_single_job_document_budget(tmp_path):
     identity = str(uuid4())
     monitor.enqueue(identity, [IDENTITY])
     assert monitor.run_pending_once()
-    assert monitor.store.job(identity)['errorCode'] == 'monitor_execution_failed'
-    assert calls == []
+    assert monitor.store.job(identity)['status'] == 'succeeded'
+    assert len(calls) == len(documents)
+    assert len(set(calls)) == len(documents)
 
 
 def test_control_auth_strict_input_cas_idempotence_and_missing_job(tmp_path, monkeypatch):
     monitor, calls = setup(tmp_path)
     monkeypatch.setenv("THESIS_LEDGER_CONTROL_TOKEN", "monitor-control")
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "monitor-data")
-    app = FastAPI(); app.state.rule_monitor = monitor; app.include_router(router, prefix="/api/v3")
+    app = FastAPI(); app.state.rule_monitor = monitor; app.include_router(router, prefix="/api/v1")
     headers = {"Authorization": "Bearer monitor-control"}
-    root = "/api/v3/thesis-ledger/control/rule-monitor"
+    root = "/api/v1/thesis-ledger/control/rule-monitor"
     with TestClient(app) as client:
         assert client.get(root).status_code == 401
         assert client.get(root + "/history").status_code == 401

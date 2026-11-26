@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta charset="UTF-8">
+    <title>中华人民共和国印花税法 </title>
+    <!-- 让360双核浏览器用webkit内核渲染页面 !!! 注意，这行最好放在前面，防止浏览器开始解析的时候采用其它内置的渲染方案  -->
+    <meta name="renderer" content="webkit">
+    <!-- 让IE浏览器用最高级内核渲染页面 还有用 Chrome 框架的页面用webkit 内核 -->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=10;IE=9; IE=8; IE=EDGE">
+    <!-- IOS6全屏 Chrome高版本全屏
+	================================================== -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <!-- Mobile Specific Metas -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+    <!-- 指定苹果设备添加到主屏的标题 -->
+    <meta name="apple-mobile-web-app-title" content="国家税务总局上海市税务局">
+    <!-- Favicons -->
+
+    <!-- IOS / Android 主屏图标 -->
+    
+    <!-- Tile icon for Win8 (144x144 + tile color) -->
+    <!-- win 8 磁贴标题 -->
+    <meta name="application-name" content="国家税务总局上海市税务局">
+    <!-- win 8 磁贴颜色 -->
+    <meta name="msapplication-TileColor" content="#ffffff">
+    <!-- win 8 磁贴图标 -->
+    <meta name="msapplication-TileImage" content="images/webappicon/apple-touch-icon-120x120.png">
+    <meta name="msapplication-tooltip" content="Tooltip">
+    <meta http-equiv="Cache-Control" content="no-siteapp">
+    <!--调试阶段禁止缓存,例如微信，QQ浏览器缓存-->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="format-detection" content="telephone=no, email=no" />
+    <meta name="SiteName" content="国家税务总局上海市税务局">
+    <meta name="SiteDomain" content="shanghai.chinatax.gov.cn">
+    <meta name="SiteIDCode" content="bm29090019">
+    <meta name="ColumnName" content="印花税">
+    <meta name="ColumnType" content="政策文件">
+    <meta name="ArticleTitle" content="中华人民共和国印花税法">
+    <meta name="PubDate" content="2021-06-16 09:14">  
+    <meta name="ContentSource" content="国家税务总局">
+
+    <!-- css资源start -->
+	<link rel="stylesheet" href="/images/obox.css">
+<link rel="stylesheet" href="/images/base.css">
+<script src="/images/jQuery.1.8.3.min.js"></script>
+<script src="/images/yahoo-dom-event.js"></script>
+<script src="/images/suggest-yui2026.js"></script>
+<script src="/images/jquery.cookie.min.js"></script>
+        <link rel="stylesheet" href="/images/details.css?i=1">
+        <style>
+canvas{
+width:140px;
+}
+        #content a {
+         margin-bottom:4px;
+         display:inline;
+        }
+		.head_show{
+			width:86%;
+		}
+		.title_head{
+			position:relative;
+		}
+		.pdfimg{width: 120px; height: 150px; position: absolute; top: 30px; right: 0; border: 1px solid #e6e6e6;}
+		.pdfxz{position: absolute; font-size: 12px; top: 165px; right: 20px; width: 80px; text-align: center; color: #2d66a5;}
+		@media (max-width: 768px){
+			.pdfimg{display:none;}
+			.pdfxz{display:none;}	
+.rich_text_editor_box .rich_text_editor .about .page{
+margin-left: 0;
+}
+	}
+        </style>
+    <!-- css资源end -->
+</head>
+
+<body>
+    <div class="o_body" id="container">
+        <div class="o_main">
+            <!-- 头部start -->
+            <!-- pc -->
+<div class="headertop o_sf-hide" id="header">
+    <div class="warp">
+        <div class="box left">
+
+
+			<script type="text/javascript">
+				var big5_host=window.location.hostname;
+				var html='';
+				var CurUrl = document.URL;
+				var s = CurUrl.indexOf("big5");
+				if (s < 0) {
+					document.write("<a href='#' title='简体' class='cur'>简体</a><i>|</i><a href='http://shanghai.chinatax.gov.cn/gate/big5/shanghai.chinatax.gov.cn/index.html' title='繁体' target='_self'>繁体</a>")
+                }else{
+					document.write("<a href='ht"+"tp://shanghai.chinatax.gov.cn/index.html' title='簡體' target='_self'>簡體</a><i>|</i><a href='#' class='cur' title='繁體'>繁體</a>")
+                }
+			</script>	
+            <i>|</i>
+            <a href="/newxbwz/userlogin.jsp">注册登录</a><i>|</i>
+            <!--<a id="accesshelp" href="javascript:void(0)" title="无障碍">无障碍</a> -->
+            <a id="cniil_wza" href="javascript:;" onclick="aria.start()" title="无障碍浏览工具">无障碍</a><i>|</i>
+            <a id="slb" href="javascript:;" title="关怀版">关怀版</a><i>|</i>
+            <a  href="/zzzb/"  title="长者专版">长者专版</a>
+
+
+        </div>
+        <div class="box right">
+			
+				<a target="_blank" href="http://www.chinatax.gov.cn/" title="国家税务总局">国家税务总局</a>
+			
+			
+				<i>|</i>
+				<a target="_blank" href="http://www.shanghai.gov.cn/" title="上海市人民政府">上海市人民政府</a>
+			
+				<i>|</i>
+				<a target="_blank" href="http://zwdt.sh.gov.cn/govPortals/organ_index.do?organ=SHGDSH" title="一网通办">一网通办</a>
+			
+        </div>
+    </div>
+</div>
+<div class="header o_sf-hide" id="headerGuideNav">
+	<a href="/" target="" title="国家税务总局上海市税务局"><img src="/images/logo.png" class="logo" /></a>
+    <!--a href="/" target="" title="国家税务总局上海市税务局"><img src="/images/logo_gray.png" class="logo" /></a-->
+    <div class="right">
+        <div class="tools">
+				<a class="js_wx_share" href="javascript:void(0)"><img src="/images/douyin.png" /><span>抖音</span></a>
+				<div class="share_QRcode_s share_QRcode_s1">
+                <div id="" style="display: block;">
+                    <div class="o_df-left" style="width:91px;">  
+                        <img src="/images/douyinCode.png" class="qrshare" />
+                    </div>
+                </div>
+            </div>
+            <a class="js_wx_share" href="javascript:void(0)"><img src="/images/weibo.png" /><span>微博</span></a>
+				<div class="share_QRcode_s share_QRcode_s2">
+                <div id="" style="display: block;">
+                    <div class="o_df-left" style="width:91px;">  
+                        <img src="/images/weiboCode.png" class="qrshare" />
+                    </div>
+                </div>
+            </div>
+            <a class="js_wx_share" href="javascript:void(0)"><img src="/images/home_icon_wx.png" /><span>微信</span></a>
+			<div class="share_QRcode_s">
+                <div id="" style="display: block;">
+                    <div class="o_df-left" style="width:91px;">  
+                        <img src="/images/code.png" class="qrshare" />
+                    </div>
+                </div>
+            </div>
+            <a href="/public/gjjs.html" class="advsearch" title="高级搜索">高级搜索</a>
+        </div>
+        <div class="search" id="search">
+            <form action="/was5/web/search" method="post" id="jiansuo" name="jiansuo" target="_blank" onsubmit="yanzheng('pc_head_search','')">
+                <input title="栏目ID" type="hidden" name="channelid" id="channelid" value="198173" />
+                <input title="关键词" type="hidden" name="searchword" id="searchword" value />
+                <input title="关键词" type="hidden" name="extrasql" id="extrasql" value />
+                <input title="关键词" type="hidden" name="word" value />
+              <!--<input title="关键词" type="hidden" name="searchscope" value="doctitle" />-->
+                 <input type="hidden" name="timescope" id="timescope" value />
+                      <input type="hidden" name="templet" id="templet" value />
+
+                 <input type="hidden" name="timescopecolumn" id="timescopecolumn" value />
+
+                <input type="submit" style="display:none;" />
+            </form>
+            <input class="o_input js_search_input" id='pc_head_search' type="text" placeholder="请输入关键字" />
+            <span class="button" onclick="yanzheng('pc_head_search','')">
+                <img src="/images/home_xsearch.png" />搜索
+            </span>
+        </div>
+        <div class="keywords">
+            <span class="field">本站热词：</span>
+			<script type="text/javascript">
+							  	                                                                var keywords="个人所得税;营商环境;增值税;出口退税;";
+							  	var oKeywords=keywords.split(";"); 
+							  	for (i=0;i<oKeywords.length ;i++ )   
+							  	{   
+                                                                document.write("<a href='/was5/web/search?channelid=198173&extrasql=%28doctitle%3D"+encodeURIComponent(oKeywords[i])+"+or+doccontent%3D"+encodeURIComponent(oKeywords[i])+"+or+CHARACTERNUMBER%3D"+encodeURIComponent(oKeywords[i])+"%29&word="+encodeURIComponent(oKeywords[i])+"&searchword="+encodeURIComponent(oKeywords[i])+"&AppServerEncoding=utf8' target='_blank' title='"+oKeywords[i]+"'>"+oKeywords[i]+"</a>");
+							    } 
+							                                                                  
+							  	</script>
+
+        </div>
+        <div class="jings">
+            <span class="font20"> 上海城市精神：</span>
+            <span class="font18">海纳百川 追求卓越 开明睿智 大气谦和</span>
+        </div>
+    </div>
+</div>
+<div class="headernav o_sf-hide" id="mainNav">
+    <div class="warp">
+        <a href="/" title="首页">首页</a>
+		<a href="/xxgk/" title="信息公开">信息公开</a>
+		<a href="/xwdt/" title="新闻动态">新闻动态</a>
+		<a href="/zcfw/" title="政策文件">政策文件</a>
+		<a href="/bsfw/" title="纳税服务">纳税服务</a>
+		<a href="/hdjl/" title="互动交流">互动交流</a>
+    </div>
+</div>
+
+<!-- mob -->
+<div class="mheader o_df-hide o_sf-show o_g">
+	<a href="/" target="" title=""><img src="/images/logo.png" alt class="logo" /></a>            <a id="cniil_wza" href="javascript:;" style="width:44px; text-align:center;font-size: 12px;position:absolute;right:0px;top: 58px;padding:2px 8px;border:1px solid #666666; color:#666666;border-radius:4px;" onclick="aria.start()" title="无障碍浏览工具">关怀版</a>
+
+   <!-- <a href="/" target="" title=""><img src="/images/logo_gray.png" alt class="logo" /></a>-->
+    <div class="msearch" style="display:flex;">
+        <form action="/was5/web/search" method="post" id="mobjiansuo" name="mobjiansuo" onsubmit="mobyanzheng('mob_head_search','')">
+                <input title="栏目ID" type="hidden" name="channelid" id="mobchannelid" value="198173" />
+                <input title="关键词" type="hidden" name="searchword" id="mobsearchword" value />
+                <input title="关键词" type="hidden" name="extrasql" id="mobextrasql" value />
+                <input title="关键词" type="hidden" name="word" value="mobword" />
+                <input title="关键词" type="hidden" name="searchscope" value="doctitle" />
+                <input type="hidden" name="timescope" id="timescope" value />
+                <input type="submit" style="display:none;" />
+            </form>
+        <div class="" style="display:inline-block;vertical-align:top;width:100%;">
+            <input type="text" id='mob_head_search' placeholder="请输入关键字" />
+        </div>
+        <div class="" style="display:inline-block;vertical-align:top;" onclick="mobyanzheng('mob_head_search','')">
+            <span class="button "><img src="/images/home_search.png" alt />搜索</span>
+        </div>
+    </div>
+    <div>
+        <div class="o_autoW">
+            <div class="mkeywords">
+                <span class="filed">本站热词：</span>
+				<script type="text/javascript">
+							 var keywords="个人所得税;营商环境;增值税;出口退税;";
+	  				  		var oKeywords=keywords.split(";"); 
+							  	for (i=0;i<oKeywords.length ;i++ )   
+							  	{   
+                                                                document.write("<a href='/was5/web/search?channelid=198173&extrasql=%28doctitle%3D"+encodeURIComponent(oKeywords[i])+"+or+doccontent%3D"+encodeURIComponent(oKeywords[i])+"+or+CHARACTERNUMBER%3D"+encodeURIComponent(oKeywords[i])+"%29&word="+encodeURIComponent(oKeywords[i])+"&searchword="+encodeURIComponent(oKeywords[i])+"&AppServerEncoding=utf8' target='_blank' title='"+oKeywords[i]+"'>"+oKeywords[i]+"</a>");
+							    } 
+							                                                               
+							  	</script>
+            </div>
+        </div>
+        <div class="o_fixW">
+            <a href="/public/gjjs.html" class="madvsearch" title="高级搜索">高级搜索</a>
+        </div>
+    </div>
+</div>
+<div class="mheadernav o_df-hide o_sf-show" style="top:0;">
+    <span class="js_menu_link"><img src="/images/home_m_nav.png" alt /> 导航</span />
+    <div class="o_menu js_menu">
+        <a href="/" title="首页">首页</a>
+		<a href="/xxgk/" title="信息公开">信息公开</a>
+		<a href="/xwdt/" title="新闻动态">新闻动态</a>
+		<a href="/zcfw/" title="政策文件">政策文件</a>
+		<a href="/bsfw/" title="纳税服务">纳税服务</a>
+		<a href="/hdjl/" title="互动交流">互动交流</a>
+    </div>
+</div>
+            <!-- 头部end -->
+            <div class="details_content">
+                <div class="wrap">
+                    <div class="crumbs" id="mainNav">
+                        <i></i>
+						<a href="../../../../">首页</a>&nbsp;&gt;&nbsp;<a href="../../../">政策文件</a>&nbsp;&gt;&nbsp;<a href="../../">政策法规库</a>&nbsp;&gt;&nbsp;<a href="../">印花税</a>
+                    </div>
+                    <div class="details_body" id="main">
+                        <div class="rich_text_editor_box">
+                            <div class="rich_text_editor">
+                                <div>
+                                <h2 class="o_sf-hide"></h2>
+                                <h1 class="js_title" id="ivs_title" >中华人民共和国印花税法</h1>
+                                 <!-- 下标题start -->
+                                <!--  <h2 class="o_sf-hide">下标题</h2> -->
+                                  <!-- 下标题end -->
+                                </div>
+                                <div class="barrier-free">
+                                    <!-- 语音播放器 -->
+                                    <div id="ivs_player"></div>
+                                </div>
+                                <div class="about o_g">
+                                    <div class="article">
+                                        <span class="time js_time">
+                                            发布时间：<span id="ivs_date">2021-06-16 09:14</span>
+                                        </span>
+                                        <span class="source">
+                                                  <script type="text/javascript">
+    function laiyuan(){
+        var ly="国家税务总局"
+        var fwdw=""
+        var wh=""
+        var source="来源 : "+"国家税务总局"
+
+
+        var shsw="来源 : 上海税务"
+        var gjswzj="来源 : 上海税务"
+        if(wh!==""){
+            shsw=""
+            gjswzj=""
+            source=""
+        }else{
+
+        }
+        if(ly==""||ly.indexOf("SRC")>-1){
+          if(ly==""&&fwdw==""){
+             document.write(shsw)
+             }
+            else if(ly.indexOf("SRC")==0&&fwdw==""){
+             document.write(shsw)
+             }	
+            else if(fwdw.indexOf("税务总局")>0){
+             document.write(gjswzj)
+             }
+            else if(fwdw.indexOf("税务局")>0){
+             document.write(shsw)
+             }
+             }else{
+            document.write(source)
+             }
+         }
+        laiyuan();
+</script>	
+                                        </span>
+                                    </div>
+                                    <div class="page">
+                                        <div class="font_size js_font_size">
+                                            字号：[ <span class="big">大</span> ] [ <span class="middle active">中</span> ] [ <span class="small">小</span> ]
+                                        </div>
+                                        <div class="print js_print o_sf-hide">打印本页</div>
+                                        
+                
+                                    </div>
+                                    <div class="share o_sf-hide" id='weibo_pos'>
+                                    </div>
+                                </div>
+                                <div class="title_head o_g">
+                                    <div class="head_show o_g">
+                                    
+                                        
+                                    </div>
+                                    
+									
+                                </div>
+                                <div class="article_content js_article_content">
+                                    <div class="article_head">
+                                         
+                                        <p>状态：全文有效</p>
+                                        
+                                         
+                                    </div>
+                                     <div>
+                                    <div class="article_body" id="content">
+                                        
+                                        <div id="ivs_content"><div class=TRS_Editor><DIV class=Custom_UnionStyle>
+<P align=center>（2021年6月10日第十三届全国人民代表大会常务委员会第二十九次会议通过） </P>
+<P>　　<STRONG>第一条</STRONG>  在中华人民共和国境内书立应税凭证、进行证券交易的单位和个人，为印花税的纳税人，应当依照本法规定缴纳印花税。<A href="https://zwdt.sh.gov.cn/govPortals/bsfw/item/7186f4f0-8801-45a9-8a39-f8cedb3fcacb" target=_blank _fcksavedurl="https://zwdt.sh.gov.cn/govPortals/bsfw/item/7186f4f0-8801-45a9-8a39-f8cedb3fcacb"><IMG style="BORDER-RIGHT-WIDTH: 0px; BORDER-TOP-WIDTH: 0px; BORDER-BOTTOM-WIDTH: 0px; BORDER-LEFT-WIDTH: 0px" title=印花税申请 alt=印花税申请 src="./W020251023578425971487.png" _fcksavedurl="/webpic/W0202510/W020251023/W020251023578425971487.png" oldsrc="W020251023578425971487.png" complete="complete" /></A> </P>
+<P>　　在中华人民共和国境外书立在境内使用的应税凭证的单位和个人，应当依照本法规定缴纳印花税。 </P>
+<P>　　<STRONG>第二条</STRONG>  本法所称应税凭证，是指本法所附《印花税税目税率表》列明的合同、产权转移书据和营业账簿。 </P>
+<P>　　<STRONG>第三条 </STRONG> 本法所称证券交易，是指转让在依法设立的证券交易所、国务院批准的其他全国性证券交易场所交易的股票和以股票为基础的存托凭证。 </P>
+<P>　　证券交易印花税对证券交易的出让方征收，不对受让方征收。 </P>
+<P>　　<STRONG>第四条</STRONG>  印花税的税目、税率，依照本法所附《印花税税目税率表》执行。 </P>
+<P>　　<STRONG>第五条</STRONG>  印花税的计税依据如下： </P>
+<P>　　（一）应税合同的计税依据，为合同所列的金额，不包括列明的增值税税款； </P>
+<P>　　（二）应税产权转移书据的计税依据，为产权转移书据所列的金额，不包括列明的增值税税款； </P>
+<P>　　（三）应税营业账簿的计税依据，为账簿记载的实收资本（股本）、资本公积合计金额； </P>
+<P>　　（四）证券交易的计税依据，为成交金额。 </P>
+<P>　　<STRONG>第六条</STRONG>  应税合同、产权转移书据未列明金额的，印花税的计税依据按照实际结算的金额确定。 </P>
+<P>　　计税依据按照前款规定仍不能确定的，按照书立合同、产权转移书据时的市场价格确定；依法应当执行政府定价或者政府指导价的，按照国家有关规定确定。 </P>
+<P>　　<STRONG>第七条</STRONG>  证券交易无转让价格的，按照办理过户登记手续时该证券前一个交易日收盘价计算确定计税依据；无收盘价的，按照证券面值计算确定计税依据。 </P>
+<P>　　<STRONG>第八条</STRONG>  印花税的应纳税额按照计税依据乘以适用税率计算。 </P>
+<P>　　<STRONG>第九条</STRONG>  同一应税凭证载有两个以上税目事项并分别列明金额的，按照各自适用的税目税率分别计算应纳税额；未分别列明金额的，从高适用税率。 </P>
+<P>　　<STRONG>第十条</STRONG>  同一应税凭证由两方以上当事人书立的，按照各自涉及的金额分别计算应纳税额。 </P>
+<P>　　<STRONG>第十一条</STRONG>  已缴纳印花税的营业账簿，以后年度记载的实收资本（股本）、资本公积合计金额比已缴纳印花税的实收资本（股本）、资本公积合计金额增加的，按照增加部分计算应纳税额。 </P>
+<P>　　<STRONG>第十二条</STRONG>  下列凭证免征印花税： </P>
+<P>　　（一）应税凭证的副本或者抄本； </P>
+<P>　　（二）依照法律规定应当予以免税的外国驻华使馆、领事馆和国际组织驻华代表机构为获得馆舍书立的应税凭证； </P>
+<P>　　（三）中国人民解放军、中国人民武装警察部队书立的应税凭证； </P>
+<P>　　（四）农民、家庭农场、农民专业合作社、农村集体经济组织、村民委员会购买农业生产资料或者销售农产品书立的买卖合同和农业保险合同； </P>
+<P>　　（五）无息或者贴息借款合同、国际金融组织向中国提供优惠贷款书立的借款合同； </P>
+<P>　　（六）财产所有权人将财产赠与政府、学校、社会福利机构、慈善组织书立的产权转移书据； </P>
+<P>　　（七）非营利性医疗卫生机构采购药品或者卫生材料书立的买卖合同； </P>
+<P>　　（八）个人与电子商务经营者订立的电子订单。 </P>
+<P>　　根据国民经济和社会发展的需要，国务院对居民住房需求保障、企业改制重组、破产、支持小型微型企业发展等情形可以规定减征或者免征印花税，报全国人民代表大会常务委员会备案。 </P>
+<P>　　<STRONG>第十三条</STRONG>  纳税人为单位的，应当向其机构所在地的主管税务机关申报缴纳印花税；纳税人为个人的，应当向应税凭证书立地或者纳税人居住地的主管税务机关申报缴纳印花税。 </P>
+<P>　　不动产产权发生转移的，纳税人应当向不动产所在地的主管税务机关申报缴纳印花税。 </P>
+<P>　　<STRONG>第十四条</STRONG>  纳税人为境外单位或者个人，在境内有代理人的，以其境内代理人为扣缴义务人；在境内没有代理人的，由纳税人自行申报缴纳印花税，具体办法由国务院税务主管部门规定。 </P>
+<P>　　证券登记结算机构为证券交易印花税的扣缴义务人，应当向其机构所在地的主管税务机关申报解缴税款以及银行结算的利息。 </P>
+<P>　　<STRONG>第十五条</STRONG>  印花税的纳税义务发生时间为纳税人书立应税凭证或者完成证券交易的当日。 </P>
+<P>　　证券交易印花税扣缴义务发生时间为证券交易完成的当日。 </P>
+<P>　　<STRONG>第十六条</STRONG>  印花税按季、按年或者按次计征。实行按季、按年计征的，纳税人应当自季度、年度终了之日起十五日内申报缴纳税款；实行按次计征的，纳税人应当自纳税义务发生之日起十五日内申报缴纳税款。 </P>
+<P>　　证券交易印花税按周解缴。证券交易印花税扣缴义务人应当自每周终了之日起五日内申报解缴税款以及银行结算的利息。 </P>
+<P>　　<STRONG>第十七条 </STRONG> 印花税可以采用粘贴印花税票或者由税务机关依法开具其他完税凭证的方式缴纳。 </P>
+<P>　　印花税票粘贴在应税凭证上的，由纳税人在每枚税票的骑缝处盖戳注销或者画销。 </P>
+<P>　　印花税票由国务院税务主管部门监制。 </P>
+<P>　　<STRONG>第十八条</STRONG>  印花税由税务机关依照本法和《中华人民共和国税收征收管理法》的规定征收管理。 </P>
+<P>　　<STRONG>第十九条</STRONG>  纳税人、扣缴义务人和税务机关及其工作人员违反本法规定的，依照《中华人民共和国税收征收管理法》和有关法律、行政法规的规定追究法律责任。 </P>
+<P>　　<STRONG>第二十条</STRONG>  本法自2022年7月1日起施行。1988年8月6日国务院发布的《<A href="/zcfw/zcfgk/yhs/200507/t289097.html" target=_blank _fcksavedurl="/zcfw/zcfgk/yhs/200507/t289097.html">中华人民共和国印花税暂行条例</A>》同时废止。 </P>
+<P>　　附： </P>
+<P>&nbsp;</P>
+<P style="TEXT-ALIGN: center; LINE-HEIGHT: 27pt" align=center><SPAN style="COLOR: #333333; FONT-SIZE: 12pt"><IMG alt src="./W020210616333303252974.jpg" width=650 height=848 _fcksavedurl="/webpic/W0202106/W020210616/W020210616333303252974.jpg" oldsrc="W020210616333303252974.jpg" v:shapes="图片_x0020_2" complete="complete" /></SPAN></P>
+<P style="TEXT-ALIGN: center; LINE-HEIGHT: 27pt" align=center><SPAN style="COLOR: #333333; FONT-SIZE: 12pt"><IMG alt src="./W020210616333303263019.jpg" width=650 height=708 _fcksavedurl="/webpic/W0202106/W020210616/W020210616333303263019.jpg" oldsrc="W020210616333303263019.jpg" v:shapes="图片_x0020_1" complete="complete" /></SPAN></P>
+<P>&nbsp;</P></DIV></div></div>
+                                        
+                                    </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="more_about_article o_g">
+                            <div class="accessory">
+                                 <script>
+                                            var fileName='';
+                                            if(fileName!=""){
+                                                document.write('<div >附件：<p></p></div>');
+                                            }
+                                            </script> 
+                            </div>
+                            <img id="imgLogo" style="display: none;" src="/images/inerweima.jpg" alt />
+                            <div class="qr_code js_qr_code o_sf-hide">
+                                <canvas id="" width="140" height="140"></canvas>
+                            </div>
+                            <script src="/images/jqueryqr.js"></script>
+                            <script src="/images/qrcode.js"></script>
+                            <script>
+                                $(document).ready(function () {
+                                    //图片logo
+									$('.js_qr_code').erweima({
+										mode: 4,
+										mSize:28,
+										size:340,
+                                                                                text: "http://shanghai.chinatax.gov.cn/zcfw/zcfgk/yhs/202106/t458595.html",
+										render: "canvas",
+										radius:0,
+                                                                                image: $("#imgLogo")[0]
+									});
+                                })
+                            </script>
+                        </div>
+                        <div class="handle_page o_sf-hide">
+                            <div class="o_g">
+                                <span class="js_back_top">【返回顶部】</span><span class="js_print">【打印本页】</span><span class="js_close_page">【关闭本页】</span>
+                            </div>
+                        </div> 
+                        <div class="xgwj">
+                               <script type="text/javascript">
+                                    var rel = '';
+                                    if(rel != null && rel.length > 0){
+                                    document.write('<div>相关文件：<p>' + rel + '</p></div>');  
+                                    }else{
+                                         $(".xgwj").hide();
+                                    }
+                                    </script>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+            <!-- your code -->
+
+            <!-- 尾部start -->
+             <div class="footer o_sf-hide" id="footer">
+    <div class="warp">
+        <div class="content o_g">
+			<span id="_ideConac"><a href="http://bszs.conac.cn/sitename?method=show&id=0AD924CA39C64686E053012819ACCCFE" target="_blank"><img id="imgConac" vspace="0" hspace="0" border="0" src="/images/imgConac1.png" data-bd-imgshare-binded="1" /></a></span>
+			<!--<span id="_span_jiucuo"><a href="javascript:jiucuo();"><img vspace="0" hspace="0" border="0" src="/images/jiucuo1.png" data-bd-imgshare-binded="1" /></a></span>-->
+            <script id="_jiucuo_" sitecode='bm29090019' src='https://zfwzgl.www.gov.cn/exposure/jiucuo.js'></script>
+			<div class="right">
+                <div class="box">
+                    <a href="/SY/wzdt/" title="网站地图" target="_blank">网站地图</a>
+                    <i>|</i>
+                    <a href="/SY/wzsm/" title="网站声明" target="_blank">网站声明</a>
+                    <i>|</i>
+                    <a href="/SY/wzgl/" title="网站管理" target="_blank">网站管理</a>
+                    <i>|</i>
+                    <a href="/SY/wzsysm/" title="联系我们" target="_blank">联系我们</a> 
+                                    </div>
+                <p>主办单位：国家税务总局上海市税务局 &nbsp;&nbsp;地址：上海市肇嘉浜路800号 &nbsp;&nbsp;电话：021-12366</p>
+                <p><span style="display:inline-block;text-decoration:none;height:20px;line-height:20px;color:#000000;vertical-align: top;">网站标识码：bm29090019</span><span style="display:inline-block;text-decoration:none;height:20px;line-height:20px;color:#000000;vertical-align: top;margin-left:10px;"><a target="_blank" href="https://beian.miit.gov.cn">沪ICP备19025643号-1</a></span><a target="_blank" href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=31010402005587" style="display:inline-block;text-decoration:none;height:20px;line-height:20px;color:#000000;vertical-align: top;margin-left:10px;">沪公网安备 31010402005587号</a>
+       </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mfooter o_df-hide o_sf-show">
+        <p>主办单位：国家税务总局上海市税务局</p>
+        <p>地址：上海市肇嘉浜路800号 电话：021-12366</p>
+        <p>网站标识码：bm29090019   <a target="_blank" href="https://beian.miit.gov.cn">沪ICP备19025643号-1</a>  <a target="_blank" href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=31010402005587" style="display:inline-block;text-decoration:none;color:#666666;vertical-align: top;">沪公网安备 31010402005587号</a></p>
+</div>
+<script>
+function  jiucuo(){
+	var url=encodeURIComponent(window.location.href);
+	window.open("http://121.43.68.40/exposure/jiucuo.html?site_code=bm29090019&url="+url+"");
+}
+</script>
+<!--script>
+        function jiucuo(){
+	        var url = location.href;
+	        url = "/newxbwz/wzfw/byjc.jsp?url=" + encodeURIComponent(url);
+	        window.open(url);
+        }
+                     </script-->
+            <!-- 尾部end -->
+        </div>
+    </div>
+    <!-- js资源start -->
+    <script src="/images/obox-min.js"></script>
+<script src="/images/base.js"></script>
+<!-- 访问量统计js -->
+<script language="JavaScript">var _trackDataType = 'web';var _trackData = _trackData || [];</script>
+<script type="text/javascript" charset="utf-8" id="kpyfx_js_id_10003703" src="//fxsjcj2.kaipuyun.cn/count/10003703/10003703.js"></script>
+<!--script type="text/javascript" src="/images/doSearch.js" ignoreapd="1"></script--->
+<!-- 工具条引用 -->
+<!-- 无障碍 -->
+
+<script src="https://jhelper.shanghai.gov.cn/publicJS/29090019.js" id="wzajs"></script>
+
+<!-- 微博运用js 
+<script src="http://tjs.sjs.sinajs.cn/open/api/js/wb.js" type="text/javascript" charset="utf-8"></script>-->
+<!-- 头部导航当前位置高亮 -->
+<script>
+        
+
+//function WALL_web(){
+//var Wshell = new ActiveXObject("WScript.Shell");
+//Wshell.SendKeys('{F11}')
+//}
+
+//$(document).ready(function (){WALL_web();});
+
+        var pasthName = window.location.pathname;
+	$(function(){
+		var result = true;
+		$(".headernav a").each(function(index,element){
+			if(index== 0){
+                                if(pasthName.indexOf('/tax/')>=0){
+                                        
+                                }else{pasthName="/tax"+pasthName;}
+				if(pasthName == '/tax/'||pasthName == '/index.html'||pasthName == '/'||pasthName ==$(this).attr("href")||pasthName.indexOf('/SY/')>=0||pasthName.indexOf('/sy/')>=0){
+					$(this).addClass('cur');
+					result = false;
+					return false;
+				}
+			}else{
+				var selfPathName = $(this).attr("href");
+				if(pasthName.indexOf('/tax/')>=0){
+					if(pasthName.indexOf(selfPathName)>=0){
+						$(this).addClass('cur');
+					}
+				}else{
+					selfPathName=selfPathName.replace(/\/tax\//gi,'/');
+					if(pasthName.indexOf(selfPathName)>=0){
+						$(this).addClass('cur');
+					}
+				}
+			}
+		});
+		$(".crumbs a:last-child").css("color","#999999");
+                $(".fenju_right ul .parent").each(function(index,element){
+                        var jumpUrl=$(this).children('a').attr('href');
+                        var jumpUrlIndex = jumpUrl.lastIndexOf("\/");
+                        var datapath = jumpUrl.substring(jumpUrlIndex+1,jumpUrl.length);
+                        if(pasthName.indexOf(datapath)>=0){
+                                $(this).addClass('cur').siblings().removeClass('cur');
+                                return false;
+                        }
+                })
+	});
+        $('.headertop .box.right a').click(function(){
+			 var ym0=$(this).attr('href').replace(/^\s+|\s+$/g,"");
+			 var ym1=ym0.substring(0,25);
+			 var ym2=ym0.substring(0,26);
+			 if(ym1=="http://shanghai.chinatax.gov.cn/"||ym2=="https://shanghai.chinatax.gov.cn/"||ym1.substring(0,1)=="/"||ym2.substring(0,1)=="/"){
+			 return ;
+			 }else{
+			 return confirm('您访问的链接即将离开"国家税务总局上海市税务局"门户网站，是否继续？');
+			 }
+			});
+
+</script>
+<script src="/images/ywlogin.js"></script>
+    <!-- 分享 -->
+<script src="/images/share.js" charset='utf-8'></script>
+    <script src="/images/detail.js?i=2"></script>
+    <!-- js资源end -->
+</body>
+
+</html>

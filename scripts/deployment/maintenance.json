@@ -1,5 +1,8 @@
 {
   "commands": [
+    { "path": "scripts/local-runtime/load-historical-execution-range.mjs", "idle": true },
+    { "path": "scripts/local-runtime/load-sse-event-coverage.mjs", "idle": true },
+    { "path": "scripts/local-runtime/load-historical-execution.mjs" },
     { "path": "scripts/deployment/prune-bytecode.mjs", "idle": true }
   ]
 }

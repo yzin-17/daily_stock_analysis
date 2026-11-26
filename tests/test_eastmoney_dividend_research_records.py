@@ -101,7 +101,7 @@ def test_control_registry_supports_credentialless_eastmoney_without_window_admis
     monkeypatch.setattr(controls, "provider_dependency_ready", lambda *_: True)
     req = request()
     target = req["routeTarget"]
-    policy = {"contractVersion": 3, "revision": req["effectivePolicyRevision"],
+    policy = {"contractVersion": 1, "revision": req["effectivePolicyRevision"],
               "sourceDesiredRevision": req["desiredRevision"], "enabled": True,
               "routes": [{"key": req["routeKey"], "targets": [{**target, "eligible": False, "reason": "not_admitted"}]}]}
     catalog = {"integrity": "complete", "catalogRevision": req["catalogRevision"],

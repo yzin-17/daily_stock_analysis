@@ -35,7 +35,7 @@ def state(monkeypatch, tmp_path):
     content, _ = evidence()
     MappingEvidenceStore(tmp_path / "thesis-ledger-mapping-evidence").put(content)
     store.apply_policy_v3({
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "synthetic-hithink-policy",
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "synthetic-hithink-policy",
         "revision": 1, "enabled": True,
         "routes": [{"key": HITHINK_DIVIDEND_KEY, "targets": [HITHINK_DIVIDEND_TARGET]}],
     })
@@ -61,7 +61,7 @@ def state(monkeypatch, tmp_path):
 
     def request():
         return {
-            "contractVersion": 3, "requestId": "synthetic-hithink-dividend", "symbol": SYMBOL,
+            "contractVersion": 1, "requestId": "synthetic-hithink-dividend", "symbol": SYMBOL,
             "routeKey": HITHINK_DIVIDEND_KEY,
             "routeTarget": {**HITHINK_DIVIDEND_TARGET, "routeIndex": 0},
             "desiredRevision": 1, "effectivePolicyRevision": 1,
@@ -112,7 +112,7 @@ def test_exact_inventory_stays_denied_until_admission_then_executes_own_reader(s
     assert catalog_state(state) == "ready"
     assert target(state)["eligible"] is True
     reapplied = state["store"].apply_policy_v3({
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "synthetic-reapply",
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "synthetic-reapply",
         "revision": 1, "enabled": True,
         "routes": [{"key": HITHINK_DIVIDEND_KEY, "targets": [HITHINK_DIVIDEND_TARGET]}],
     })
@@ -179,14 +179,14 @@ def test_authenticated_http_uses_exact_hithink_reader_and_denies_missing_token(s
                             symbol, **options, fetch=state["fetch"],
                         ))
     app = FastAPI()
-    app.include_router(router, prefix="/api/v3")
+    app.include_router(router, prefix="/api/v1")
     client = TestClient(app)
     request = state["request"]()
-    denied = client.post("/api/v3/thesis-ledger/market/events", json=request)
+    denied = client.post("/api/v1/thesis-ledger/market/events", json=request)
     assert denied.status_code in (401, 403)
     state["fetch"].assert_not_called()
     response = client.post(
-        "/api/v3/thesis-ledger/market/events", json=request,
+        "/api/v1/thesis-ledger/market/events", json=request,
         headers={"Authorization": "Bearer synthetic-dsa-token"},
     )
     assert response.status_code == 200

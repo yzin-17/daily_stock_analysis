@@ -41,7 +41,7 @@ def rebase(database: Path, backup: Path, confirmation: str) -> int:
         routes = json.loads(row[1])
         effective = json.loads(row[2])
         if (not isinstance(routes, dict) or not isinstance(effective, dict)
-                or effective.get("contractVersion") == 3):
+                or effective.get("contractVersion") == 1):
             raise ValueError("stored policy is not the expected legacy format")
 
         backup.parent.mkdir(mode=0o700, parents=True, exist_ok=True)

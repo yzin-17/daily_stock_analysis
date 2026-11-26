@@ -22,7 +22,7 @@ def _target(provider_id: str = "akshare", upstream_source: str = "eastmoney"):
 
 def _policy(routes):
     return {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "consumer": CONSUMER_NAMESPACE,
         "requestId": "admission-v3-test",
         "revision": 1,

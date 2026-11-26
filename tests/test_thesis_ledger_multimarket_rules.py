@@ -19,7 +19,7 @@ NOW = datetime(2026, 10, 8, tzinfo=timezone.utc)
 def test_bar_wire_request_and_current_calendar_research_are_consistent(market, symbol, start, end):
     from api.thesis_ledger import _market_data_v3_request
     from src.services.thesis_ledger_research_calendar import research_market_coverage_context
-    req = {"contractVersion": 3, "requestId": "p6-bar-wire", "symbol": symbol, "start": start, "end": end,
+    req = {"contractVersion": 1, "requestId": "p6-bar-wire", "symbol": symbol, "start": start, "end": end,
         "tradabilityMode": "assume-untradable-no-bar",
         "routeKey": {"kind": "bar", "market": market, "assetType": "STOCK", "capability": "DAILY_BAR", "timeframe": "1d", "adjustment": "qfq"},
         "routeTarget": {"providerId": "yfinance", "upstreamSource": "yfinance", "routeIndex": 0}}
@@ -33,7 +33,7 @@ def test_bar_wire_request_and_current_calendar_research_are_consistent(market, s
 def request(market, capability):
     identity = next(key for key in SOURCES if key[:2] == (market, capability))
     pack = json.loads((BASE / SOURCES[identity]).read_text())
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "p6-contract-test",
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "p6-contract-test",
         "routeKey": {"kind": "data", "market": market, "assetType": "STOCK", "capability": capability},
         "routeTarget": {"providerId": identity[2], "upstreamSource": identity[3], "routeIndex": 0},
         "symbol": pack["symbol"], "range": pack["coverage"]}

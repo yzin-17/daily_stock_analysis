@@ -65,7 +65,7 @@ def test_invalid_input_never_connects(symbol, asset):
 
 def runtime_for(store, *, fail=False):
     key = {"kind": "data", "market": "HK", "assetType": "STOCK", "capability": "SECURITY_STATIC_INFO"}
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "static",
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "static",
                           "revision": 1, "enabled": True, "routes": [{"key": key, "targets": [
                               {"providerId": "futu", "upstreamSource": "futu"}]}]})
     sdk, _ = static_sdk()
@@ -112,7 +112,7 @@ def test_http_authorization_validation_and_response(setup):
     runtime, read = runtime_for(setup)
     app = FastAPI()
     app.include_router(build_static_info_router(lambda: runtime))
-    body = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "static-http",
+    body = {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "static-http",
             "symbol": "00700.HK", "assetType": "STOCK"}
     headers = {"authorization": "Bearer synthetic-lot-token"}
     with TestClient(app) as client:

@@ -18,7 +18,7 @@ from .thesis_ledger_provider_errors import classify_provider_failure
 
 class HistoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    contractVersion: Literal[3]
+    contractVersion: Literal[1]
     consumer: Literal["thesis-ledger"]
     requestId: str
     market: Literal["CN"]
@@ -155,7 +155,7 @@ def read_catalog(runtime, request):
         raise ProviderCallError("not_admitted", "历史目录读取期间来源配置已变化")
     observed = datetime.now(timezone.utc).isoformat()
     ref = archive(runtime, {"kind": "catalog", "observedAt": observed, "providerVersion": epoch["tushare"][0], "datasets": datasets})
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": request.requestId,
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": request.requestId,
             "kind": "reconstructed-catalog", "market": "CN", "date": day,
             "observedAt": observed, "providerId": "tushare", "archiveRef": ref,
             "providerVersion": epoch["tushare"][0], "responseSha256": digest(datasets),
@@ -180,7 +180,12 @@ def read_minutes(runtime, request):
         "fieldUnits": frame.attrs["intradayFieldUnits"]})
     if value.timestampConvention == "source-native":
         raise ProviderCallError("insufficient_coverage", "来源未声明分钟时间约定")
-    ref = archive(runtime, {"kind": "minutes", "providerId": execution.provider, "policyRevision": execution.effective_revision, "value": value.model_dump()})
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": request.requestId, "archiveRef": ref,
+    public_value = value.model_dump(exclude={"pagination"})
+    record = {"kind": "minutes", "providerId": execution.provider,
+              "policyRevision": execution.effective_revision, "value": public_value}
+    if "pagination" in frame.attrs:
+        record["pagination"] = frame.attrs["pagination"]
+    ref = archive(runtime, record)
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": request.requestId, "archiveRef": ref,
             "kind": "reconstructed-minutes", "date": day, "providerId": execution.provider,
-            "policyRevision": execution.effective_revision, "value": value.model_dump()}
+            "policyRevision": execution.effective_revision, "value": public_value}

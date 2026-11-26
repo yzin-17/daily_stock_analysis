@@ -9,7 +9,7 @@ from src.services.thesis_ledger_provider_runtime import (
 
 
 def policy():
-    return {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'implicit-boundary',
+    return {'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'implicit-boundary',
             'revision': 1, 'enabled': True, 'routes': [{'key': {
                 'kind': 'bar', 'market': 'CN', 'assetType': 'ETF', 'capability': 'DAILY_BAR',
                 'timeframe': '1d', 'adjustment': 'none'},

@@ -138,6 +138,8 @@ def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
         "local-materials",
         "official-rules", "official-states", "official-dividends", "local-materials",
         "official-hk-rules", "official-us-rules",
+        "historical-execution-archive",
+        "official-event-archive",
         "akshare",
         "efinance",
         "tencent",
@@ -156,8 +158,18 @@ def test_provider_registry_exposes_fetchers_and_gated_sources(tmp_path):
     }
     assert all("routeEligible" not in manifest for manifest in registry.values())
     news = {"tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng", "cls", "wallstreetcn"}
-    assert set(_PROVIDER_ADAPTER_IMPORTS) == set(registry) - {"hithink", "rqdata", "local-materials"} - news
+    assert set(_PROVIDER_ADAPTER_IMPORTS) == set(registry) - {"hithink", "rqdata", "local-materials", "historical-execution-archive", "official-event-archive"} - news
     assert all(registry[provider]["enabled"] is False for provider in news)
+    execution_archive = registry["historical-execution-archive"]
+    assert execution_archive["enabled"] is False
+    assert execution_archive["markets"] == ["CN"]
+    assert execution_archive["capabilities"] == {"HISTORICAL_EXECUTION_CONTEXT": ["ETF", "STOCK"]}
+    assert execution_archive["upstreamSources"][0]["sourceId"] == "qualified-cn-execution"
+    event_archive = registry["official-event-archive"]
+    assert event_archive["enabled"] is False
+    assert event_archive["markets"] == ["CN"]
+    assert event_archive["capabilities"] == {"CASH_DISTRIBUTION": ["ETF"], "SPLIT_EVENT": ["ETF"]}
+    assert event_archive["upstreamSources"][0]["sourceId"] == "sse-disclosure-history"
     from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
     assert CAPABILITY_SOURCES.source("tickflow-free") is None
     assert registry["tickflow"]["accountAccessSupported"] is True
@@ -352,7 +364,7 @@ def test_chip_summary_skips_disabled_provider(tmp_path):
     store.save_provider_config("akshare", {"enabled": False, "settings": {}})
     store.apply_policy_v3(
         {
-            "contractVersion": 3,
+            "contractVersion": 1,
             "consumer": "thesis-ledger",
             "requestId": "chip-state-test",
             "revision": 1,
@@ -402,7 +414,7 @@ def test_chip_summary_still_calls_provider_after_open_circuit(tmp_path):
     )
     store.apply_policy_v3(
         {
-            "contractVersion": 3,
+            "contractVersion": 1,
             "consumer": "thesis-ledger",
             "requestId": "chip-state-test",
             "revision": 1,
@@ -811,7 +823,7 @@ def test_control_projection_catalog_ack_and_tombstone_survive_store_reopen(tmp_p
     )
     store.apply_policy_v3(
         {
-            "contractVersion": 3,
+            "contractVersion": 1,
             "consumer": "thesis-ledger",
             "requestId": "persistence-test",
             "revision": 1,
@@ -824,7 +836,7 @@ def test_control_projection_catalog_ack_and_tombstone_survive_store_reopen(tmp_p
         }
     )
     snapshot = store.catalog_snapshot()
-    assert store.catalog_ack({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "catalog-reopen", "generation": snapshot["generation"], "checksum": snapshot["checksum"]})[
+    assert store.catalog_ack({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "catalog-reopen", "generation": snapshot["generation"], "checksum": snapshot["checksum"]})[
         "acknowledged"
     ] is True
     store.remove_provider("akshare", {"requestId": "persistence-remove", "reason": "test"})

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 
 def post_case(method, path, body, *, status=200):
-    return {"client": method, "method": "POST", "path": "/api/v3/thesis-ledger" + path,
+    return {"client": method, "method": "POST", "path": "/api/v1/thesis-ledger" + path,
             "body": body, "status": status}
 
 
@@ -31,14 +31,14 @@ def configure(name):
         calendar = {"market": "CN", "start": "2026-09-01", "end": "2026-09-04",
                     "dataAsOf": "2026-10-16T12:00:00Z"}
         for method, path in [("marketCalendar", "/market/calendar"), ("backtestCalendar", "/backtest/calendar")]:
-            cases.append({"client": method, "method": "GET", "path": "/api/v3/thesis-ledger" + path,
+            cases.append({"client": method, "method": "GET", "path": "/api/v1/thesis-ledger" + path,
                           "query": calendar, "status": 200})
-        cases.append({"client": "fxRates", "method": "GET", "path": "/api/v3/thesis-ledger/market/fx-rates",
+        cases.append({"client": "fxRates", "method": "GET", "path": "/api/v1/thesis-ledger/market/fx-rates",
                       "query": {"baseCurrency": "CNY", "currencies": "USD,CNY", "asOf": "2026-10-16"},
                       "status": 200})
         for count in (30, 2):
             points = _points(count)
-            body = {"contractVersion": 3, "identity": IDENTITY, "points": points,
+            body = {"contractVersion": 1, "identity": IDENTITY, "points": points,
                     "inputFingerprint": _bar_series_fingerprint(points, IDENTITY),
                     "requests": [{"name": "MA", "parameters": {"period": 5}},
                                  {"name": "RSI", "parameters": {"short": 3, "mid": 5, "long": 8}}]}
@@ -49,7 +49,7 @@ def configure(name):
         from tests.test_thesis_ledger_market_v3 import REQUEST, ROUTE_KEY, _RuntimeStore, _frame, _target_session_dates
         from src.services.thesis_ledger_provider_runtime import ThesisLedgerProviderRuntime
 
-        policy = {"contractVersion": 3, "revision": 12, "enabled": True, "routes": [{"key": ROUTE_KEY,
+        policy = {"contractVersion": 1, "revision": 12, "enabled": True, "routes": [{"key": ROUTE_KEY,
                   "targets": [{"providerId": "tencent", "upstreamSource": "tencent", "routeIndex": 0,
                                "eligible": True, "reason": None}]}]}
 
@@ -107,7 +107,7 @@ def configure(name):
 
         store = ThesisLedgerControlStore(os.environ["DATABASE_PATH"])
         body = request()
-        store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "dg1-rules",
+        store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "dg1-rules",
                                "revision": 1, "enabled": True, "routes": [
                                    {"key": body["routeKey"], "targets": [{
                                        field: body["routeTarget"][field]
@@ -130,7 +130,7 @@ def configure(name):
                 "appKey": "controlled-key", "appSecret": "controlled-secret", "accessToken": "controlled-token"}},
         })
         key = {"kind": "data", "market": "HK", "assetType": "STOCK", "capability": "SECURITY_LOT_SIZE"}
-        store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "dg1-lot",
+        store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "dg1-lot",
                                "revision": 1, "enabled": True, "routes": [{"key": key, "targets": [
                                    {"providerId": "longbridge", "upstreamSource": "longbridge"}]}]})
         patches.setattr(LongbridgeFetcher, "_get_static_info", lambda *args: SimpleNamespace(
@@ -138,7 +138,7 @@ def configure(name):
         ))
         runtime = ThesisLedgerProviderRuntime(store)
         patches.setattr(runtime_module, "get_thesis_ledger_runtime", lambda: runtime)
-        body = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "dg1-lot", "symbol": "00700.HK"}
+        body = {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "dg1-lot", "symbol": "00700.HK"}
         cases.append(post_case("securityLotSize", "/market/security-lot-size", body))
         cases.append(post_case("securityLotSize", "/market/security-lot-size", {**body, "start": "2026-01-01"},
                                status=422))

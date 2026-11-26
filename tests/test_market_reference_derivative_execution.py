@@ -37,9 +37,9 @@ def test_normal_http_uses_new_exact_route_and_preserves_admission(store, monkeyp
     monkeypatch.setattr(common, 'http_bytes', source_read)
     runtime = ThesisLedgerProviderRuntime(store, adapters={'akshare': object()})
     app = FastAPI();app.dependency_overrides[require_contract_token] = lambda: None
-    app.include_router(build_reference_query_router(lambda: runtime), prefix='/api/v3/thesis-ledger')
-    response = TestClient(app).post('/api/v3/thesis-ledger/market/reference',
-                 json=query.model_dump() | {'contractVersion': 3, 'consumer': 'thesis-ledger'})
+    app.include_router(build_reference_query_router(lambda: runtime), prefix='/api/v1/thesis-ledger')
+    response = TestClient(app).post('/api/v1/thesis-ledger/market/reference',
+                 json=query.model_dump() | {'contractVersion': 1, 'consumer': 'thesis-ledger'})
     assert response.status_code == 200, response.text
     value = response.json()
     assert value['dataset'] == dataset and value['routeTarget']['upstreamSource'] == source

@@ -10,7 +10,8 @@ def restore_sqlite(source, directory):
     if destination.exists() or destination.is_symlink():
         raise ValueError("恢复目标数据库已存在")
     shutil.copyfile(source, destination)
-    connection = sqlite3.connect(destination.resolve().as_uri() + "?mode=ro", uri=True)
+    # 在线备份包含已提交页面；校验独占副本时 SQLite 无需创建 WAL 辅助文件。
+    connection = sqlite3.connect(destination.resolve().as_uri() + "?mode=ro&immutable=1", uri=True)
     try:
         if connection.execute("pragma integrity_check").fetchone()[0] != "ok":
             raise ValueError("SQLite 副本完整性检查失败")

@@ -121,8 +121,8 @@ def test_actual_http_auth_recheck_safe_rejection_and_legacy_dispatch(state, cont
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "test-token")
     monkeypatch.setattr(runtime_module, "get_thesis_ledger_runtime", lambda: state.runtime)
     monkeypatch.setattr(api, "execute_event_request", lambda *_args, **_kwargs: {"legacy": True})
-    app = FastAPI(); app.include_router(router, prefix="/api/v3"); client = TestClient(app)
-    endpoint = "/api/v3/thesis-ledger/market/events"
+    app = FastAPI(); app.include_router(router, prefix="/api/v1"); client = TestClient(app)
+    endpoint = "/api/v1/thesis-ledger/market/events"
     headers = {"authorization": "Bearer test-token"}
     assert client.post(endpoint, json=control_request).status_code == 401
     response = client.post(endpoint, json=control_request, headers=headers)

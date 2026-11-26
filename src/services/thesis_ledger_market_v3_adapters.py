@@ -1,4 +1,4 @@
-"""DSA Data V3 市场日线的精确适配器能力事实。"""
+"""dsa-data-v1 市场日线的精确适配器能力事实。"""
 
 from __future__ import annotations
 

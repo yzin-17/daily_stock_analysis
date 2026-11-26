@@ -50,10 +50,10 @@ def build_state(tmp_path, monkeypatch):
                    recorded_by="synthetic-pytest", adapter_revision=revisions["adapterRevision"],
                    source_revision=revisions["sourceRevision"], credential_revision=revision)
     store.record_route_admission_v3(**options)
-    policy = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "synthetic-policy",
+    policy = {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "synthetic-policy",
               "revision": 1, "enabled": True, "routes": [{"key": EVENT_KEY, "targets": [TUSHARE_TARGET]}]}
     store.apply_policy_v3(policy)
-    request = {"contractVersion": 3, "requestId": "synthetic-event", "symbol": "159516.SZ",
+    request = {"contractVersion": 1, "requestId": "synthetic-event", "symbol": "159516.SZ",
                "routeKey": EVENT_KEY, "routeTarget": {**TUSHARE_TARGET, "routeIndex": 0},
                "desiredRevision": 1, "effectivePolicyRevision": 1,
                "catalogRevision": runtime.market_route_catalog_v3()["catalogRevision"],
@@ -67,7 +67,7 @@ def build_state(tmp_path, monkeypatch):
     monkeypatch.setattr("data_provider.tushare_fetcher.requests.post", source)
     monkeypatch.setattr("src.services.thesis_ledger_provider_runtime.get_thesis_ledger_runtime", lambda: runtime)
     app = FastAPI()
-    app.include_router(router, prefix="/api/v3")
+    app.include_router(router, prefix="/api/v1")
     return SimpleNamespace(store=store, runtime=runtime, request=request, config=config, content=content,
                            proof=proof, evidence=evidence, options=options, policy=policy, source=source,
                            client=TestClient(app), root=tmp_path)
@@ -83,7 +83,7 @@ def call(state):
 
 
 def http(state, authorization="Bearer synthetic-data-token"):
-    return state.client.post("/api/v3/thesis-ledger/market/events", json=state.request,
+    return state.client.post("/api/v1/thesis-ledger/market/events", json=state.request,
                              headers={} if authorization is None else {"Authorization": authorization})
 
 

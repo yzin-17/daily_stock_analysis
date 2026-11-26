@@ -37,7 +37,7 @@ def test_real_runtime_uses_exact_configured_binding_without_changing_admission(s
 
 @pytest.mark.parametrize('change', ['policy', 'config', 'disabled'])
 def test_late_response_after_control_change_is_discarded(change):
-    policy = {'contractVersion': 3, 'enabled': True, 'revision': 1, 'sourceDesiredRevision': 1,
+    policy = {'contractVersion': 1, 'enabled': True, 'revision': 1, 'sourceDesiredRevision': 1,
               'routes': [{'key': KEY, 'targets': [TARGET | {'eligible': True, 'routeIndex': 0, 'reason': None}]}]}
     provider = {'providerId': 'akshare', 'enabled': True, 'configVersion': 1}
     runtime = SimpleNamespace(store=SimpleNamespace(database_path=':memory:',
@@ -57,8 +57,8 @@ def test_late_response_after_control_change_is_discarded(change):
 def test_http_rejects_arbitrary_parameters_before_runtime():
     service = SimpleNamespace(execute_request=Mock())
     app = FastAPI();app.dependency_overrides[require_contract_token] = lambda: None
-    app.include_router(build_reference_query_router(lambda: service), prefix='/api/v3/thesis-ledger')
-    body = query().model_dump() | {'contractVersion': 3, 'consumer': 'thesis-ledger', 'url': 'https://example.com'}
-    response = TestClient(app).post('/api/v3/thesis-ledger/market/reference', json=body)
+    app.include_router(build_reference_query_router(lambda: service), prefix='/api/v1/thesis-ledger')
+    body = query().model_dump() | {'contractVersion': 1, 'consumer': 'thesis-ledger', 'url': 'https://example.com'}
+    response = TestClient(app).post('/api/v1/thesis-ledger/market/reference', json=body)
     assert response.status_code == 422
     service.execute_request.assert_not_called()

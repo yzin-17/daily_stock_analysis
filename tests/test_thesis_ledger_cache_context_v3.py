@@ -19,7 +19,7 @@ TARGET = {'providerId': 'tencent', 'upstreamSource': 'tencent'}
 
 
 def request(**changes):
-    return {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'cache-control',
+    return {'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'cache-control',
             'capability': 'REALTIME_QUOTE', 'symbol': '510300.SH', **changes}
 
 
@@ -51,7 +51,7 @@ def test_provider_disable_and_restore_change_generation_even_same_policy(store):
 
 
 def test_no_route_is_not_selected_not_implicitly_added(store):
-    store.apply_policy_v3({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'empty-enabled',
+    store.apply_policy_v3({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'empty-enabled',
                           'revision': 1, 'enabled': True, 'routes': []})
     runtime = ThesisLedgerProviderRuntime(store)
     result = read_cache_context(runtime, request())
@@ -60,7 +60,7 @@ def test_no_route_is_not_selected_not_implicitly_added(store):
 
 
 def test_quote_function_disable_preserves_targets_and_rejects_cache_context(store):
-    store.apply_policy_v3({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'quote-off',
+    store.apply_policy_v3({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'quote-off',
                           'revision': 1, 'enabled': True,
                           'routes': [{'key': KEY, 'targets': [TARGET], 'enabled': False}]})
     result = read_cache_context(ThesisLedgerProviderRuntime(store), request())
@@ -159,12 +159,12 @@ def test_http_data_auth_and_parameter_isolation(store, monkeypatch):
     runtime = ThesisLedgerProviderRuntime(store)
     monkeypatch.setenv('THESIS_LEDGER_DSA_TOKEN', 'synthetic-cache-token')
     monkeypatch.setattr('api.thesis_ledger_cache_context_v3.get_thesis_ledger_runtime', lambda: runtime)
-    app = FastAPI(); app.include_router(router, prefix='/api/v3'); client = TestClient(app)
-    url = '/api/v3/thesis-ledger/market/cache-context'
+    app = FastAPI(); app.include_router(router, prefix='/api/v1'); client = TestClient(app)
+    url = '/api/v1/thesis-ledger/market/cache-context'
     assert client.post(url, json=request()).status_code == 401
     invalid = client.post(url, json=request(sdk_method='arbitrary'), headers={'Authorization': 'Bearer synthetic-cache-token'})
     assert invalid.status_code == 422
-    assert invalid.json() == {'contractVersion': 3, 'requestId': 'cache-control',
+    assert invalid.json() == {'contractVersion': 1, 'requestId': 'cache-control',
                               'error': {'code': 'invalid_request', 'message': '来源拒绝请求参数'}}
     value = client.post(url, json=request(), headers={'Authorization': 'Bearer synthetic-cache-token'})
     assert value.status_code == 200 and value.json()['ready'] is True
@@ -174,8 +174,8 @@ def test_http_missing_control_uses_correlated_v3_error(store, monkeypatch):
     monkeypatch.setenv('THESIS_LEDGER_DSA_TOKEN', 'synthetic-cache-token')
     monkeypatch.setattr('api.thesis_ledger_cache_context_v3.get_thesis_ledger_runtime',
                         lambda: ThesisLedgerProviderRuntime(store))
-    app = FastAPI(); app.include_router(router, prefix='/api/v3')
-    value = TestClient(app).post('/api/v3/thesis-ledger/market/cache-context', json=request(),
+    app = FastAPI(); app.include_router(router, prefix='/api/v1')
+    value = TestClient(app).post('/api/v1/thesis-ledger/market/cache-context', json=request(),
                                 headers={'Authorization': 'Bearer synthetic-cache-token'})
     assert value.status_code == 503
     assert value.json()['requestId'] == 'cache-control'
@@ -190,17 +190,17 @@ def test_http_malformed_control_is_response_error_not_request_error(store, monke
     monkeypatch.setenv('THESIS_LEDGER_DSA_TOKEN', 'synthetic-cache-token')
     monkeypatch.setattr('api.thesis_ledger_cache_context_v3.get_thesis_ledger_runtime',
                         lambda: ThesisLedgerProviderRuntime(store))
-    app = FastAPI(); app.include_router(router, prefix='/api/v3')
-    value = TestClient(app).post('/api/v3/thesis-ledger/market/cache-context', json=request(),
+    app = FastAPI(); app.include_router(router, prefix='/api/v1')
+    value = TestClient(app).post('/api/v1/thesis-ledger/market/cache-context', json=request(),
                                 headers={'Authorization': 'Bearer synthetic-cache-token'})
     assert value.status_code == 502
-    assert value.json() == {'contractVersion': 3, 'requestId': 'cache-control',
+    assert value.json() == {'contractVersion': 1, 'requestId': 'cache-control',
                             'error': {'code': 'invalid_response', 'message': '行情上游响应格式无效'}}
 
 
 # Background monitoring is a distinct caller contract, not a policy/permission toggle.
 def background_request(**changes):
-    return {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'background-fixture',
+    return {'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'background-fixture',
             'symbol': '510300.SH', 'assetType': 'ETF', **changes}
 
 
@@ -271,8 +271,8 @@ def test_background_http_auth_identity_and_success(store, monkeypatch):
     monkeypatch.setenv('THESIS_LEDGER_DSA_TOKEN', 'synthetic-background-token')
     fake_quote = Mock(return_value={'provider': 'tencent', 'symbol': '510300.SH', 'price': 4.0})
     monkeypatch.setattr('api.thesis_ledger._real_quote', fake_quote)
-    app = FastAPI(); app.include_router(build_background_quote_router(lambda: runtime), prefix='/api/v3/thesis-ledger')
-    client = TestClient(app); url = '/api/v3/thesis-ledger/market/background-quote'
+    app = FastAPI(); app.include_router(build_background_quote_router(lambda: runtime), prefix='/api/v1/thesis-ledger')
+    client = TestClient(app); url = '/api/v1/thesis-ledger/market/background-quote'
     headers = {'Authorization': 'Bearer synthetic-background-token'}
     assert client.post(url + '/plan', json=background_request()).status_code == 401
     assert client.post(url + '/plan', json=background_request(probe=True), headers=headers).status_code == 422
@@ -331,7 +331,7 @@ def test_background_preserves_selected_fallback_identity_without_trying_restrict
     from src.services.thesis_ledger_background_quote import background_quote_plan
     from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest
     paid = {'providerId': 'hithink', 'upstreamSource': 'fund-market-snapshot'}
-    store.apply_policy_v3({'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'fallback',
+    store.apply_policy_v3({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'fallback',
         'revision': 1, 'enabled': True, 'routes': [{'key': KEY, 'targets': [paid, TARGET]}]})
     value = {'price': 4.0, 'open_price': 4.0, 'high': 4.0, 'low': 4.0, 'pre_close': 4.0,
              'source': 'tencent', 'provider_timestamp': '2026-11-06T02:00:00Z',
@@ -352,7 +352,7 @@ def test_background_preserves_selected_fallback_identity_without_trying_restrict
 
 
 def _policy(store, revision, routes, enabled=True):
-    return store.apply_policy_v3({'contractVersion':3,'consumer':'thesis-ledger','requestId':f'epoch-{revision}',
+    return store.apply_policy_v3({'contractVersion':1,'consumer':'thesis-ledger','requestId':f'epoch-{revision}',
         'revision':revision,'enabled':enabled,'routes':routes})
 
 

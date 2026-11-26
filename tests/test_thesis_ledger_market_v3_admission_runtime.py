@@ -94,7 +94,7 @@ class _DataStore:
 
     def effective_policy_v3(self):
         return {
-            "contractVersion": 3,
+            "contractVersion": 1,
             "enabled": True,
             "revision": 27,
             "sourceDesiredRevision": 27,

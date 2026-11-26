@@ -55,7 +55,7 @@ def apply_data_policy(
                 route_targets.append(target)
             targets.append({"key": key, "targets": route_targets})
     store.apply_policy_v3({
-        "contractVersion": 3, "consumer": "thesis-ledger",
+        "contractVersion": 1, "consumer": "thesis-ledger",
         "requestId": f"fixture-policy-{revision}", "revision": revision,
         "enabled": True, "routes": targets,
     })

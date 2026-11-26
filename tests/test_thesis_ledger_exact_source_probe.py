@@ -103,19 +103,21 @@ def test_multimarket_exact_probe_is_owned_by_source(source, tmp_path, monkeypatc
         def read(self, request):
             requests.append(request)
     monkeypatch.setattr(module, 'MultimarketRuleProvider', Reader)
-    for binding in source.bindings:
+    legacy_reader_bindings = [binding for binding in source.bindings
+                              if binding.key.capability in {'HISTORICAL_PUBLIC_FEES', 'HISTORICAL_TRADING_STATUS'}]
+    for binding in legacy_reader_bindings:
         key = binding.key.route_key()
         target = {'providerId': source.provider_id, 'upstreamSource': binding.upstream_source}
         sample = read_exact_probe(SimpleNamespace(), key, target, None)
         assert sample == {'symbol': 'GME.US', 'start': '2024-05-01', 'end': '2024-05-02'}
         assert selected[-1] == (key, target)
-        assert requests[-1] == {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'source-check',
+        assert requests[-1] == {'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'source-check',
             'symbol': 'GME.US', 'range': {'start': '2024-05-01', 'end': '2024-05-02'},
             'routeKey': key, 'routeTarget': {**target, 'routeIndex': 0}}
-    assert len(requests) == len(source.bindings)
+    assert len(requests) == len(legacy_reader_bindings)
     from src.services.thesis_ledger_public_fees import PublicFeeSourceError
     from src.services.thesis_ledger_trading_status import TradingStatusSourceError
-    for binding in source.bindings:
+    for binding in legacy_reader_bindings:
         error_type = PublicFeeSourceError if binding.key.capability == 'HISTORICAL_PUBLIC_FEES' else TradingStatusSourceError
         original = error_type('insufficient_coverage', '原读取错误')
         def failed(self, request):
@@ -142,6 +144,7 @@ def test_multimarket_repository_pack_keeps_original_exact_sample(source, binding
     path = module.multimarket_rule_path(key, target)
     before = path.read_bytes()
     pack = json.loads(before)
-    sample = read_exact_probe(SimpleNamespace(), key, target, None)
+    runtime = SimpleNamespace(store=SimpleNamespace(effective_policy_v3=lambda: {'revision': 1}))
+    sample = read_exact_probe(runtime, key, target, None)
     assert sample == {'symbol': pack['symbol'], 'start': pack['coverage']['start'], 'end': pack['coverage']['end']}
     assert path.read_bytes() == before

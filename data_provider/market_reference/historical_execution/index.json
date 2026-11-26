@@ -1,0 +1,94 @@
+{
+  "version": 2,
+  "contexts": {},
+  "dailyContexts": {
+    "0265d24405860fae6271ce2f95b852eb4fddc7f1da12d7bb544e109bf9b89cb8": {
+      "assetType": "ETF",
+      "sha256": "cf2453790c309d4f03cd99cd74805ad54aeeeed71a86d1199eedbd56d7bbd8be"
+    },
+    "0b014d70d56973138d1020b14b4b8b1de0aecea5c5e0c4148da89c8b5df5c19f": {
+      "assetType": "ETF",
+      "sha256": "8ba947e9681f7abe88966a038fa173fecc32760fef8de826c494ba66b7a220df"
+    },
+    "10e60d5c7216025e694655940e2e90ca26774d52d86852d93840b7f5c24268e4": {
+      "assetType": "ETF",
+      "sha256": "aabc33ccad785e053ac4dbfcb30041a01b55f4273d5870da5f14d0535b71b682"
+    },
+    "19009b6ccdba98e61fec54bc2f6866b9eec0488ad5ca37f27a85c657e736cf14": {
+      "assetType": "ETF",
+      "sha256": "89946f48f7712b877139408d2c0d83ec9084b07ccfffcbbc46317176e6c1a7bc"
+    },
+    "1bb5a240b77e99cba8b67d5b7300a1421df358863dc0948e08b1ca7a99e184f6": {
+      "assetType": "ETF",
+      "sha256": "ccccb640b508fedd942dcd0266696a003c3c64e7e4cf88ffe0f543d10a62b204"
+    },
+    "1fa303934f8b43fb239314b86ac3a9c5741932bbab22d623007a6f01cd77bc77": {
+      "assetType": "ETF",
+      "sha256": "d8b37e46be03eed961dfb0c208b626ac1e58111dfa94d6f571bb1bc67790b14e"
+    },
+    "240fb362cdceaed2b3f1e6811060e23a31561206fcc7a08b4d22e74b036db8b4": {
+      "assetType": "ETF",
+      "sha256": "90693a1d49f9cbd9f36538a22203428e21f04dcb19c51ea08f03f0af5b61d4a9"
+    },
+    "388a10b7e5d1e0b05c5d199ed4868c4fc604f016a616af4cfbee9bedf4cfbb08": {
+      "assetType": "ETF",
+      "sha256": "766c130d898896295c1164f96feaf7e88b18d9e729b461fa1aed33885bec9150"
+    },
+    "46568533fcd9bc54046733ecb10124eb22cf5b70f64324430ae0a59d36edc91b": {
+      "assetType": "ETF",
+      "sha256": "754bebd9c8f451e29f1ff3bd59e202a3656a31242eb18c8814b9ff31bef5c90b"
+    },
+    "5fccc012ff72b0bf1bad5dfc98df49829294c0f1816e5b8f3fa835aee411176d": {
+      "assetType": "ETF",
+      "sha256": "a2caee3fb60f1a2785ac07a76abcbea9be2a7ee01e1094ee1fabbfde4d2d9993"
+    },
+    "667ef507025b3d9c3406e7cb011c0ba2ba95adf7588d3aeac20581fc4d9ba3ee": {
+      "assetType": "ETF",
+      "sha256": "3b9f6edadc8a705074253d27854a28e5c5ceb883368335e625188a4f3cd8d2c9"
+    },
+    "7b517717f2097bcada9f7ffae727f1d11c6a9c0ecb75162761741ff54badd2ce": {
+      "assetType": "ETF",
+      "sha256": "c43760174e357d59a45d7c95a28e72020165f21e628bfdd8eee0ca173dcbe263"
+    },
+    "8b48b29f1856e7d75c43b41bb6079ec46a6b951f27c9908c8000aa5510c07c11": {
+      "assetType": "ETF",
+      "sha256": "b3c33f84105a009836e9dccc4383dc7bd508a9730686434d122aa2df7a68ef7e"
+    },
+    "8f5d6c00c3b612ed8424e6d5bbb88e7f07f123dda8f2947e2ddf18c8b43d3cdf": {
+      "assetType": "ETF",
+      "sha256": "b5cf159e3397e8a0b0d9e8b113d2a616f346b695207b3d4b1c22a4a75e7a7b6a"
+    },
+    "92f34edfd0ff07d2a90eb5608cf1410fa5ffb060642d74d9c8ce15f7ff57b70b": {
+      "assetType": "ETF",
+      "sha256": "922cf62c2919a921a1ec2a54168d433ec07eadba529ce16d1225d2f4c35e97ca"
+    },
+    "9eed1d9d15004a548f075dde48c266adb661ba7c0fb7155c7ee5884acafa5b43": {
+      "assetType": "ETF",
+      "sha256": "1170a399da2190faaa06868888e9a2e16c0e3cf0152187472119cbdc9155f040"
+    },
+    "b220489b3dfbd71cf0e2eb9e8d43be3fd3d4cf14790d54209545e8f72abe9f4e": {
+      "assetType": "ETF",
+      "sha256": "5570d761d1ddba9bd35ae1b62a6d6b97049cc29a8d9479c7fc5d35bb117eb141"
+    },
+    "ce74f7092d776cc2a8031ac42f419cfc97dda5adbeab307db34edefcbd0fbfd4": {
+      "assetType": "ETF",
+      "sha256": "819f4f24eee609b6317c8ee3b6eb4a0f18cd43e610532b6722e64d67c273f153"
+    },
+    "d8f72abf45aa11c88e0a21b396beebedd7afa6cfa261eb375e5e9201cf341054": {
+      "assetType": "ETF",
+      "sha256": "86bafb26382a8e57774e83a78805a17c11ac2de8ccde8493d5c6e57cf8b1219c"
+    },
+    "f682b97ce11dc19e7203c8be5b4bf94d7b121567aec6a156b07ccd24ca18378e": {
+      "assetType": "ETF",
+      "sha256": "23d4d4a3b180bd43d4ed6032efff256b99837b4d07da3fa56070d2f431d11816"
+    },
+    "f8fb0c5f9e11b70683ff6962421ba4ca342436ba020b25c8d61b4549e49e6e40": {
+      "assetType": "ETF",
+      "sha256": "c938d3af4dc85df66eb556a837fcb5e08d5eeba2c1cabf77f01d476c997e96dc"
+    },
+    "f9fe1e5c1a26c189925bb59c0a26e7472ce7d03bcf157650fc21f2bdb6be8f23": {
+      "assetType": "ETF",
+      "sha256": "61253da228f7c52e65769279b2d57373aba6dd296a3e55306c47a4bbabca3d1f"
+    }
+  }
+}

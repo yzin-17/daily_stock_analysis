@@ -129,8 +129,8 @@ def test_physical_data_environment_server_entrypoint_and_restart(data_python, tm
                 "/catalog/snapshot", "/catalog/delta",
                 "/control/providers/longbridge/oauth/sessions",
             }
-            assert {"/api/v3/thesis-ledger" + path for path in required} <= paths
-            assert all(path.startswith("/api/v3/thesis-ledger/") or path in ("/health", "/api/health")
+            assert {"/api/v1/thesis-ledger" + path for path in required} <= paths
+            assert all(path.startswith("/api/v1/thesis-ledger/") or path in ("/health", "/api/health")
                        for path in paths)
             for path in paths - {"/health", "/api/health"}:
                 route = path.replace("{provider_id}", "longbridge").replace("{job_id}", "missing")
@@ -140,7 +140,7 @@ def test_physical_data_environment_server_entrypoint_and_restart(data_python, tm
                 for method in methods:
                     response = session.request(method, origin + route,
                                                json={} if method != "get" else None, timeout=5)
-                    expected = 200 if path == "/api/v3/thesis-ledger/capabilities" else 401
+                    expected = 200 if path == "/api/v1/thesis-ledger/capabilities" else 401
                     assert response.status_code == expected, (method, path, response.status_code, response.text[:200])
             index = session.get(origin + "/stocks.index.json", timeout=5)
             assert index.status_code == 200 and len(index.json()) > 1000
@@ -149,7 +149,7 @@ def test_physical_data_environment_server_entrypoint_and_restart(data_python, tm
                     response = session.request(method, origin + f"/api/{prefix}/analysis", timeout=3)
                     assert response.status_code == 404
                     if method != "HEAD":
-                        assert response.json() == {"error": "not_found"}
+                        assert response.json() == {"detail": "Not Found"}
 
 
 @pytest.fixture(scope="module")

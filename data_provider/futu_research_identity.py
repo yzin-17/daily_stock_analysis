@@ -1,4 +1,4 @@
-"""富途股票归一化研究的复合当前身份观察；历史单位与上市日保持未知。"""
+"""富途股票和 ETF 的复合当前身份观察；历史单位与上市日保持未知。"""
 
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -25,12 +25,14 @@ def observed_identity(symbol, market=None, data_as_of=None):
         market = market or row['market']
         currency, zone, futu_exchange, identity_exchange = MARKETS[market]
         static, identity = row['futu'], row['identity']
+        asset_type = static['assetType']
         meta = identity['metadata']
         if (row['market'] != market or static['symbol'] != symbol or static['market'] != market
-                or static['assetType'] != 'STOCK' or static['provider'] != 'futu'
+                or asset_type not in {'STOCK', 'ETF'} or static['provider'] != 'futu'
                 or static['exchange'] != futu_exchange or identity['publisher'] != 'Yahoo Finance'
                 or (meta['currency'], meta['exchangeTimezoneName'], meta['exchangeName'])
-                != (currency, zone, identity_exchange) or meta['instrumentType'] != 'EQUITY'):
+                != (currency, zone, identity_exchange)
+                or meta['instrumentType'] != ('EQUITY' if asset_type == 'STOCK' else 'ETF')):
             return None
         if market == 'HK':
             if (not re.fullmatch(r'\d{5}\.HK', symbol)
@@ -46,7 +48,8 @@ def observed_identity(symbol, market=None, data_as_of=None):
         cutoff = data_as_of or datetime.now(timezone.utc)
         if cutoff.utcoffset() is None or any(t.utcoffset() is None or t > cutoff for t in clocks):
             return None
-        return {'symbol': symbol, 'market': market, 'currency': currency,
+        return {'symbol': symbol, 'market': market, 'currency': currency, 'assetType': asset_type,
+                'exchange': futu_exchange,
                 'observedAt': max(clocks).isoformat(),
                 'revision': 'futu-current-identity-sha256:' + sha256(raw).hexdigest()}
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
@@ -58,7 +61,8 @@ def supports_symbol(symbol, market=None):
 
 
 def calendar_eligible(context):
-    return context.asset_type == 'STOCK' and observed_identity(context.symbol, context.market) is not None
+    item = observed_identity(context.symbol, context.market)
+    return item is not None and item['assetType'] == context.asset_type
 
 
 def read_instrument(request):
@@ -66,7 +70,7 @@ def read_instrument(request):
     if item is None:
         raise CapabilityContractError('not_covered', '富途当前身份未覆盖该证券、市场或冻结截点')
     return ResearchInstrumentFact.model_validate({
-        'symbol': item['symbol'], 'market': item['market'], 'instrumentType': 'STOCK',
+        'symbol': item['symbol'], 'market': item['market'], 'instrumentType': item['assetType'],
         'currency': item['currency'], 'lotSize': None, 'tickSize': None, 'tradable': False,
         'executionRules': {'status': 'unavailable',
                            'reason': '富途身份与 Yahoo 当前币种交叉观察；历史整手、价位及制度未核实'},

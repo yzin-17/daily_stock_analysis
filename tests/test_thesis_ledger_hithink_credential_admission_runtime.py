@@ -132,7 +132,7 @@ class _AdmissionStore:
 
     def effective_policy_v3(self):
         return {
-            "contractVersion": 3,
+            "contractVersion": 1,
             "enabled": True,
             "revision": 11,
             "sourceDesiredRevision": 11,
@@ -253,7 +253,7 @@ def test_admitted_tradability_path_preserves_sparse_source_evidence(monkeypatch,
 
     from api.thesis_ledger import _market_data_v3_response, _market_data_v3_coverage_context
     from api.thesis_ledger_multi_window_v3 import execute_market_window_v3
-    request = {"contractVersion": 3, "requestId": "sparse-price", "symbol": SYMBOL,
+    request = {"contractVersion": 1, "requestId": "sparse-price", "symbol": SYMBOL,
                "routeKey": ROUTE_KEY, "routeTarget": {**TARGET, "routeIndex": 0},
                "start": START, "end": END, "tradabilityMode": "assume-untradable-no-bar"}
     execution = execute_market_window_v3(request, runtime)

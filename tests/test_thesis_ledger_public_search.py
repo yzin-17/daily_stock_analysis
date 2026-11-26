@@ -22,14 +22,14 @@ def environment(server, monkeypatch, tmp_path):
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "controlled-search-store-key")
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "controlled-search-token")
     store = ThesisLedgerControlStore(str(tmp_path / "search.db"))
-    store.save_provider_config("searxng", {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-enable",
+    store.save_provider_config("searxng", {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-enable",
         "enabled": True, "credentials": {"method": "search", "values": {"baseUrls": json.dumps(settings.base_urls)}}})
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-policy", "revision": 1,
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-policy", "revision": 1,
         "enabled": True, "routes": [{"key": KEY, "targets": [TARGET], "enabled": True}]})
     runtime = ThesisLedgerProviderRuntime(store)
     from api import thesis_ledger_public_search as endpoint
     monkeypatch.setattr(endpoint, "get_thesis_ledger_runtime", lambda: runtime)
-    app = FastAPI(); app.include_router(router, prefix="/api/v3")
+    app = FastAPI(); app.include_router(router, prefix="/api/v1")
     return TestClient(app), store, runtime, state
 
 
@@ -39,7 +39,7 @@ def query():
 
 def test_public_query_uses_selected_source_and_preserves_original_content(environment):
     client, _, _, state = environment
-    result = client.post("/api/v3/thesis-ledger/research/search", json=query().model_dump(),
+    result = client.post("/api/v1/thesis-ledger/research/search", json=query().model_dump(),
                          headers={"authorization": "Bearer controlled-search-token"})
     assert result.status_code == 200, result.text
     body = result.json()
@@ -53,9 +53,9 @@ def test_public_query_uses_selected_source_and_preserves_original_content(enviro
 
 def test_missing_auth_and_bad_input_never_call_source(environment):
     client, _, _, state = environment
-    assert client.post("/api/v3/thesis-ledger/research/search", json=query().model_dump()).status_code in {401, 403}
+    assert client.post("/api/v1/thesis-ledger/research/search", json=query().model_dump()).status_code in {401, 403}
     bad = {**query().model_dump(), "limit": 11}
-    assert client.post("/api/v3/thesis-ledger/research/search", json=bad,
+    assert client.post("/api/v1/thesis-ledger/research/search", json=bad,
                        headers={"authorization": "Bearer controlled-search-token"}).status_code == 422
     assert state["calls"] == []
 
@@ -64,7 +64,7 @@ def test_disabled_source_and_other_market_do_not_use_existing_news_or_environmen
     _, store, runtime, state = environment
     result = execute_public_search(runtime, query().model_copy(update={"market": "US"}))
     assert result.status == "unavailable" and result.reason == "not_admitted"
-    store.save_provider_config("searxng", {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "disable", "enabled": False})
+    store.save_provider_config("searxng", {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "disable", "enabled": False})
     assert execute_public_search(runtime, query()).status == "unavailable"
     assert state["calls"] == []
 
@@ -85,7 +85,7 @@ def test_control_change_after_actual_source_read_discards_late_result(environmen
     original = runtime._execute_request_with_boundary
     def late(*args):
         result = original(*args)
-        store.save_provider_config("searxng", {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "late-disable", "enabled": False})
+        store.save_provider_config("searxng", {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "late-disable", "enabled": False})
         return result
     monkeypatch.setattr(runtime, "_execute_request_with_boundary", late)
     result = service.execute_public_search(runtime, query())

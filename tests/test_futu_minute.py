@@ -41,6 +41,8 @@ def test_all_pages_preserve_same_day_minutes_and_missing_metrics():
     assert json.loads(json.dumps(frame.to_dict(orient="records"), allow_nan=False))[0]["volume"] == 0
     calls = ctx.request_history_kline.call_args_list
     assert len(calls) == 2 and calls[0].kwargs["page_req_key"] is None and calls[1].kwargs["page_req_key"] == b"next"
+    assert frame.attrs["pagination"] == {"requestedStart": "2026-05-18", "requestedEnd": "2026-05-18",
+                                         "pagesFetched": 2, "continuationPending": False}
     assert all(c.kwargs["ktype"] == "K_1M" and c.kwargs["autype"] == "NONE"
                and c.kwargs["extended_time"] is False for c in calls)
     ctx.close.assert_called_once()
@@ -107,6 +109,29 @@ def test_minute_completion_uses_minute_end_and_observation():
     raw = pd.DataFrame([row(), row("2026-05-18 09:31:00")])
     frame = normalize_futu_minute(raw, "Asia/Hong_Kong",
         observed_at=datetime(2026, 5, 18, 1, 31, 0, tzinfo=timezone.utc))
+    assert frame["complete"].tolist() == [True, False]
+
+
+@pytest.mark.parametrize("period", ["1m", "5m", "15m", "30m", "60m"])
+def test_cn_period_close_is_available_at_1130_without_lunch_shift(period):
+    raw = pd.DataFrame([row("2026-05-18 11:30:00"), row("2026-05-18 15:00:00")])
+    at = datetime(2026, 5, 18, 3, 30, tzinfo=timezone.utc)
+    before = normalize_futu_minute(raw, "Asia/Shanghai", timeframe=period,
+        observed_at=at.replace(minute=29, second=59))
+    closed = normalize_futu_minute(raw, "Asia/Shanghai", timeframe=period, observed_at=at)
+    assert before["complete"].tolist() == [False, False]
+    assert closed["complete"].tolist() == [True, False]
+    assert closed.iloc[0]["timestamp"] == "2026-05-18T11:30:00+08:00"
+    assert closed.attrs["timestampConvention"] == "interval-end"
+
+
+@pytest.mark.parametrize("zone", ["Asia/Hong_Kong", "America/New_York"])
+def test_other_markets_keep_period_start_completion(zone):
+    from zoneinfo import ZoneInfo
+    at = datetime(2026, 5, 18, 9, 35, tzinfo=ZoneInfo(zone))
+    frame = normalize_futu_minute(pd.DataFrame([row(), row("2026-05-18 09:31:00")]),
+        zone, timeframe="5m", observed_at=at)
+    assert frame.attrs["timestampConvention"] == "interval-start"
     assert frame["complete"].tolist() == [True, False]
 
 

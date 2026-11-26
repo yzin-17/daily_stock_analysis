@@ -33,7 +33,7 @@ def store(monkeypatch, tmp_path):
 
 
 def policy(*, enabled=True):
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "news-control",
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "news-control",
             "revision": 1, "enabled": True,
             "routes": [{"key": KEY, "targets": [TARGET], "enabled": enabled}]}
 
@@ -62,7 +62,7 @@ def test_news_route_requires_explicit_enable_and_allows_unverified_first_use(sto
     applied = store.effective_policy_v3()
     assert applied["routes"][0]["targets"][0]["eligible"] is False
     assert applied["routes"][0]["targets"][0]["reason"] == "disabled"
-    payload = {"contractVersion": 3, "consumer": "thesis-ledger",
+    payload = {"contractVersion": 1, "consumer": "thesis-ledger",
                "requestId": "explicit-local-enable", "enabled": True}
     store.save_provider_config("searxng", payload)
     effective = store.effective_policy_v3()
@@ -74,7 +74,7 @@ def test_news_route_requires_explicit_enable_and_allows_unverified_first_use(sto
 
 
 def test_first_settings_write_preserves_news_default_closed_and_legacy_defaults(store):
-    payload = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "settings-only", "settings": {}}
+    payload = {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "settings-only", "settings": {}}
     store.save_provider_config("tavily", payload)
     store.save_provider_config("tencent", payload)
     rows = {item["providerId"]: item for item in store.provider_registry()}

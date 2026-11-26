@@ -38,7 +38,7 @@ def store(monkeypatch, tmp_path):
     monkeypatch.setenv("THESIS_LEDGER_DSA_SECRET_KEY", "synthetic-route-master-key")
     result = ThesisLedgerControlStore(str(tmp_path / "hithink-admission-v3.sqlite"))
     result.apply_policy_v3({
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "hithink-admission-path",
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "hithink-admission-path",
         "revision": 1, "enabled": True, "routes": [{"key": KEY, "targets": [TARGET]}],
     })
     return result
@@ -87,7 +87,7 @@ def test_current_configured_price_is_effective_without_manual_admission(store):
     assert _effective_target(store)["eligible"] is True
     assert _effective_target(store)["reason"] is None
     reapplied = store.apply_policy_v3({
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "reapply",
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "reapply",
         "revision": 1, "enabled": True, "routes": [{"key": KEY, "targets": [TARGET]}],
     })
     assert reapplied["idempotent"] is True

@@ -32,10 +32,18 @@ def test_inventory_is_derived_and_excludes_test_sources():
     result = run("from scripts.export_thesis_ledger_capability_inventory import inventory; import json; print(json.dumps(inventory()))")
     assert result.returncode == 0, result.stderr
     value = json.loads(result.stdout)
-    assert len(value["providers"]) == 29
+    assert len(value["providers"]) == 31
     identities = [(json.dumps(row["key"], sort_keys=True), json.dumps(row["target"], sort_keys=True)) for row in value["exactRoutes"]]
     assert len(identities) == len(set(identities))
-    assert {source["providerId"] for source in value["unifiedDefinitions"]} == {"tencent", "hithink", "baostock", "official-states", "efinance", "akshare", "pytdx", "tickflow", "alphavantage", "finnhub", "tushare", "yfinance", "longbridge", "futu", "official-rules", "official-hk-rules", "official-us-rules", "official-dividends", "rqdata", "tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng", "cls", "wallstreetcn", "local-materials"}
+    assert {source["providerId"] for source in value["unifiedDefinitions"]} == {"tencent", "hithink", "baostock", "official-states", "efinance", "akshare", "pytdx", "tickflow", "alphavantage", "finnhub", "tushare", "yfinance", "longbridge", "futu", "official-rules", "official-hk-rules", "official-us-rules", "official-dividends", "rqdata", "tavily", "serpapi", "bocha", "anspire", "minimax", "brave", "searxng", "cls", "wallstreetcn", "local-materials", "historical-execution-archive", "official-event-archive"}
+    execution_routes = [row for row in value["exactRoutes"]
+                        if row["target"]["providerId"] == "historical-execution-archive"]
+    assert len(execution_routes) == 2
+    assert {row["key"]["assetType"] for row in execution_routes} == {"STOCK", "ETF"}
+    assert all(row["key"]["market"] == "CN"
+               and row["key"]["capability"] == "HISTORICAL_EXECUTION_CONTEXT"
+               and row["target"]["upstreamSource"] == "qualified-cn-execution"
+               and row["gated"] is True for row in execution_routes)
     assert not any(row["key"]["capability"] == "ORDER_BOOK" for row in value["exactRoutes"])
     assert not any(source["providerId"].startswith("fixture-") for source in value["providers"])
     assert value["legacyBranches"] and value["inputs"]
@@ -53,7 +61,7 @@ def test_inventory_is_derived_and_excludes_test_sources():
     consumers = value["productConsumers"]
     if consumers["available"]:
         files = {row["path"]: row for row in consumers["files"]}
-        assert "/api/v3/thesis-ledger/market/bars" in files[
+        assert "/api/v1/thesis-ledger/market/bars" in files[
             "apps/server/src/integration/dsa/dsa-data-capability-reader-v3.ts"]["endpoints"]
         assert all(row["sha256"] for row in consumers["files"])
 

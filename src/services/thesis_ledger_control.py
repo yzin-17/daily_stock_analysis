@@ -51,7 +51,8 @@ from src.services.thesis_ledger_route_admission_v3 import (
 
 logger = logging.getLogger(__name__)
 
-CONTROL_CONTRACT_V3_VERSION = 3
+CONTROL_CONTRACT_VERSION = 1
+CONTROL_CONTRACT = "dsa-control-v1"
 CONSUMER_NAMESPACE = "thesis-ledger"
 CATALOG_JOB_LEASE_SECONDS = 300
 CATALOG_JOB_LEASE_EXPIRED_CODE = "CATALOG_JOB_LEASE_EXPIRED"
@@ -232,7 +233,7 @@ class ControlContractError(Exception):
         status_code: int = 422,
         request_id: str | None = None,
         details: dict[str, Any] | None = None,
-        contract_version: int = CONTROL_CONTRACT_V3_VERSION,
+        contract_version: int = CONTROL_CONTRACT_VERSION,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -375,7 +376,7 @@ def normalize_policy_v3(payload: dict[str, Any]) -> dict[str, Any]:
             code,
             message,
             request_id=request_id,
-            contract_version=CONTROL_CONTRACT_V3_VERSION,
+            contract_version=CONTROL_CONTRACT_VERSION,
         )
 
     if not isinstance(payload, dict):
@@ -391,7 +392,7 @@ def normalize_policy_v3(payload: dict[str, Any]) -> dict[str, Any]:
         "routes",
     }:
         fail("INVALID_POLICY_SCHEMA", "V3 Policy 字段不符合严格契约", request_id)
-    if payload.get("contractVersion") != CONTROL_CONTRACT_V3_VERSION:
+    if (type(payload.get("contractVersion")) is not int or payload.get("contractVersion") != CONTROL_CONTRACT_VERSION):
         fail("CONTROL_CONTRACT_UNSUPPORTED", "Control Contract V3 版本不兼容", request_id)
     if payload.get("consumer") != CONSUMER_NAMESPACE:
         fail("INVALID_CONSUMER", "Control Contract consumer namespace 不正确", request_id)
@@ -495,7 +496,7 @@ def normalize_policy_v3(payload: dict[str, Any]) -> dict[str, Any]:
         normalized_routes.append(canonical_feature_route(route, normalized_key, normalized_targets))
 
     return {
-        "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+        "contractVersion": CONTROL_CONTRACT_VERSION,
         "consumer": CONSUMER_NAMESPACE,
         "requestId": request_id,
         "revision": revision,
@@ -561,7 +562,7 @@ class ThesisLedgerControlStore:
                     source_revision TEXT NOT NULL,
                     credential_revision TEXT NOT NULL,
                     valid_from TEXT NOT NULL,
-                    valid_until TEXT NOT NULL,
+                    valid_until TEXT,
                     recorded_by TEXT NOT NULL,
                     record_version INTEGER NOT NULL DEFAULT 1,
                     recorded_at TEXT NOT NULL,
@@ -641,6 +642,8 @@ class ThesisLedgerControlStore:
                 );
                 """
             )
+            from .thesis_ledger_admission_validity import ensure_nullable_admission_expiry
+            ensure_nullable_admission_expiry(connection)
             # Existing DSA volumes predate Catalog Job leases. Keep the
             # upgrade additive and idempotent so restarting against an old
             # SQLite file is sufficient; deleting the volume is never needed.
@@ -741,7 +744,7 @@ class ThesisLedgerControlStore:
             "sourceRevision": str(row["source_revision"]),
             "credentialRevision": str(row["credential_revision"]),
             "validFrom": str(row["valid_from"]),
-            "validUntil": str(row["valid_until"]),
+            "validUntil": str(row["valid_until"]) if row["valid_until"] is not None else None,
             "recordedBy": str(row["recorded_by"]),
             "recordVersion": int(row["record_version"]),
             "recordedAt": str(row["recorded_at"]),
@@ -753,21 +756,8 @@ class ThesisLedgerControlStore:
     def _route_admission_state_v3(
         admission: dict[str, Any] | None, *, now: str | None = None
     ) -> str:
-        if admission is None:
-            return "pending"
-        status = admission.get("status")
-        if status != "admitted":
-            return str(status)
-        current = _parse_utc(now or _utc_now())
-        valid_from = _parse_utc(admission.get("validFrom"))
-        valid_until = _parse_utc(admission.get("validUntil"))
-        if current is None or valid_from is None or valid_until is None:
-            return "invalid"
-        if current < valid_from:
-            return "not_yet_valid"
-        if current >= valid_until:
-            return "expired"
-        return "admitted"
+        from .thesis_ledger_admission_validity import route_admission_state
+        return route_admission_state(admission, now=now or _utc_now())
 
     def record_route_admission_v3(
         self,
@@ -783,7 +773,7 @@ class ThesisLedgerControlStore:
         source_revision: str,
         credential_revision: str,
         valid_from: str,
-        valid_until: str,
+        valid_until: str | None,
         recorded_by: str,
         consumer: str = CONSUMER_NAMESPACE,
     ) -> dict[str, Any]:
@@ -835,8 +825,11 @@ class ThesisLedgerControlStore:
             return parsed.astimezone(timezone.utc).isoformat()
 
         starts_at = normalized_instant(valid_from, "valid_from")
-        expires_at = normalized_instant(valid_until, "valid_until")
-        if _parse_utc(starts_at) >= _parse_utc(expires_at):
+        expires_at = normalized_instant(valid_until, "valid_until") if valid_until is not None else None
+        from .thesis_ledger_admission_validity import revision_bound_route
+        if expires_at is None and not revision_bound_route(key, target):
+            raise ValueError("只有本地历史执行归档允许按修订有效")
+        if expires_at is not None and _parse_utc(starts_at) >= _parse_utc(expires_at):
             raise ValueError("valid_until must be later than valid_from")
 
         values = (
@@ -1172,7 +1165,7 @@ class ThesisLedgerControlStore:
                 route_reason = str(targets[0]["reason"] or "not_adapted")
             effective_routes.append(effective_feature_route(route, targets, route_reason))
         return {
-            "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+            "contractVersion": CONTROL_CONTRACT_VERSION,
             "consumer": CONSUMER_NAMESPACE,
             "requestId": policy["requestId"],
             "revision": policy["revision"],
@@ -1194,11 +1187,11 @@ class ThesisLedgerControlStore:
         effective = _json_load(current["effective_json"], None)
         if (
             not isinstance(routes, list) or not isinstance(effective, dict)
-            or effective.get("contractVersion") != CONTROL_CONTRACT_V3_VERSION
+            or (type(effective.get("contractVersion")) is not int or effective.get("contractVersion") != CONTROL_CONTRACT_VERSION)
         ):
             raise ControlContractError(
                 "UNSUPPORTED_STORED_POLICY",
-                "数据库中的策略不符合当前合同，请使用开发重建入口处理",
+                "数据库中的策略需要先完成 dsa-control-v1 存量转换",
                 status_code=409,
             )
         return current
@@ -1208,7 +1201,7 @@ class ThesisLedgerControlStore:
         if current is None:
             return None
         policy = {
-            "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+            "contractVersion": CONTROL_CONTRACT_VERSION,
             "consumer": CONSUMER_NAMESPACE,
             "requestId": str(current["request_id"]),
             "revision": int(current["revision"]),
@@ -1233,7 +1226,7 @@ class ThesisLedgerControlStore:
                             "STALE_REVISION",
                             f"Policy revision {policy['revision']} 早于当前 revision {current_revision}",
                             request_id=request_id,
-                            contract_version=CONTROL_CONTRACT_V3_VERSION,
+                            contract_version=CONTROL_CONTRACT_VERSION,
                         )
                     if policy["revision"] == current_revision:
                         if bool(current["enabled"]) != policy["enabled"] or current_routes != policy["routes"]:
@@ -1241,7 +1234,7 @@ class ThesisLedgerControlStore:
                                 "REVISION_CONFLICT",
                                 "相同 revision 的 Policy 内容不同",
                                 request_id=request_id,
-                                contract_version=CONTROL_CONTRACT_V3_VERSION,
+                                contract_version=CONTROL_CONTRACT_VERSION,
                             )
                         policy["revision"] = current_revision
                         effective = self._effective_v3(connection, policy)
@@ -1311,7 +1304,7 @@ class ThesisLedgerControlStore:
                     "REVISION_CONFLICT",
                     "Policy revision 竞争冲突，请重试",
                     request_id=request_id,
-                    contract_version=CONTROL_CONTRACT_V3_VERSION,
+                    contract_version=CONTROL_CONTRACT_VERSION,
                 ) from error
             except sqlite3.OperationalError as error:
                 connection.rollback()
@@ -1321,7 +1314,7 @@ class ThesisLedgerControlStore:
                         "Policy Apply 正在竞争，请重试",
                         status_code=409,
                         request_id=request_id,
-                        contract_version=CONTROL_CONTRACT_V3_VERSION,
+                        contract_version=CONTROL_CONTRACT_VERSION,
                     ) from error
                 raise
         return {
@@ -1338,7 +1331,7 @@ class ThesisLedgerControlStore:
             if current is None:
                 return None
             policy = {
-                "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+                "contractVersion": CONTROL_CONTRACT_VERSION,
                 "consumer": CONSUMER_NAMESPACE,
                 "requestId": str(current["request_id"]),
                 "revision": int(current["revision"]),
@@ -1564,7 +1557,7 @@ class ThesisLedgerControlStore:
             effective = self._current_v3_effective(connection)
             connection.commit()
         return {
-            "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+            "contractVersion": CONTROL_CONTRACT_VERSION,
             "consumer": CONSUMER_NAMESPACE,
             "providerId": provider_id,
             "removed": True,
@@ -1746,7 +1739,7 @@ class ThesisLedgerControlStore:
             return {
                 "providerId": provider_id,
                 "enabled": enabled,
-                "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+                "contractVersion": CONTROL_CONTRACT_VERSION,
                 "consumer": CONSUMER_NAMESPACE,
                 "configured": not PROVIDER_MANIFESTS[provider_id].get("requiresCredential", False) or credential_configured,
                 "credentialConfigured": credential_configured,
@@ -2255,7 +2248,7 @@ class ThesisLedgerControlStore:
         status = str(row["status"])
         current_time = now or _utc_now()
         return {
-            "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+            "contractVersion": CONTROL_CONTRACT_VERSION,
             "consumer": CONSUMER_NAMESPACE,
             "id": row["id"],
             "scope": row["scope"],

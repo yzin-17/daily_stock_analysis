@@ -39,7 +39,7 @@ def read_bar_window(request, payload):
         except HTTPException:
             raise
         except Exception as error:
-            logger.warning('ThesisLedger Data V3 failed requestId=%s code=%s',
+            logger.warning('ThesisLedger dsa-data-v1 failed requestId=%s code=%s',
                            parsed['requestId'], getattr(error, 'code', None) or 'upstream_failure')
             mapped, status = market_runtime_error(error)
             _market_data_v3_error(mapped, status, parsed['requestId'])

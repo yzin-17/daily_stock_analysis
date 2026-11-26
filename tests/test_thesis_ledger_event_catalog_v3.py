@@ -85,10 +85,10 @@ def test_existing_http_entry_is_explicit_and_auth_precedes_read(fixture, monkeyp
     runtime, _, getter, registry, forbidden = fixture
     monkeypatch.setattr(runtime_module, 'get_thesis_ledger_runtime', lambda: runtime)
     app = FastAPI()
-    app.include_router(router_v3, prefix='/api/v3')
+    app.include_router(router_v3, prefix='/api/v1')
     app.dependency_overrides[require_control_token] = lambda: None
     client = ApiClient(app)
-    endpoint = '/api/v3/thesis-ledger/control/routes/capabilities?contractVersion=3'
+    endpoint = '/api/v1/thesis-ledger/control/routes/capabilities?contractVersion=1'
     default = client.get(endpoint)
     view = client.get(endpoint + '&eventAdmissions=v1')
     assert default.status_code == 200 and 'protocolVersion' not in default.json()

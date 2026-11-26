@@ -24,7 +24,7 @@ def checked_payload(payload):
         raise ValueError('维护请求字段或项目无效')
     if payload['mode'] not in {'collect', 'apply', 'verify'}:
         raise ValueError('执行模式无效')
-    from src.services.thesis_ledger_report_metadata_contract_v1 import ReportMetadataRequest
+    from src.services.thesis_ledger_report_metadata_contract import ReportMetadataRequest
     query = ReportMetadataRequest(requestId=str(uuid4()), symbol=payload['symbol'], start=payload['start'],
         end=payload['end'], page=1, pageSize=2, requestBudgetMs=3000)
     if type(payload['validHours']) is not int or not 1 <= payload['validHours'] <= 24:
@@ -88,13 +88,13 @@ def control_state(store):
 
 
 def validate_evidence(evidence, payload, state, now, *, fresh):
-    from src.services.thesis_ledger_report_metadata_contract_v1 import CONTRACT, ReportMetadataRequest, ReportMetadataResult
+    from src.services.thesis_ledger_report_metadata_contract import CONTRACT, ReportMetadataRequest, ReportMetadataResult
     if (not isinstance(evidence, dict) or set(evidence) != {'version', 'project', 'key', 'target', 'request',
             'result', 'startedAt', 'completedAt', 'control'} or evidence['version'] != VERSION
             or evidence['project'] != payload['project'] or evidence['key'] != KEY or evidence['target'] != TARGET):
         raise ValueError('证据身份或结构不匹配')
-    if isinstance(evidence['result'], dict) and evidence['result'].get('metadataVersion') == 'research-report-metadata-v2':
-        from src.services.thesis_ledger_report_metadata_contract_v2 import CONTRACT, ReportMetadataRequest, ReportMetadataResult
+    if isinstance(evidence['result'], dict) and evidence['result'].get('metadataVersion') == 'market-external-report-metadata-v1':
+        from src.services.thesis_ledger_report_metadata_contract import CONTRACT, ReportMetadataRequest, ReportMetadataResult
     query = ReportMetadataRequest.model_validate(evidence['request'])
     if any(getattr(query, name) != payload[name] for name in ['symbol', 'start', 'end']):
         raise ValueError('证据与确认范围不匹配')
@@ -134,7 +134,7 @@ def evidence_path(directory, digest):
 def collect(payload, database, directory):
     from src.services.thesis_ledger_capability_contracts import ReadContext
     from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
-    from src.services.thesis_ledger_report_metadata_contract_v1 import CONTRACT
+    from src.services.thesis_ledger_report_metadata_contract import CONTRACT
     query = checked_payload(payload)
     store = control_store(database)
     with store._connect() as connection:

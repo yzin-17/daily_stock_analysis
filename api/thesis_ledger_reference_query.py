@@ -33,7 +33,7 @@ def build_reference_query_router(get_runtime):
                 start=wire.start, end=wire.end, instrument_type=route_key['assetType'],
                 request_id=wire.requestId, parameters=parameters)
             result = get_runtime().execute_request(request)
-            return {**result.value, 'contractVersion': 3, 'consumer': 'thesis-ledger',
+            return {**result.value, 'contractVersion': 1, 'consumer': 'thesis-ledger',
                     'policyRevision': result.effective_revision,
                     'routeTarget': {'providerId': result.provider, 'upstreamSource': result.upstream_source,
                                     'routeIndex': result.route_index}}

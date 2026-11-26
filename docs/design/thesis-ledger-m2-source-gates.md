@@ -147,7 +147,7 @@ M23-b1 已增加 `eastmoney_fund_dividend_reader.py`，直接读取固定东财 
 
 M23-b2 日期传输接缝已完成：标准化的 canonical fact 增加已知 `recordDate` / `paymentDate`，未知时省略；主仓共享合同接收并冻结两字段，旧事实兼容。主仓冻结依赖测试验证篡改发放日会使证据校验失败。精确事件路由、准入及实际运行仍未接通。
 
-后续接线：新增 `/api/v3/thesis-ledger/market/events` 与 `thesis_ledger_event_v3.py`。精确 `CN/ETF/CASH_DISTRIBUTION × akshare/eastmoney` 已进入 V3 库存，默认未准入；复用 SQLite 准入及当前适配/来源/凭据修订比较。读前读后必须满足同一策略、目录、准入及窗口，撤销、禁用、更新适配、策略变化均拒绝晚到结果。HTTP 使用现有合同 Token。当前来源缺完整历史证明，返回 `coverage.complete=false`；没有修改任何真实准入记录或执行网络请求。Server 消费面尚待接入，旧 V2 公告入口保持既有保守行为。
+切换前的接线曾新增 `/api/v3/thesis-ledger/market/events` 与 `thesis_ledger_event_v3.py`。精确 `CN/ETF/CASH_DISTRIBUTION × akshare/eastmoney` 已进入 V3 库存，默认未准入；复用 SQLite 准入及当前适配/来源/凭据修订比较。读前读后必须满足同一策略、目录、准入及窗口，撤销、禁用、更新适配、策略变化均拒绝晚到结果。具名切换后的现行入口为 `POST /api/v1/thesis-ledger/market/events`，使用 Data Token。当前来源缺完整历史证明，返回 `coverage.complete=false`；没有修改任何真实准入记录或执行网络请求。Server 消费面尚待接入，旧 V2 公告入口保持既有保守行为。
 
 2026-09-27 单次公开只读探针返回 HTTP 200、12984 bytes，2025 年首屏元数据 `pageinfo=[75,100,1]`；确认响应变量布局，没有抓取其余 74 页，没有目标基金事件覆盖或历史修订准入结论。精确事件路由/冻结消费者接入继续归 M23-b2。
 

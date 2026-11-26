@@ -4,7 +4,7 @@
     {
       "name": "DAILY_TRADING_STATUS",
       "request": {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "capabilityVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": "fixture-request",
@@ -27,7 +27,7 @@
         }
       },
       "result": {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "capabilityVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": "fixture-request",
@@ -117,7 +117,7 @@
     {
       "name": "RISK_WARNING",
       "request": {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "capabilityVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": "fixture-request",
@@ -143,7 +143,7 @@
         }
       },
       "result": {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "capabilityVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": "fixture-request",
@@ -237,7 +237,7 @@
     {
       "name": "DAILY_PRICE_RULE",
       "request": {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "capabilityVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": "fixture-request",
@@ -261,7 +261,7 @@
         "representation": "rule"
       },
       "result": {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "capabilityVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": "fixture-request",
@@ -356,7 +356,7 @@
     {
       "name": "LISTING_PHASE",
       "request": {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "capabilityVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": "fixture-request",
@@ -379,7 +379,7 @@
         }
       },
       "result": {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "capabilityVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": "fixture-request",
@@ -468,7 +468,7 @@
     {
       "name": "SECURITY_BASIC_DATES",
       "request": {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "capabilityVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": "fixture-request",
@@ -487,7 +487,7 @@
         "policyRevision": 7
       },
       "result": {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "capabilityVersion": 1,
         "consumer": "thesis-ledger",
         "requestId": "fixture-request",

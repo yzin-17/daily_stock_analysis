@@ -81,7 +81,7 @@ class OfficialTradingStatusProvider:
             raise TradingStatusSourceError("invalid_response", "交易状态数据包结构无效") from exc
 
     def _read(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        if request.get("contractVersion") != 3 or request.get("consumer") != "thesis-ledger" or not request.get("requestId"):
+        if (type(request.get("contractVersion")) is not int or request.get("contractVersion") != 1) or request.get("consumer") != "thesis-ledger" or not request.get("requestId"):
             raise TradingStatusSourceError("invalid_request", "交易状态请求合同不匹配")
         key, target = request.get("routeKey"), request.get("routeTarget")
         if not isinstance(target, Mapping) or not trading_status_route_matches(key, target):
@@ -141,7 +141,7 @@ class OfficialTradingStatusProvider:
         used = {ref for item in days for ref in item.get("sourceDocumentIds", [])}
         digest = sha256(json.dumps(pack, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
         return {
-            "contractVersion": 3, "consumer": "thesis-ledger", "requestId": request["requestId"],
+            "contractVersion": 1, "consumer": "thesis-ledger", "requestId": request["requestId"],
             "routeKey": dict(key), "routeTarget": dict(target), "symbol": request["symbol"],
             "range": {"start": start.isoformat(), "end": end.isoformat()}, "status": "supported",
             "days": days, "sourceDocuments": [item for item in documents if item["id"] in used],

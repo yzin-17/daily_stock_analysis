@@ -64,6 +64,15 @@ def test_us_winter_clock_is_not_fixed_utc_offset():
     assert read_futu_quote(sdk, "localhost", 11111, "AAPL.US", "STOCK")["provider_timestamp"] == "2026-01-06T15:00:00+00:00"
 
 
+def test_hk_etf_uses_verified_counter_currency_without_changing_security_type():
+    sdk, context = sdk_for('HK.02800', 'ETF')
+    context.get_stock_basicinfo.return_value = 0, pd.DataFrame([{
+        'code': 'HK.02800', 'stock_type': 'ETF', 'exchange_type': 'HK_MAINBOARD'}])
+    result = read_futu_quote(sdk, 'localhost', 11111, '02800.HK', 'ETF')
+    assert result['units']['priceCurrency'] == 'HKD'
+    context.get_stock_basicinfo.assert_called_once_with('HK', stock_type='ETF', code_list=['HK.02800'])
+
+
 @pytest.mark.parametrize('symbol,code,observed,expected', [
     ('AAPL.US', 'US.AAPL', '2026-10-14 23:47:30.626', '2026-10-15T03:47:30.626000+00:00'),
     ('SPY.US', 'US.SPY', '2026-01-06 10:00:00.001', '2026-01-06T15:00:00.001000+00:00'),

@@ -27,7 +27,7 @@ def runtime(monkeypatch, tmp_path):
 
 
 def request(**values):
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "precise-check", **values}
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "precise-check", **values}
 
 
 def state(runtime):
@@ -110,9 +110,9 @@ def test_unadmitted_event_does_not_call_upstream_or_grant_admission(runtime, mon
 
 def test_actual_http_reports_rqdata_exact_event_capabilities_without_credentials(runtime):
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     with HttpClient(app) as client:
-        response = client.post("/api/v3/thesis-ledger/control/providers/rqdata/test", headers={"authorization": "Bearer synthetic-token"}, json=request())
+        response = client.post("/api/v1/thesis-ledger/control/providers/rqdata/test", headers={"authorization": "Bearer synthetic-token"}, json=request())
     assert response.status_code == 200
     result = response.json()
     assert result["status"] == "unconfigured"

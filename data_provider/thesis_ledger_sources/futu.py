@@ -56,7 +56,7 @@ def quote(query, context):
     from zoneinfo import ZoneInfo
     from src.services.us_live_execution_rules import current_us_cash_rules
     rules = None
-    if value.get('execution_facts') and value.get('fetched_at'):
+    if (value.get('execution_facts') or {}).get('market') == 'US' and value.get('fetched_at'):
         observed = datetime.fromisoformat(value['fetched_at'])
         day = observed.astimezone(ZoneInfo('America/New_York')).date().isoformat()
         rules = current_us_cash_rules(day, observed_at=value['fetched_at'], context=context)
@@ -78,6 +78,9 @@ def minute(query, context):
     try:
         attrs = value["attrs"]
         return {"symbol": query.symbol, "market": minute_market(query.symbol), "assetType": query.instrument_type,
+                **({"fieldUnits": {"volume": "share", "amount": "unknown"}}
+                   if minute_market(query.symbol) == "CN" and query.instrument_type == "STOCK" and query.timeframe == "1m" else {}),
+                **({"pagination": attrs["pagination"]} if "pagination" in attrs else {}),
                 "source": attrs["upstream_source"], "rows": value["rows"], "observedAt": attrs["observedAt"],
                 "timestampConvention": attrs.get("timestampConvention", "interval-start"),
                 "timeframe": query.timeframe, "timezone": attrs["timezone"], "session": attrs["session"], "responseSha256": attrs["responseSha256"]}
@@ -101,6 +104,15 @@ def lot_size(query, context):
         raise CapabilityContractError(error.code, str(error), retryable=error.code in {"timeout", "upstream_failure"}) from None
 
 
+def minute_revisions(market, asset, period):
+    if market != "CN":
+        return "futu-exact-minute-v1", "futu-complete-minute-sdk-pagination-v1"
+    if asset == "STOCK" and period == "1m":
+        return "futu-exact-cn-stock-minute-v4", "futu-observed-cn-stock-minute-sdk-v4"
+    revision = "v2" if period == "1m" else "v3"
+    return f"futu-exact-cn-minute-end-{revision}", f"futu-complete-cn-minute-end-sdk-pagination-{revision}"
+
+
 SOURCE = SourceDefinition("futu", manifest, factory, tuple(
     DailyBinding(ExactKey(market, asset, "DAILY_BAR", adjustment), "futu",
         f"dsa-v3-{market.lower()}-{asset.lower()}-futu-{adjustment}-exact-daily-v1", PROTOCOL, PROTOCOL,
@@ -120,8 +132,8 @@ SOURCE = SourceDefinition("futu", manifest, factory, tuple(
     )
 ) + tuple(
     QuoteBinding(ExactKey(market, asset, "REALTIME_QUOTE"), "futu",
-        f"futu-{market.lower()}-{asset.lower()}-exact-quote-v2" if market == 'US' else f"futu-{market.lower()}-{asset.lower()}-exact-quote-v1",
-        'futu-current-us-execution-v2' if market == 'US' else "futu-direct-quote-v1", quote)
+        f"futu-{market.lower()}-{asset.lower()}-exact-quote-v2",
+        f"futu-current-{market.lower()}-execution-v2", quote)
     for market, asset in (("HK", "STOCK"), ("HK", "ETF"), ("US", "STOCK"), ("US", "ETF"))
 ) + tuple(
     QueryBinding(STATIC_CONTRACT, ExactKey(market, asset, "SECURITY_STATIC_INFO"), "futu",
@@ -129,8 +141,7 @@ SOURCE = SourceDefinition("futu", manifest, factory, tuple(
     for market, asset in (("HK", "STOCK"), ("HK", "ETF"), ("US", "STOCK"), ("US", "ETF"))
 ) + tuple(
     QueryBinding(MINUTE_CONTRACT, ExactKey(market, asset, "MINUTE_BAR", "none", period), "futu",
-        "futu-exact-cn-minute-end-v2" if market == 'CN' and period == '1m' else "futu-exact-minute-v1",
-        "futu-complete-cn-minute-end-sdk-pagination-v2" if market == 'CN' and period == '1m' else "futu-complete-minute-sdk-pagination-v1",
+        *minute_revisions(market, asset, period),
         minute, admission_required=False)
     for market in ("CN", "HK", "US") for asset in ("STOCK", "ETF")
     for period in ("1m", "5m", "15m", "30m", "60m")

@@ -183,7 +183,7 @@ def test_gateway_exposes_stable_request_correlated_errors(tmp_path):
     error = raised.value
     assert error.code == "NO_ELIGIBLE_PROVIDER"
     assert error.detail() == {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "code": "NO_ELIGIBLE_PROVIDER",
         "message": "当前 Control 路由策略不可用",
         "requestId": "request-4",
@@ -265,20 +265,20 @@ def test_fastapi_current_quote_uses_applied_policy_and_exact_target(tmp_path, mo
     from fastapi import FastAPI
     from api.thesis_ledger import router_v3
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     client = TestClient(app)
 
     effective = client.get(
-        "/api/v3/thesis-ledger/control/policies/effective",
+        "/api/v1/thesis-ledger/control/policies/effective",
         headers={"Authorization": "Bearer control-token"},
     )
     assert effective.status_code == 200
     assert effective.json()["projection"]["effective"]["revision"] == 17
     quote = client.get(
-        "/api/v3/thesis-ledger/market/quote?symbol=600519.SH",
+        "/api/v1/thesis-ledger/market/quote?symbol=600519.SH",
         headers={"Authorization": "Bearer data-token"},
     )
     assert quote.status_code == 200, quote.text
-    assert quote.json()["version"] == 3
+    assert quote.json()["version"] == 1
     assert quote.json()["provider"] == "akshare"
     assert adapter.calls == 1

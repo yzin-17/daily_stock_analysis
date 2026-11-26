@@ -20,7 +20,7 @@ from src.services.thesis_ledger_public_fees import (
 
 def request(start="2023-08-25", end="2023-08-29"):
     return {
-        "contractVersion": 3, "consumer": "thesis-ledger",
+        "contractVersion": 1, "consumer": "thesis-ledger",
         "requestId": "public-fees-boundary-sample",
         "routeKey": {"kind": "data", "market": "CN", "assetType": "STOCK", "capability": CAPABILITY},
         "routeTarget": {"providerId": PROVIDER_ID, "upstreamSource": UPSTREAM_SOURCE, "routeIndex": 0},

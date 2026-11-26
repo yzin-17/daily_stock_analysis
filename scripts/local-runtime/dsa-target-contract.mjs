@@ -30,6 +30,6 @@ export function assertForwardRequest(path, method) {
   assert.equal(url.origin, 'http://dg2a.local');
   assert(!url.username && !url.password && !url.hash);
   assert(['GET', 'POST'].includes(method));
-  assert(url.pathname.startsWith('/api/v3/thesis-ledger/market/') || url.pathname.startsWith('/api/v3/thesis-ledger/backtest/'));
+  assert(url.pathname.startsWith('/api/v1/thesis-ledger/market/') || url.pathname.startsWith('/api/v1/thesis-ledger/backtest/'));
   return url.pathname + url.search;
 }

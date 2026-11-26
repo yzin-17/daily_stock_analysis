@@ -224,7 +224,7 @@ def test_first_use_keeps_revision_cursor_identity_and_disable_boundaries(runtime
         adapter_revision=source.ADAPTER_REVISION, source_revision=source.SOURCE_REVISION,
         credential_revision="not-required", valid_from=(now - timedelta(minutes=1)).isoformat(),
         valid_until=(now + timedelta(hours=1)).isoformat(), recorded_by="controlled-test")
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "yahoo-news-policy",
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "yahoo-news-policy",
                            "revision": 1, "enabled": True,
                            "routes": [{"key": KEY, "targets": [TARGET], "enabled": True}]})
     value = execute_news_request(app, request())

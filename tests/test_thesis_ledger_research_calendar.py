@@ -138,7 +138,7 @@ def test_authenticated_http_uses_extended_calendar_and_preserves_no_bar_assumpti
     from data_provider.tencent_native_daily import TENCENT_NATIVE_DAILY_PROTOCOL
     from src.services import thesis_ledger_provider_runtime as runtime
 
-    payload = {"contractVersion": 3, "requestId": "research-calendar-http", **request()}
+    payload = {"contractVersion": 1, "requestId": "research-calendar-http", **request()}
     days = research.research_market_coverage_context(payload, observed_at=NOW)["calendar"]["expectedSessionDates"]
     observed = days[1:] if missing else days
     frame = pd.DataFrame([{"date": day, "open": 1, "high": 1.2, "low": 0.9, "close": 1.1,
@@ -166,11 +166,11 @@ def test_authenticated_http_uses_extended_calendar_and_preserves_no_bar_assumpti
     monkeypatch.setenv("THESIS_LEDGER_DSA_TOKEN", "local-test-token")
     monkeypatch.setattr(runtime, "get_thesis_ledger_runtime", lambda: Provider())
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     client = TestClient(app)
-    assert client.post("/api/v3/thesis-ledger/market/bars", json=payload).status_code == 401
+    assert client.post("/api/v1/thesis-ledger/market/bars", json=payload).status_code == 401
     assert calls == []
-    response = client.post("/api/v3/thesis-ledger/market/bars", json=payload,
+    response = client.post("/api/v1/thesis-ledger/market/bars", json=payload,
                            headers={"Authorization": "Bearer local-test-token"})
     assert response.status_code == 200, response.text
     result = response.json()
@@ -179,7 +179,7 @@ def test_authenticated_http_uses_extended_calendar_and_preserves_no_bar_assumpti
     state = result["historicalTradabilityWindows"][0]["days"][0]["state"]
     assert state == ("assumed-untradable-no-bar" if missing else "observed-traded")
     payload["symbol"] = "600519.SH"
-    unknown = client.post("/api/v3/thesis-ledger/market/bars", json=payload,
+    unknown = client.post("/api/v1/thesis-ledger/market/bars", json=payload,
                           headers={"Authorization": "Bearer local-test-token"})
     assert unknown.status_code == 200, unknown.text
     assert unknown.json()["coverageProof"]["listing"] == {"symbol": "600519.SH", "status": "unknown"}

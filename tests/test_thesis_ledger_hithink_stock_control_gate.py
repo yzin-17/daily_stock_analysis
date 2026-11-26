@@ -49,7 +49,7 @@ def test_hithink_v3_stock_none_qfq_hfq_desired_is_retained_and_configured(
 
     applied = store.apply_policy_v3(
         {
-            "contractVersion": 3,
+            "contractVersion": 1,
             "consumer": "thesis-ledger",
             "requestId": "hithink-v3-stock-gate",
             "revision": 1,

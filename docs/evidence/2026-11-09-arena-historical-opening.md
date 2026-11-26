@@ -1,6 +1,6 @@
 # 历史开盘来源校验
 
-产品范围及当前状态由主仓[规格](../../../thesis-ledger/docs/specs/2026-11-09-cmb-historical-arena-replay.md)和[任务](../../../thesis-ledger/docs/tasks/2026-11-09-cmb-historical-arena-replay.md)持有；完整来源与运行态结果见[主证据](../../../thesis-ledger/docs/evidence/2026-11-09-cmb-historical-arena-replay.md)。
+产品范围与结案记录见主仓[规格](../../../thesis-ledger/docs/specs/2026-11-09-cmb-historical-arena-replay.md)和[归档任务](../../../thesis-ledger/docs/archive/tasks/2026-11-09-cmb-historical-arena-replay.md)。来源、运行态与四宽浏览器结果见[主证据](../../../thesis-ledger/docs/evidence/2026-11-09-cmb-historical-arena-replay.md)。
 
 本仓 `src/services/arena_historical_opening_evidence.py` 是不联网的离线校验器，读取已捕获的真实不复权日线、日历开盘、快照与分钟旁证、上交所完整停复牌返回及当日公司概况；同时验证已复核规则正式原件和暂缓附件摘要。当前上市概况不扩大为其他历史日期，未知、停牌、错配和不完整覆盖均拒绝。输出仅供初始现金账户买入的事后回放，不认证实时执行或卖出结算，不回填材料可用时间。
 

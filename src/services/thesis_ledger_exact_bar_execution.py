@@ -25,7 +25,7 @@ def execute_exact_bar(runtime, request, route_key, effective_policy, provider_id
         except (AttributeError, ControlContractError, ValueError):
             raise ProviderCallError(
                 "NO_ELIGIBLE_PROVIDER",
-                "Control V3 RouteTarget admission 已失效或修订不匹配",
+                "dsa-control-v1 RouteTarget admission 已失效或修订不匹配",
             ) from None
         credential_ready = (basic_price_credential_ready(credential_snapshot)
                             if basic_market_price_route(route_key, exact_target)
@@ -33,7 +33,7 @@ def execute_exact_bar(runtime, request, route_key, effective_policy, provider_id
         if not credential_ready:
             raise ProviderCallError(
                 "NO_ELIGIBLE_PROVIDER",
-                "Control V3 RouteTarget admission 已失效或修订不匹配",
+                "dsa-control-v1 RouteTarget admission 已失效或修订不匹配",
             )
     admission, admission_reason = price_route_admission(
         runtime._current_market_v3_admission, request, route_key, exact_target,
@@ -73,7 +73,12 @@ def execute_exact_bar(runtime, request, route_key, effective_policy, provider_id
     if request.parameters.get("historical_tradability") is True and getattr(frame, "empty", False) and isinstance(attrs, Mapping) and attrs.get("daily_tradability_input"):
         validated = frame
     else:
-        validated = runtime._validate_bars(frame)
+        if request.parameters.get("allow_price_only") is True:
+            if request.parameters.get("historical_tradability") is not True:
+                raise ProviderCallError("invalid_request", "日级版本2只用于显式价格观察")
+            validated = runtime._validate_bars(frame, price_observation_only=True)
+        else:
+            validated = runtime._validate_bars(frame)
     pagination_contract = market_pagination_contract_v3(
         request.instrument_type or "",
         provider_id,

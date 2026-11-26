@@ -10,7 +10,7 @@ from src.services.thesis_ledger_current_data_route import (
     CurrentDataRouteError, current_data_route_key, select_current_data_targets,
 )
 from src.services.thesis_ledger_local_rules import LOCAL_RULE_CAPABILITIES
-from src.services.thesis_ledger_status_capabilities_v1 import NAMES as STATUS_QUERY_CAPABILITIES
+from src.services.thesis_ledger_status_capabilities_v1 import NAMES as STATUS_NAMES
 from src.services.thesis_ledger_feature_policy import feature_provider_epoch
 from src.services.thesis_ledger_price_route_access import configured_data_route
 from src.services.thesis_ledger_route_admission_v3 import route_admission_scope_applies
@@ -19,6 +19,8 @@ from src.services.thesis_ledger_provider_runtime import (
     PROVIDER_MANIFESTS, ProviderCallError, ProviderExecution, RouteTarget,
     ThesisLedgerDataRequest, ThesisLedgerGatewayError, _log_quote_event,
 )
+
+STATUS_QUERY_CAPABILITIES = (*STATUS_NAMES, 'HISTORICAL_EXECUTION_CONTEXT')
 
 
 def execute_current_data_request(

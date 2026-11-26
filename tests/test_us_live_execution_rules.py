@@ -2,7 +2,8 @@
 
 from src.services.us_live_execution_rules import current_us_cash_rules
 from src.services.thesis_ledger_us_live_rules_contract import UsLiveRules
-from src.services.us_live_rules_refresh import checked_through, registered_source, IDENTITY, DOCUMENTS
+from src.services.us_live_rules_refresh import checked_through, registered_source, IDENTITY, DOCUMENTS, READ_BASELINES
+from src.services.rule_monitor_registry import sources
 from src.services.rule_monitor_runtime import RuleMonitorRuntime
 from src.services.rule_monitor_store import RuleMonitorStore
 from datetime import datetime
@@ -30,18 +31,22 @@ def setup_monitor(tmp_path, fault=None):
     clock = datetime.fromisoformat('2026-11-16T15:00:00+00:00').timestamp()
 
     async def fetch(url, **kwargs):
-        expected = next(digest for _, address, digest in DOCUMENTS if address == url)
+        expected = {address: digest for _, address, digest in DOCUMENTS}
+        expected.update({address: digest for (_, address), digest in READ_BASELINES.items()})
+        expected = expected[url]
         if fault == 'fetch':
             from src.services.rule_monitor_fetch import DocumentError
             raise DocumentError('document_unavailable')
-        if fault == 'changed':
+        is_html = any(address == url for _, address in READ_BASELINES)
+        if fault == 'changed' or (fault == 'changed_html' and is_html):
             expected = 'b' * 64
+        missing_snapshot = fault == 'snapshot' or (fault == 'snapshot_html' and is_html)
         return {'contentHash': expected, 'rawHash': expected,
-                'snapshot': {'format': 'html', 'text': None if fault == 'snapshot' else '受控官方资料正文',
-                             'reason': 'text_unavailable' if fault == 'snapshot' else None}}
+                'snapshot': {'format': 'html', 'text': None if missing_snapshot else '受控官方资料正文',
+                             'reason': 'text_unavailable' if missing_snapshot else None}}
     monitor = RuleMonitorRuntime(
         RuleMonitorStore(tmp_path / 'monitor.sqlite', clock=lambda: clock),
-        registry=lambda: {IDENTITY: registered_source()}, fetch=fetch)
+        registry=lambda: {IDENTITY: sources()[IDENTITY]}, fetch=fetch)
     context = SimpleNamespace(database_path=str(tmp_path / 'data.sqlite'), publish_guard=lambda: True)
     return monitor, context
 
@@ -58,7 +63,7 @@ def test_future_day_checks_enqueue_once_and_only_complete_unchanged_batch_advanc
     assert not monitor.store.config()['enabled']  # 按需批次不会启用定时监测配置。
 
 
-@pytest.mark.parametrize('fault', ['fetch', 'changed', 'snapshot'])
+@pytest.mark.parametrize('fault', ['fetch', 'changed', 'snapshot', 'changed_html', 'snapshot_html'])
 def test_unavailable_or_changed_material_keeps_execution_closed_without_automatic_retry(tmp_path, fault):
     monitor, context = setup_monitor(tmp_path, fault)
     assert checked_through('2026-11-16', context, monitor=monitor) is None
@@ -86,3 +91,37 @@ def test_explicit_manual_recheck_restores_same_day_without_erasing_failed_job(tm
     assert checked_through('2026-11-16', context, monitor=monitor) == '2026-11-16T15:00:00+00:00'
     assert monitor.store.job(failed)['counts']['unavailable'] == len(DOCUMENTS)
     assert not monitor.run_pending_once()
+
+
+def test_old_pdf_success_cannot_certify_projected_html_without_fresh_read(tmp_path):
+    monitor, context = setup_monitor(tmp_path)
+    monitor.registry = lambda: {IDENTITY: registered_source()}
+    assert checked_through('2026-11-16', context, monitor=monitor) is None
+    assert monitor.run_pending_once()
+    assert checked_through('2026-11-16', context, monitor=monitor)
+    monitor.registry = lambda: {IDENTITY: sources()[IDENTITY]}
+    assert checked_through('2026-11-16', context, monitor=monitor) is None
+    monitor.enqueue(str(uuid4()), [IDENTITY])
+    assert monitor.run_pending_once()
+    assert checked_through('2026-11-16', context, monitor=monitor) == '2026-11-16T15:00:00+00:00'
+
+
+def test_unreviewed_projection_cannot_inherit_original_baseline(tmp_path, monkeypatch):
+    from src.services import rule_monitor_registry as registry
+    original, replacement = next(iter(READ_BASELINES))
+    monkeypatch.setattr(registry, 'DOCUMENT_READ_URLS', {**registry.DOCUMENT_READ_URLS,
+        original: replacement + '?unreviewed=1'})
+    monitor, context = setup_monitor(tmp_path)
+    expected = next(iter(READ_BASELINES.values()))
+    original_fetch = monitor.fetch
+
+    async def fetch(url, **kwargs):
+        if url != replacement + '?unreviewed=1':
+            return await original_fetch(url, **kwargs)
+        return {'contentHash': expected, 'rawHash': expected,
+                'snapshot': {'format': 'html', 'text': '受控完整但未核验的新地址正文', 'reason': None}}
+    monitor.fetch = fetch
+    assert checked_through('2026-11-16', context, monitor=monitor) is None
+    assert monitor.run_pending_once()
+    assert monitor.store.job()['status'] == 'succeeded'
+    assert checked_through('2026-11-16', context, monitor=monitor) is None

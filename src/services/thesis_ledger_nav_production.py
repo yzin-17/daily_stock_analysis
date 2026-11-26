@@ -86,7 +86,7 @@ def execute_nav_request(runtime, payload, *, check_security=None,
         projected = project_nav_evidence(request, source, identity, rule, calendar, captured.isoformat())
     except (ValueError, IndexError, KeyError):
         raise NavProductionError('invalid_response') from None
-    return {'contractVersion': 3, 'requestId': request['requestId'], 'symbol': request['symbol'],
+    return {'contractVersion': 1, 'requestId': request['requestId'], 'symbol': request['symbol'],
             'routeKey': request['routeKey'], 'routeTarget': request['routeTarget'],
             'desiredRevision': request['desiredRevision'], 'effectivePolicyRevision': request['effectivePolicyRevision'],
             'catalogRevision': request['catalogRevision'], 'dataAsOf': request['dataAsOf'],

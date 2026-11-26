@@ -9,7 +9,7 @@ from src.services.thesis_ledger_feature_policy import feature_target_reason
 
 
 def policy():
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "feature-test", "revision": 1,
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "feature-test", "revision": 1,
             "enabled": True, "routes": [{"key": {"kind": "bar", "market": "CN", "assetType": "ETF", "capability": "DAILY_BAR",
                                                "timeframe": "1d", "adjustment": "qfq"},
                                         "targets": [{"providerId": "tencent", "upstreamSource": "tencent"},

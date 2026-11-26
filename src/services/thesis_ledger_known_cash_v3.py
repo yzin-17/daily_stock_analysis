@@ -33,7 +33,7 @@ def valid_research_policy(value):
 
 def parse_known_cash_request(payload, *, allow_legacy_control=False):
     if (not isinstance(payload, dict) or set(payload) != FIELDS
-            or type(payload["contractVersion"]) is not int or payload["contractVersion"] != 3
+            or type(payload["contractVersion"]) is not int or payload["contractVersion"] != 1
             or payload["protocolVersion"] != "known-cash-observations-v1"
             or payload["routeKey"] != KEY or payload["currency"] != "CNY" or not valid_research_policy(payload["researchPolicy"])):
         raise KnownCashReadError("invalid_request", "invalid_research_request")

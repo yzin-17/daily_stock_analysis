@@ -31,7 +31,7 @@ def payload(**overrides):
 
 def enable(store, provider, values):
     return store.save_provider_config(provider, {
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-enable", "enabled": True,
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-enable", "enabled": True,
         "credentials": {"method": "search", "values": values},
     })
 
@@ -50,7 +50,7 @@ def admit(store, target=TARGET):
 
 
 def apply(store, *, revision=1, targets=None):
-    return store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-policy",
+    return store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-policy",
                                   "revision": revision, "enabled": True,
                                   "routes": [{"key": KEY, "targets": targets or [TARGET], "enabled": True}]})
 
@@ -67,12 +67,12 @@ def environment(server, monkeypatch, tmp_path):
     apply(store)
     runtime = ThesisLedgerProviderRuntime(store)
     app = FastAPI()
-    app.include_router(build_news_router(lambda: runtime), prefix="/api/v3/thesis-ledger")
+    app.include_router(build_news_router(lambda: runtime), prefix="/api/v1/thesis-ledger")
     return TestClient(app), store, runtime, state
 
 
 def read(client, body=None, **kwargs):
-    response = client.post("/api/v3/thesis-ledger/market/news", json=body or payload(), headers=HEADERS, **kwargs)
+    response = client.post("/api/v1/thesis-ledger/market/news", json=body or payload(), headers=HEADERS, **kwargs)
     assert response.status_code == 200, response.text[:500]
     return NewsResponse.model_validate(response.json())
 
@@ -112,7 +112,7 @@ def test_revocation_and_disable_reject_before_replaying_cached_response(environm
         store.revoke_route_admission_v3(key=KEY, target=TARGET, reason="controlled-revoke")
     else:
         store.save_provider_config("searxng", {
-            "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-disable", "enabled": False,
+            "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-disable", "enabled": False,
         })
     result = read(client)
     assert result.status == "unavailable" and result.upstreamAttempts == 0
@@ -124,7 +124,7 @@ def test_config_and_policy_revisions_separate_cached_identity(environment):
     client, store, _, state = environment
     first = read(client)
     store.save_provider_config("searxng", {
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-settings-revision", "settings": {},
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-settings-revision", "settings": {},
     })
     second = read(client)
     assert second.status == "available" and second.upstreamAttempts == 1 and len(state["calls"]) == 2
@@ -149,7 +149,7 @@ def test_control_change_after_actual_read_discards_result_without_falsifying_zer
     def changed(*args, **kwargs):
         response = original(*args, **kwargs)
         store.save_provider_config("searxng", {
-            "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-inflight-disable", "enabled": False,
+            "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-inflight-disable", "enabled": False,
         })
         return response
 
@@ -162,8 +162,8 @@ def test_control_change_after_actual_read_discards_result_without_falsifying_zer
 
 def test_http_auth_and_private_or_invalid_request_rejected_without_search(environment):
     client, _, _, state = environment
-    assert client.post("/api/v3/thesis-ledger/market/news", json=payload()).status_code == 401
-    response = client.post("/api/v3/thesis-ledger/market/news", headers=HEADERS,
+    assert client.post("/api/v1/thesis-ledger/market/news", json=payload()).status_code == 401
+    response = client.post("/api/v1/thesis-ledger/market/news", headers=HEADERS,
                            json=payload(privateHolding="controlled-private-material"))
     assert response.status_code == 422 and "controlled-private-material" not in response.text
     assert state["calls"] == []
@@ -185,12 +185,12 @@ def test_environment_credential_loss_stays_distinct_from_explicit_disable(enviro
     client, store, _, state = environment
     instance = json.loads(store.provider_credential_snapshot("searxng").values["baseUrls"])[0]
     store.save_provider_config("searxng", {
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-clear", "clearCredentials": True,
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-clear", "clearCredentials": True,
     })
     assert {error.code for error in read(client).errors} == {"not_admitted"}
     monkeypatch.setattr(data_config, "get_data_config", lambda: DataServiceConfig(searxng_base_urls=[instance]))
     store.save_provider_config("searxng", {
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-environment-enable", "enabled": True,
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-environment-enable", "enabled": True,
     })
     monkeypatch.setattr(data_config, "get_data_config", lambda: DataServiceConfig())
     result = read(client)
@@ -220,11 +220,11 @@ def test_nonempty_environment_revision_change_requires_fresh_read_and_verificati
     client, store, _, state = environment
     instance = json.loads(store.provider_credential_snapshot("searxng").values["baseUrls"])[0]
     store.save_provider_config("searxng", {
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-to-env", "clearCredentials": True,
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-to-env", "clearCredentials": True,
     })
     monkeypatch.setattr(data_config, "get_data_config", lambda: DataServiceConfig(searxng_base_urls=[instance]))
     store.save_provider_config("searxng", {
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "controlled-env-enable", "enabled": True,
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "controlled-env-enable", "enabled": True,
     })
     admit(store)
     assert read(client).status == "available" and len(state["calls"]) == 1

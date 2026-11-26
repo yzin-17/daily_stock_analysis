@@ -23,7 +23,7 @@ from tests.test_configured_market_routes import apply, no_admissions, store
 from tests.test_report_metadata_page import payload, Response
 
 
-BODY = {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'http-metadata',
+BODY = {'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'http-metadata',
         'symbol': '600519.SH', 'assetType': 'STOCK', 'start': '2026-08-01', 'end': '2026-10-23',
         'page': 1, 'pageSize': 2, 'requestBudgetMs': 3000}
 KEY = {'kind': 'data', 'market': 'CN', 'assetType': 'STOCK', 'capability': 'RESEARCH_REPORT_METADATA'}
@@ -38,7 +38,7 @@ def request(**changes):
 
 
 def runtime(targets=None, enabled=True):
-    policy = {'contractVersion': 3, 'enabled': True, 'revision': 3, 'sourceDesiredRevision': 3,
+    policy = {'contractVersion': 1, 'enabled': True, 'revision': 3, 'sourceDesiredRevision': 3,
               'routes': [{'key': KEY, 'targets': [TARGET] if targets is None else targets}]}
     registry = Mock(return_value=[{'providerId': 'akshare', 'enabled': enabled, 'configVersion': 1}])
     return SimpleNamespace(store=SimpleNamespace(database_path=':memory:', effective_policy_v3=lambda: policy,
@@ -53,7 +53,7 @@ def empty_page(req):
 def client(service):
     app = FastAPI()
     app.dependency_overrides[require_contract_token] = lambda: None
-    app.include_router(build_report_metadata_router(lambda: service), prefix='/api/v3/thesis-ledger')
+    app.include_router(build_report_metadata_router(lambda: service), prefix='/api/v1/thesis-ledger')
     return HttpClient(app)
 
 
@@ -61,7 +61,7 @@ def client(service):
     {'requestBudgetMs': True}, {'symbol': '600519'}, {'start': '2026-11-01'}])
 def test_invalid_http_request_never_executes_runtime(change):
     service = SimpleNamespace(execute_request=Mock())
-    result = client(service).post('/api/v3/thesis-ledger/market/research-report-metadata', json={**BODY, **change})
+    result = client(service).post('/api/v1/thesis-ledger/market/research-report-metadata', json={**BODY, **change})
     assert result.status_code == 422
     detail = result.json()['detail']
     assert set(detail) == {'contractVersion', 'requestId', 'error'}
@@ -77,7 +77,7 @@ def test_http_accepts_supported_stocks_without_date_filters(symbol):
     service = SimpleNamespace(execute_request=Mock(return_value=SimpleNamespace(value=value,
         effective_revision=3, provider='akshare', upstream_source='eastmoney', route_index=0)))
     body = {key: val for key, val in {**BODY, 'symbol': symbol}.items() if key not in ('start', 'end')}
-    result = client(service).post('/api/v3/thesis-ledger/market/research-report-metadata', json=body)
+    result = client(service).post('/api/v1/thesis-ledger/market/research-report-metadata', json=body)
     assert result.status_code == 200
     assert result.json()['start'] is None and result.json()['end'] is None
     actual = service.execute_request.call_args.args[0]
@@ -88,7 +88,7 @@ def test_http_preserves_source_empty_page_and_control_provenance():
     value = empty_page(request()).model_dump(mode='json')
     service = SimpleNamespace(execute_request=Mock(return_value=SimpleNamespace(value=value,
         effective_revision=3, provider='akshare', upstream_source='eastmoney', route_index=0)))
-    result = client(service).post('/api/v3/thesis-ledger/market/research-report-metadata', json=BODY)
+    result = client(service).post('/api/v1/thesis-ledger/market/research-report-metadata', json=BODY)
     assert result.status_code == 200
     body = result.json()
     assert body['historyComplete'] is False and body['items'] == []
@@ -97,7 +97,7 @@ def test_http_preserves_source_empty_page_and_control_provenance():
 
 def test_http_reports_missing_route_without_requesting_another_source():
     service = SimpleNamespace(execute_request=Mock(side_effect=ProviderCallError('NO_ELIGIBLE_PROVIDER', '未配置路由')))
-    result = client(service).post('/api/v3/thesis-ledger/market/research-report-metadata', json=BODY)
+    result = client(service).post('/api/v1/thesis-ledger/market/research-report-metadata', json=BODY)
     assert result.status_code == 503 and result.json()['detail']['error']['code'] == 'upstream_failure'
     assert service.execute_request.call_count == 1
 
@@ -109,11 +109,11 @@ def test_http_reports_missing_route_without_requesting_another_source():
 ])
 def test_provider_errors_use_the_standard_data_v3_envelope(code, status, expected):
     service = SimpleNamespace(execute_request=Mock(side_effect=ProviderCallError(code, '不得暴露的来源原文')))
-    result = client(service).post('/api/v3/thesis-ledger/market/research-report-metadata', json=BODY)
+    result = client(service).post('/api/v1/thesis-ledger/market/research-report-metadata', json=BODY)
     assert result.status_code == status
     detail = result.json()['detail']
     assert set(detail) == {'contractVersion', 'requestId', 'error'}
-    assert detail['contractVersion'] == 3 and detail['requestId'] == BODY['requestId']
+    assert detail['contractVersion'] == 1 and detail['requestId'] == BODY['requestId']
     assert set(detail['error']) == {'code', 'message'} and detail['error']['code'] == expected
     assert '不得暴露' not in result.text and service.execute_request.call_count == 1
 
@@ -122,7 +122,7 @@ def test_provider_errors_use_the_standard_data_v3_envelope(code, status, expecte
 def test_invalid_request_identifier_still_has_a_valid_error_envelope(request_id):
     from uuid import UUID
     service = SimpleNamespace(execute_request=Mock())
-    result = client(service).post('/api/v3/thesis-ledger/market/research-report-metadata',
+    result = client(service).post('/api/v1/thesis-ledger/market/research-report-metadata',
                                   json={**BODY, 'requestId': request_id})
     assert result.status_code == 422
     assert str(UUID(result.json()['detail']['requestId'])) == result.json()['detail']['requestId']
@@ -213,9 +213,9 @@ def test_real_control_registry_executor_and_http_need_no_temporary_admission(sto
     body = {key: val for key, val in {**BODY, 'symbol': symbol}.items() if key not in ('start', 'end')}
     with patch.object(source, 'open_list', return_value=Response(json.dumps(data).encode())) as fetch, \
             patch.object(rt, '_current_market_v3_admission', side_effect=AssertionError('不能读取临时准入')):
-        result = client(rt).post('/api/v3/thesis-ledger/market/research-report-metadata', json=body)
+        result = client(rt).post('/api/v1/thesis-ledger/market/research-report-metadata', json=body)
     assert result.status_code == 200, result.text
-    assert result.json()['metadataVersion'] == 'research-report-metadata-v2'
+    assert result.json()['metadataVersion'] == 'market-external-report-metadata-v1'
     assert result.json()['symbol'] == symbol and result.json()['start'] is None and result.json()['end'] is None
     assert fetch.call_count == 1
     params = parse_qs(urlsplit(fetch.call_args.args[0].full_url).query, keep_blank_values=True)

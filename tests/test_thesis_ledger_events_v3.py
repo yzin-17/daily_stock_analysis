@@ -33,7 +33,7 @@ def state():
                             'credentialConfigured': False, 'tombstone': None}
                            for provider_id, manifest in PROVIDER_MANIFESTS.items() if provider_id not in known)
     policy = {
-        "contractVersion": 3, "enabled": True, "revision": 5, "sourceDesiredRevision": 5,
+        "contractVersion": 1, "enabled": True, "revision": 5, "sourceDesiredRevision": 5,
         "routes": [{"key": EVENT_KEY, "targets": [
             {**EVENT_TARGET, "routeIndex": 0, "eligible": True, "reason": None},
         ]}],
@@ -41,7 +41,7 @@ def state():
     store.effective_policy_v3 = lambda: deepcopy(policy)
     runtime = ThesisLedgerProviderRuntime(store=store)
     request = {
-        "contractVersion": 3, "requestId": "event-test", "symbol": "510300.SH",
+        "contractVersion": 1, "requestId": "event-test", "symbol": "510300.SH",
         "routeKey": dict(EVENT_KEY), "routeTarget": {**EVENT_TARGET, "routeIndex": 0},
         "desiredRevision": 5, "effectivePolicyRevision": 5,
         "catalogRevision": runtime.market_route_catalog_v3()["catalogRevision"],
@@ -113,9 +113,9 @@ def test_http_authentication_prevents_execution(state, monkeypatch):
     execute = Mock()
     monkeypatch.setattr(api, "execute_event_request", execute)
     app = FastAPI()
-    app.include_router(router, prefix="/api/v3")
+    app.include_router(router, prefix="/api/v1")
     client = TestClient(app)
-    response = client.post("/api/v3/thesis-ledger/market/events", json=state[1])
+    response = client.post("/api/v1/thesis-ledger/market/events", json=state[1])
     assert response.status_code in (401, 403)
     execute.assert_not_called()
 
@@ -128,9 +128,9 @@ def test_authenticated_http_uses_the_admitted_runtime(state, monkeypatch):
     monkeypatch.setattr(module, "get_thesis_ledger_runtime", lambda: runtime)
     monkeypatch.setattr(service, "fetch_fund_dividend_observations", read)
     app = FastAPI()
-    app.include_router(router, prefix="/api/v3")
+    app.include_router(router, prefix="/api/v1")
     response = TestClient(app).post(
-        "/api/v3/thesis-ledger/market/events", json=request,
+        "/api/v1/thesis-ledger/market/events", json=request,
         headers={"Authorization": "Bearer test-token"},
     )
     assert response.status_code == 200

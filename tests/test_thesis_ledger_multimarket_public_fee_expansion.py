@@ -16,7 +16,7 @@ configured_client = routes.configured_client
 def request(market="HK"):
     symbol, start, end = ("00147.HK", "2025-08-06", "2025-08-11") if market == "HK" else ("GME.US", "2024-05-10", "2024-05-24")
     target = {"providerId": f"official-{market.lower()}-rules", "upstreamSource": f"{market.lower()}-stock-public-fees", "routeIndex": 0}
-    return {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "expanded-fees",
+    return {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "expanded-fees",
             "routeKey": {"kind": "data", "market": market, "assetType": "STOCK", "capability": "HISTORICAL_PUBLIC_FEES"},
             "routeTarget": target, "symbol": symbol, "range": {"start": start, "end": end}}
 
@@ -72,10 +72,10 @@ def test_actual_control_and_authenticated_http_read(configured_client, market):
     client, _runtime, _store = configured_client
     wire = request(market)
     target = {k: v for k, v in wire["routeTarget"].items() if k != "routeIndex"}
-    policy = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "new-fee-policy", "revision": 1,
+    policy = {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "new-fee-policy", "revision": 1,
               "enabled": True, "routes": [{"key": wire["routeKey"], "targets": [target]}]}
-    assert client.post("/api/v3/thesis-ledger/control/policies/apply", json=policy, headers=routes.CONTROL_HEADERS).status_code == 200
-    path = "/api/v3/thesis-ledger/market/public-fees"
+    assert client.post("/api/v1/thesis-ledger/control/policies/apply", json=policy, headers=routes.CONTROL_HEADERS).status_code == 200
+    path = "/api/v1/thesis-ledger/market/public-fees"
     assert client.post(path, json=wire, headers={}).status_code == 401
     response = client.post(path, json=wire, headers=routes.DATA_HEADERS)
     assert response.status_code == 200

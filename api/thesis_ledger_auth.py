@@ -9,7 +9,7 @@ from typing import Optional
 
 from fastapi import Header, HTTPException, Request
 
-CONTRACT_VERSION = 3
+CONTRACT_VERSION = 1
 _request_id_context: ContextVar[str | None] = ContextVar("thesis_ledger_request_id", default=None)
 
 

@@ -93,11 +93,16 @@ def read_futu_quote(sdk, host, port, symbol, instrument_type):
                 raise FutuMarketError("invalid_response", "富途价格字段不是有限数值")
             result[field] = value
         result.update(volume=optional_quote_number(row.get("volume")), amount=optional_quote_number(row.get("turnover")))
+        from .futu_quote_execution import current_execution
+        result['execution_facts'] = current_execution(
+            code, instrument_type, static, row, provider_time, result['fetched_at'])
         if market == 'US':
-            from .futu_quote_execution import current_us_execution
             result['units'] = {'priceCurrency': 'USD', 'volume': 'share', 'turnoverCurrency': 'unknown'}
-            result['execution_facts'] = current_us_execution(
-                code, instrument_type, static, row, provider_time, result['fetched_at'])
+        elif market == 'HK':
+            from .futu_research_identity import observed_identity
+            identity = observed_identity(code[3:] + '.HK', 'HK', datetime.fromisoformat(result['fetched_at']))
+            if identity and identity['assetType'] == instrument_type and static.get('exchange_type') == identity['exchange']:
+                result['units'] = {'priceCurrency': identity['currency'], 'volume': 'unknown', 'turnoverCurrency': 'unknown'}
         return result
     finally:
         if context is not None:
@@ -128,6 +133,9 @@ class FutuMarketAdapter(FutuLotSizeAdapter):
         from .futu_static_info import static_identity
         static_identity(symbol, asset_type)
         return self._query({"operation": "static-info", "symbol": symbol, "instrumentType": asset_type})
+
+    def get_current_trading_state(self, symbol):
+        return self._query({"operation": "trading-state", "symbol": symbol})
 
     def get_exact_minute(self, request):
         return self._query({"operation": "minute", "symbol": request.symbol, "instrumentType": request.instrument_type,

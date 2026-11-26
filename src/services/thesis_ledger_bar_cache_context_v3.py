@@ -29,7 +29,7 @@ def _account_ready(access):
 
 
 def _route(policy, key):
-    if (not isinstance(policy, dict) or policy.get('contractVersion') != 3
+    if (not isinstance(policy, dict) or (type(policy.get('contractVersion')) is not int or policy.get('contractVersion') != 1)
             or type(policy.get('revision')) is not int or policy['revision'] < 0
             or policy['revision'] != policy.get('sourceDesiredRevision')
             or type(policy.get('enabled')) is not bool or not isinstance(policy.get('routes'), list)):

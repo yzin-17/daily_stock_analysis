@@ -1,0 +1,28 @@
+{
+  "description": "两证券查询原文及回执来自官方已保存响应；测试中的上市、会话和其余执行制度是受控输入，不认证完整真实执行资格。",
+  "raw": "{\"actionErrors\":[],\"actionMessages\":[],\"fieldErrors\":{},\"isPagination\":\"true\",\"jsonCallBack\":null,\"locale\":\"en_CN\",\"pageHelp\":{\"beginPage\":0,\"cacheSize\":1,\"data\":[],\"endDate\":null,\"endPage\":1,\"objectResult\":null,\"pageCount\":0,\"pageNo\":1,\"pageSize\":25,\"pageSizeWithOutLimit\":25,\"searchDate\":null,\"sort\":null,\"startDate\":null,\"total\":0},\"pageNo\":null,\"pageSize\":null,\"queryDate\":\"\",\"result\":[],\"securityCode\":\"\",\"sqlId\":\"SSE_PL_JYTS_TFPXX_JJ\",\"texts\":null,\"type\":\"\",\"validateCode\":\"\"}",
+  "cases": [
+    {
+      "symbol": "588000.SH",
+      "page": {
+        "id": "official-halt-query",
+        "kind": "reconstruction",
+        "sha256": "087735ac94e1b965c175ba5fb3af737546beb399219342c3a78cd40fd9d884a3",
+        "reference": "https://query.sse.com.cn/sseQuery/commonSoaQuery.do?isPagination=true&sqlId=SSE_PL_JYTS_TFPXX_JJ&secCode=588000&stopReason=&order=startStopDate%7Cdesc%2CsecCode%7Casc&startDate=19901219&endDate=20261110&pageHelp.pageSize=25&pageHelp.pageNo=1&pageHelp.beginPage=1&pageHelp.cacheSize=1&pageHelp.endPage=1",
+        "observedAt": "2026-11-16T08:16:30.680029+00:00",
+        "httpStatus": 200
+      }
+    },
+    {
+      "symbol": "510300.SH",
+      "page": {
+        "id": "official-halt-query",
+        "kind": "reconstruction",
+        "sha256": "087735ac94e1b965c175ba5fb3af737546beb399219342c3a78cd40fd9d884a3",
+        "reference": "https://query.sse.com.cn/sseQuery/commonSoaQuery.do?isPagination=true&sqlId=SSE_PL_JYTS_TFPXX_JJ&secCode=510300&stopReason=&order=startStopDate%7Cdesc%2CsecCode%7Casc&startDate=20261110&endDate=20261110&pageHelp.pageSize=25&pageHelp.pageNo=1&pageHelp.beginPage=1&pageHelp.cacheSize=1&pageHelp.endPage=1",
+        "observedAt": "2026-11-16T09:45:26.482673+00:00",
+        "httpStatus": 200
+      }
+    }
+  ]
+}

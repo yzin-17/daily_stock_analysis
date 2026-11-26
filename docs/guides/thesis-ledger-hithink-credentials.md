@@ -2,7 +2,7 @@
 
 ## 配置入口
 
-ThesisLedger 的“市场数据 → 数据源 → HiThink → 配置凭证”使用必填的保密 `API Key` 字段，认证方式为 `api_key`。Control V3 的 Provider manifest 通过 `credentialSchema.methods` 声明表单；主仓按该声明复用凭证侧栏。
+ThesisLedger 的“市场数据 → 数据源 → HiThink → 配置凭证”使用必填的保密 `API Key` 字段，认证方式为 `api_key`。`dsa-control-v1` 的 Provider manifest 通过 `credentialSchema.methods` 声明表单；主仓按该声明复用凭证侧栏。
 
 凭证通过 Control 的 Provider config 接口交给 DSA，加密保存在现有 SQLite。接口只返回字段是否已配置、配置版本和来源，不回显 API Key。页面优先于 `HITHINK_API_KEY` 环境变量；页面字段留空只保留已有页面值。移除页面凭证后才恢复环境配置。页面凭证无法解密或格式失效时不静默回退环境账号。
 
@@ -14,7 +14,7 @@ HiThink ETF 前复权基础价格按已有共同能力契约检查配置即可�
 
 ## 目录未命中时检索标的
 
-`GET /api/v3/thesis-ledger/instruments/search` 使用 Data Contract Bearer Token，接受 `query`（1–80 字符）以及可选的 `market`、`instrumentType`。返回 `{contractVersion: 3, providerId, items}`，每条包含 `canonicalCode`、`market`、`instrumentType` 和 `displayName`。该请求仅读取当前证券身份，不创建目录代次。
+`GET /api/v1/thesis-ledger/instruments/search` 使用 Data Contract Bearer Token，接受 `query`（1–80 字符）以及可选的 `market`、`instrumentType`。返回 `{contractVersion: 1, providerId, items}`，每条包含 `canonicalCode`、`market`、`instrumentType` 和 `displayName`。该请求仅读取当前证券身份，不创建目录代次。
 
 未指定市场的名称和境内代码通过 HiThink 原生检索，涵盖股票、ETF、场外基金，最多 20 条。沪深京及场外基金可通过 `SH`、`SZ`、`BJ`、`OF` 筛选；完整代码支持 `510300.SH` 形式。类型取值为 `STOCK`、`ETF`、`MUTUAL_FUND`。按名称检索不会枚举港美股。
 

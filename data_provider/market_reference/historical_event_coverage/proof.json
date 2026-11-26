@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "method": "sse-disclosure-event-window-v1",
+  "scopeSymbols": [
+    "510300.SH",
+    "588000.SH"
+  ],
+  "scopeDateFrom": "2026-11-02",
+  "scopeDateTo": "2026-11-16",
+  "indexes": [
+    {
+      "symbol": "510300.SH",
+      "listedOn": "2012-05-28",
+      "reference": "https://query.sse.com.cn/commonQuery.do?isPagination=true&pageHelp.pageSize=1000&pageHelp.pageNo=1&pageHelp.beginPage=1&pageHelp.cacheSize=1&pageHelp.endPage=1&type=inParams&sqlId=COMMON_PL_JJXX_JJGG_NEW_L&TITLE=&SECURITY_CODE=510300&BULLETIN_TYPE=&OTHER_TYPE=&START_DATE=2012-05-28&END_DATE=2026-11-16&DATE_DESC=1&DATE_ASC=&CODE_DESC=&CODE_ASC=",
+      "sha256": "d63df6cfbfa87128a0ab1e4fd7f17acc768d68af0828bcb335a91a5eddc8eb8d",
+      "observedAt": "2026-11-16T14:04:48.950966+00:00"
+    },
+    {
+      "symbol": "588000.SH",
+      "listedOn": "2020-11-16",
+      "reference": "https://query.sse.com.cn/commonQuery.do?isPagination=true&pageHelp.pageSize=1000&pageHelp.pageNo=1&pageHelp.beginPage=1&pageHelp.cacheSize=1&pageHelp.endPage=1&type=inParams&sqlId=COMMON_PL_JJXX_JJGG_NEW_L&TITLE=&SECURITY_CODE=588000&BULLETIN_TYPE=&OTHER_TYPE=&START_DATE=2020-11-16&END_DATE=2026-11-16&DATE_DESC=1&DATE_ASC=&CODE_DESC=&CODE_ASC=",
+      "sha256": "cd99bc0740e35fa57de95a67dfc05fd591e7e776ef93f088012a1ae168870999",
+      "observedAt": "2026-11-16T14:04:48.950796+00:00"
+    }
+  ],
+  "publications": [
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2012-12-12",
+      "sha256": "dbb0b83f1b47b148338ffa69cb8959372626207893b7daea4739ad79463676be",
+      "observedAt": "2026-11-16T14:17:29.002798+00:00",
+      "recordDate": "2012-12-17",
+      "effectiveDate": "2012-12-18",
+      "paymentDate": "2012-12-24",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/2012-12-12/510300_20121212_1.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2014-01-15",
+      "sha256": "3c74e29e7ddac830b7181748b0eb00ddafcf8a72bd9d07ab2c88550ffb91cb44",
+      "observedAt": "2026-11-16T14:17:28.715501+00:00",
+      "recordDate": "2014-01-20",
+      "effectiveDate": "2014-01-21",
+      "paymentDate": "2014-01-27",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/2014-01-14/510300_20140115_1.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2015-01-14",
+      "sha256": "1edb820f5efe41a0f28f7bd05dfdaf454e0dde97894a4101f6b9570c1b2bf3db",
+      "observedAt": "2026-11-16T14:17:28.417958+00:00",
+      "recordDate": "2015-01-19",
+      "effectiveDate": "2015-01-20",
+      "paymentDate": "2015-01-23",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/2015-01-13/510300_20150114_1.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2016-01-14",
+      "sha256": "d8db54b96a9e4fffd77ce98d0d4702e4b4601887e48ed738785d7f661b530759",
+      "observedAt": "2026-11-16T14:17:28.369333+00:00",
+      "recordDate": "2016-01-19",
+      "effectiveDate": "2016-01-20",
+      "paymentDate": "2016-01-25",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/2016-01-14/510300_20160114_1.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2017-01-17",
+      "sha256": "19d67c3c8f568b81f6ca489ccbc6b9f2d392bf0ecc0cfe217df1ccda5059d7ae",
+      "observedAt": "2026-11-16T14:17:28.239510+00:00",
+      "recordDate": "2017-01-20",
+      "effectiveDate": "2017-01-23",
+      "paymentDate": "2017-01-26",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/2017-01-16/510300_20170117_1.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2018-01-17",
+      "sha256": "6aecb0d984b8777857dc71df0f118a5d14b88bdc6d8a73257149d63d35946fca",
+      "observedAt": "2026-11-16T14:17:27.828474+00:00",
+      "recordDate": "2018-01-22",
+      "effectiveDate": "2018-01-23",
+      "paymentDate": "2018-01-26",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/2018-01-17/510300_20180117_1.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2019-01-10",
+      "sha256": "39a65a900bc8f30e0d572cecad642d06fd7ddfd7317b3265f99a3146f483d7ea",
+      "observedAt": "2026-11-16T14:17:27.533948+00:00",
+      "recordDate": "2019-01-15",
+      "effectiveDate": "2019-01-16",
+      "paymentDate": "2019-01-21",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/2019-01-10/510300_20190110_1.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2019-12-05",
+      "sha256": "c010184f267a231457103e8a3798c2fa91445033be875bdf6711162f419b26db",
+      "observedAt": "2026-11-16T14:17:27.516841+00:00",
+      "recordDate": "2019-12-10",
+      "effectiveDate": "2019-12-11",
+      "paymentDate": "2019-12-16",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/2019-12-05/510300_20191205_1.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2021-01-11",
+      "sha256": "1992271ca55dc3c7f88cf528f8f0f757fc48143b2a805159d2b3efdfb9143fc2",
+      "observedAt": "2026-11-16T14:17:27.382598+00:00",
+      "recordDate": "2021-01-15",
+      "effectiveDate": "2021-01-18",
+      "paymentDate": "2021-01-21",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/2021-01-11/510300_20210111_1.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2022-01-12",
+      "sha256": "1f5411e65cb9043bec5ae100df3925e6bb0aa122ea18186c7ba9a7e0747a9b50",
+      "observedAt": "2026-11-16T14:17:27.322877+00:00",
+      "recordDate": "2022-01-18",
+      "effectiveDate": "2022-01-19",
+      "paymentDate": "2022-01-24",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/new/2022-01-12/510300_20220112_1_pWPNE0aG.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2023-01-09",
+      "sha256": "68f2227ae25acec3b831d50d042b87f12696dc0df1514ef9dacb36e018d571d7",
+      "observedAt": "2026-11-16T14:17:26.975611+00:00",
+      "recordDate": "2023-01-13",
+      "effectiveDate": "2023-01-16",
+      "paymentDate": "2023-01-19",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/new/2023-01-09/510300_20230109_0ED5.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2024-01-11",
+      "sha256": "165ddaec9b36480ff4cbc738227043db7b7acc4f80ac31bedaa0e4f5c4001f4b",
+      "observedAt": "2026-11-16T14:17:26.975466+00:00",
+      "recordDate": "2024-01-17",
+      "effectiveDate": "2024-01-18",
+      "paymentDate": "2024-01-23",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/new/2024-01-11/510300_20240111_QQFV.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2025-06-11",
+      "sha256": "9a2f554b8ba5e340c79905171388f65225e9239027a36794522aa6bb4a82be67",
+      "observedAt": "2026-11-16T14:17:26.975322+00:00",
+      "recordDate": "2025-06-17",
+      "effectiveDate": "2025-06-18",
+      "paymentDate": "2025-06-27",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/new/2025-06-11/510300_20250611_ZAU4.pdf"
+    },
+    {
+      "symbol": "510300.SH",
+      "publishedOn": "2026-01-12",
+      "sha256": "c8ff747d02fa90db72320458c38249f73720b932d61b7e088f033583aab63992",
+      "observedAt": "2026-11-16T14:17:26.974827+00:00",
+      "recordDate": "2026-01-16",
+      "effectiveDate": "2026-01-19",
+      "paymentDate": "2026-01-27",
+      "reference": "https://www.sse.com.cn/disclosure/fund/announcement/c/new/2026-01-12/510300_20260112_VTCZ.pdf"
+    }
+  ]
+}

@@ -30,9 +30,10 @@ class RuleMonitorRuntime:
             "latestRun": self.store.job(), "observations": self.observations.status()}
 
     def validate_sources(self, identities, *, allow_empty=False):
-        if (not identities and not allow_empty) or len(identities) > 9 or len(set(identities)) != len(identities):
+        if (not identities and not allow_empty) or len(set(identities)) != len(identities):
             raise ValueError("监测来源范围无效")
-        if any(identity not in self.registry() for identity in identities):
+        registry = self.registry()
+        if any(identity not in registry for identity in identities):
             raise ValueError("监测来源未登记")
 
     def enqueue(self, identity, identities):
@@ -41,18 +42,16 @@ class RuleMonitorRuntime:
         self.wake.set()
         return result
 
-    async def _execute(self, job, owner, budget_seconds=300):
+    async def _execute(self, job, owner, budget_seconds=300, *, capture=False):
+        deadline = time.monotonic() + max(0, min(300, budget_seconds))
         registry = self.registry()
         selected = [registry[identity] for identity in job["sourceIds"]]
         documents = {document["url"]: document["title"] for source in selected for document in source.documents}
-        if len(documents) > 24:
-            raise ValueError("监测文档超过预算")
         for source in selected:
             if not self.observations.record(job["id"], owner, kind="pack", identity=source.identity,
                     name=source.name, digest=source.digest, raw_digest=source.digest, dataset=source.dataset,
                     snapshot=source.snapshot):
                 return
-        deadline = time.monotonic() + min(300, budget_seconds)
         captured = {}
         for url, title in documents.items():
             if self.halt.is_set():
@@ -63,16 +62,21 @@ class RuleMonitorRuntime:
             error = "run_budget_exceeded"
             if remaining > 0:
                 try:
-                    result = await self.fetch(url, budget_seconds=remaining)
+                    async with asyncio.timeout(remaining):
+                        result = await self.fetch(url, budget_seconds=remaining)
                     error = None
                 except DocumentError as failure:
                     error = failure.code
+                except TimeoutError:
+                    error = "run_budget_exceeded"
             if not self.observations.record(job["id"], owner, kind="document", identity=url, name=title,
                     digest=result["contentHash"] if result else None,
                     raw_digest=result["rawHash"] if result else None, error=error,
                     snapshot=result.get("snapshot") if result else None):
                 return
-            captured[url] = result
+            if capture:
+                captured[url] = result
+            result = None
         return captured if self.store.finish(job["id"], owner) else None
 
     def inspect_once(self, identity, *, budget_seconds=10):
@@ -82,7 +86,7 @@ class RuleMonitorRuntime:
         if job is None:
             raise ValueError('monitor_busy')
         try:
-            captured = asyncio.run(self._execute(job, owner, budget_seconds))
+            captured = asyncio.run(self._execute(job, owner, budget_seconds, capture=True))
             if self.store.job(job_id)['status'] != 'succeeded' or captured is None:
                 raise ValueError('rule_refresh_incomplete')
             return job_id, captured

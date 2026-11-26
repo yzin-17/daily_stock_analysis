@@ -164,7 +164,7 @@ def test_hithink_basic_price_effective_is_ready_with_environment_key(
 
     applied = store.apply_policy_v3(
         {
-            "contractVersion": 3,
+            "contractVersion": 1,
             "consumer": "thesis-ledger",
             "requestId": "hithink-fixture-policy",
             "revision": 1,

@@ -147,10 +147,10 @@ from fastapi import FastAPI
 import httpx
 from api.thesis_ledger import router_v3
 app = FastAPI()
-app.include_router(router_v3, prefix="/api/v3")
+app.include_router(router_v3, prefix="/api/v1")
 async def run():
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://isolated") as client:
-        path="/api/v3/thesis-ledger/market/fx-rates?baseCurrency=CNY&currencies=USD&asOf=2026-10-16"
+        path="/api/v1/thesis-ledger/market/fx-rates?baseCurrency=CNY&currencies=USD&asOf=2026-10-16"
         refused=await client.get(path)
         assert refused.status_code == 401
         result=await client.get(path, headers={"authorization":"Bearer fx-controlled-token"})

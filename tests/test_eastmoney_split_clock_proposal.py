@@ -49,7 +49,7 @@ def test_offline_candidate_preserves_observation_and_requires_explicit_new_envel
                  'validUntil': '2026-10-13T10:53:01.391764+00:00',
                  'recordedAt': '2026-10-12T10:53:01.403099+00:00',
                  'invalidatedAt': None, 'invalidationReason': None}
-    query = {'contractVersion': 3, 'requestId': 'ed92afdb-5f4b-4d6c-8f95-d8acf8dc08cf',
+    query = {'contractVersion': 1, 'requestId': 'ed92afdb-5f4b-4d6c-8f95-d8acf8dc08cf',
              'symbol': '159516.SZ', 'routeKey': SPLIT_KEY, 'routeTarget': {**EVENT_TARGET, 'routeIndex': 0},
              'desiredRevision': 112, 'effectivePolicyRevision': 112, 'catalogRevision': 4494082701661225,
              'start': '2026-03-30', 'end': '2026-07-10', 'dataAsOf': CUTOFF}

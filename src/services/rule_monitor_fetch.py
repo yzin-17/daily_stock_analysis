@@ -142,7 +142,7 @@ async def fetch_document(url, *, client=None, budget_seconds=15):
     try:
         async with asyncio.timeout(max(0.001, min(15, budget_seconds))), AsyncExitStack() as resources:
             reader = client or await resources.enter_async_context(httpx.AsyncClient())
-            async with reader.stream("GET", url, timeout=httpx.Timeout(10, connect=3), follow_redirects=False,
+            async with reader.stream("GET", url, timeout=httpx.Timeout(10, connect=5), follow_redirects=False,
                     headers={"User-Agent": "ThesisLedger-rule-monitor/0.1"}) as response:
                 if response.status_code != 200:
                     raise DocumentError("document_http_error")

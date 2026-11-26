@@ -35,4 +35,6 @@ def execute_minute(runtime, request, key, policy, provider_id, upstream_source):
                         "observedAt": value.observedAt, "responseSha256": value.responseSha256,
                         "has_more_before": False, "timeframe": value.timeframe,
                         "timestampConvention": value.timestampConvention, "intradayFieldUnits": value.fieldUnits})
+    if value.pagination is not None:
+        frame.attrs["pagination"] = value.pagination.model_dump()
     return frame

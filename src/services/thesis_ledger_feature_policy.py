@@ -9,7 +9,7 @@ def validate_feature_route_shape(route, fail, request_id):
     if "enabled" in route and type(route["enabled"]) is not bool:
         fail("INVALID_POLICY_SCHEMA", "功能 enabled 必须是布尔值", request_id)
     key = route.get("key")
-    if isinstance(key, dict) and key.get("capability") in {*NAMES, "NEWS_SEARCH", "NEWS_FEED", "WEB_SEARCH"} and "enabled" not in route:
+    if isinstance(key, dict) and key.get("capability") in {*NAMES, "NEWS_SEARCH", "NEWS_FEED", "WEB_SEARCH", "HISTORICAL_EXECUTION_CONTEXT"} and "enabled" not in route:
         fail("INVALID_POLICY_SCHEMA", "新增独立功能须明确启停状态", request_id)
 
 

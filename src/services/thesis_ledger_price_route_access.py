@@ -14,6 +14,9 @@ from src.services.thesis_ledger_route_credentials import route_requires_credenti
 def configured_data_route(key, target):
     binding = CAPABILITY_SOURCES.resolve(key, target)
     if isinstance(binding, QueryBinding):
+        # 执行证明沿用独立准入及证券／日期范围，不能借普通资料查询首次使用规则放行。
+        if binding.key.capability == 'HISTORICAL_EXECUTION_CONTEXT':
+            return False
         return True
     if isinstance(binding, EventBinding):
         if binding.admission_required is not None:

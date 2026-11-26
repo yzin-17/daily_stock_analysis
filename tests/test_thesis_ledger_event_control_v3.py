@@ -14,7 +14,7 @@ def test_real_policy_event_admission_and_revocation(tmp_path):
     store = ThesisLedgerControlStore(str(tmp_path / "events.sqlite"))
     runtime = ThesisLedgerProviderRuntime(store)
     store.apply_policy_v3({
-        "contractVersion": 3, "consumer": "thesis-ledger", "requestId": "fixture-policy",
+        "contractVersion": 1, "consumer": "thesis-ledger", "requestId": "fixture-policy",
         "revision": 1, "enabled": True, "routes": [{"key": EVENT_KEY, "targets": [EVENT_TARGET]}],
     })
 
@@ -31,7 +31,7 @@ def test_real_policy_event_admission_and_revocation(tmp_path):
     )
     assert target()["eligible"] is True
     request = {
-        "contractVersion": 3, "requestId": "fixture-events", "symbol": "510300.SH",
+        "contractVersion": 1, "requestId": "fixture-events", "symbol": "510300.SH",
         "routeKey": EVENT_KEY, "routeTarget": {**EVENT_TARGET, "routeIndex": 0},
         "desiredRevision": 1, "effectivePolicyRevision": 1,
         "catalogRevision": runtime.market_route_catalog_v3()["catalogRevision"],

@@ -38,10 +38,10 @@ def test_required_provider_cannot_enable_without_credentials_or_write_config(sto
 
 def test_http_reports_missing_credentials_and_accepts_atomic_credentials_with_enable(store):
     app = FastAPI()
-    app.include_router(router_v3, prefix="/api/v3")
+    app.include_router(router_v3, prefix="/api/v1")
     headers = {"authorization": "Bearer synthetic-control-token"}
-    envelope = {"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "enable-http"}
-    url = "/api/v3/thesis-ledger/control/providers/hithink/config"
+    envelope = {"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "enable-http"}
+    url = "/api/v1/thesis-ledger/control/providers/hithink/config"
     with TestClient(app) as client:
         response = client.post(url, headers=headers, json={**envelope, "enabled": True})
         assert response.status_code == 422
@@ -60,7 +60,7 @@ def test_clear_last_credential_disables_without_removing_desired_routes(store):
     save(store, enabled=True, credentials={"method": "api_key", "values": {"apiKey": "synthetic-page-key"}})
     key = {"kind": "bar", "market": "CN", "assetType": "ETF", "capability": "DAILY_BAR", "timeframe": "1d", "adjustment": "qfq"}
     target = {"providerId": "hithink", "upstreamSource": "fund-market-historical"}
-    store.apply_policy_v3({"contractVersion": 3, "consumer": "thesis-ledger", "requestId": "desired", "revision": 1, "enabled": True, "routes": [{"key": key, "targets": [target]}]})
+    store.apply_policy_v3({"contractVersion": 1, "consumer": "thesis-ledger", "requestId": "desired", "revision": 1, "enabled": True, "routes": [{"key": key, "targets": [target]}]})
     result = save(store, clearCredentials=True)
     assert result["enabled"] is False
     assert result["credentialConfigured"] is False

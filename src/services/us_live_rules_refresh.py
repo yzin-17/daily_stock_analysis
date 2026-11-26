@@ -22,6 +22,12 @@ DOCUMENTS = (
      'https://www.sec.gov/rules-regulations/self-regulatory-organization-rulemaking/finra?order=field_publish_date&page=0&sort=desc',
      '65fdf1d3931862ddf43c34164586b68c02530dec35df43bb57b06c0e9f8b1abe'),
 )
+# 新地址的人工核验摘要独立登记，不改写原始PDF证据或接受任意新版本。
+READ_BASELINES = {
+    ('https://www.sec.gov/files/rules/sro/finra/2026/34-106409.pdf',
+     'https://www.govinfo.gov/content/pkg/FR-2026-09-23/html/2026-19392.htm'):
+        'ccda60c99fb48d162b42f18722f0513f58d43e78668dcdfd8b80fbb76ad27cd9',
+}
 
 
 def registered_source():
@@ -34,6 +40,21 @@ def registered_source():
     documents = tuple({'id': str(i), 'title': title, 'url': url} for i, (title, url, _) in enumerate(DOCUMENTS))
     return Source(IDENTITY, 'US', '美国当前现金证券执行规则', pack['datasetId'],
                   sha256(raw.encode()).hexdigest(), documents, text_snapshot('json', raw))
+
+
+def _verified_documents(source):
+    if len(source.documents) != len(DOCUMENTS):
+        return ()
+    projected = {document['id']: document['url'] for document in source.documents}
+    expected = []
+    for index, (_, original, baseline) in enumerate(DOCUMENTS):
+        url = projected.get(str(index))
+        if url != original:
+            baseline = READ_BASELINES.get((original, url))
+        if not url or not baseline:
+            return ()
+        expected.append((url, baseline))
+    return expected
 
 
 def checked_through(day, context, *, monitor=None):
@@ -70,8 +91,11 @@ def checked_through(day, context, *, monitor=None):
     if (not pack or pack['contentHash'] != source.digest
             or not job['startedAt'] <= pack['lastCheckedAt'] <= job['finishedAt']):
         return None
+    documents = _verified_documents(monitor.registry()[IDENTITY])
+    if not documents:
+        return None
     rows = {row['identity']: row for row in observations if row['kind'] == 'document'}
-    for _, url, baseline in DOCUMENTS:
+    for url, baseline in documents:
         row = rows.get(url)
         if (not row or row['errorCode'] or row['contentHash'] != baseline
                 or not job['startedAt'] <= row['lastCheckedAt'] <= job['finishedAt']):

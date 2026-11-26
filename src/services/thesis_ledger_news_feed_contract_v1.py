@@ -28,7 +28,7 @@ class NewsFeedCoverage(NewsCoverage):
 
 
 class NewsFeedResponse(NewsResponseContent):
-    version: Literal[3] = 3
+    version: Literal[1] = 1
     contractVersion: Literal["news-feed-v1"] = FEED_CONTRACT_VERSION
     capability: Literal["NEWS_FEED"] = FEED_CAPABILITY
     market: Literal["CN"]

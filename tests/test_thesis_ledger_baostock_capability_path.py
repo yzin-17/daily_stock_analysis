@@ -80,7 +80,7 @@ def route(capability, enabled=True):
 def setup(monkeypatch, tmp_path, routes=None):
     monkeypatch.setenv('THESIS_LEDGER_DSA_TOKEN', 'isolated-data-token')
     store = ThesisLedgerControlStore(tmp_path / 'capability.db')
-    policy = {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': 'isolated-policy', 'revision': 1,
+    policy = {'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'isolated-policy', 'revision': 1,
               'enabled': True, 'routes': routes or [route(name) for name in ('DAILY_TRADING_STATUS', 'RISK_WARNING', 'SECURITY_BASIC_DATES')]}
     store.apply_policy_v3(policy)
     adapter = Adapter()
@@ -97,12 +97,12 @@ def setup(monkeypatch, tmp_path, routes=None):
     monkeypatch.setattr('data_provider.baostock_query_process._read', child_response)
     runtime = ThesisLedgerProviderRuntime(store, adapters={'baostock': adapter})
     app = FastAPI()
-    app.include_router(build_reference_data_router(lambda: runtime), prefix='/api/v3/thesis-ledger')
+    app.include_router(build_reference_data_router(lambda: runtime), prefix='/api/v1/thesis-ledger')
     return store, policy, adapter, runtime, TestClient(app)
 
 
 def payload(capability):
-    value = {'contractVersion': 3, 'capabilityVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'isolated-query',
+    value = {'contractVersion': 1, 'capabilityVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'isolated-query',
              'symbol': SYMBOL, 'routeKey': route(capability)['key'], 'routeTarget': {**TARGET, 'routeIndex': 0}, 'policyRevision': 1}
     if capability != 'SECURITY_BASIC_DATES':
         value['range'] = {'start': DAY, 'end': DAY}
@@ -112,7 +112,7 @@ def payload(capability):
 
 
 def post(client, value):
-    return client.post('/api/v3/thesis-ledger/market/status-capabilities', json=value,
+    return client.post('/api/v1/thesis-ledger/market/status-capabilities', json=value,
                        headers={'authorization': 'Bearer isolated-data-token'})
 
 
@@ -168,7 +168,7 @@ def test_coarse_source_does_not_call_sdk_for_precise_risk(monkeypatch, tmp_path)
     response = post(client, value)
     assert response.status_code == 422, response.text
     assert response.json()['detail'] == {
-        'contractVersion': 3, 'requestId': 'isolated-query',
+        'contractVersion': 1, 'requestId': 'isolated-query',
         'error': {'code': 'unsupported_capability', 'message': '来源不支持请求的数据能力'},
     }
     assert not adapter.calls

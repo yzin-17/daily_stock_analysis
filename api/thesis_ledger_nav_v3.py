@@ -26,5 +26,5 @@ def nav_inputs(request: Request, payload: Any = Body(...)) -> dict[str, Any] | J
             require_contract_token(request, request.headers.get('authorization'))))
     except NavProductionError as error:
         status = 503 if error.code == 'upstream_failure' else 422
-        return JSONResponse(status_code=status, content={'contractVersion': 3, 'requestId': request_id,
+        return JSONResponse(status_code=status, content={'contractVersion': 1, 'requestId': request_id,
                             'error': {'code': error.code, 'message': '净值来源证据暂不可用'}})

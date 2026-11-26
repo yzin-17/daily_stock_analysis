@@ -57,6 +57,34 @@
         "sdkVersion": "1.7.0"
       },
       "identityReceiptSha256": "5852f70d34a1f63bd140a125c073c8c388a8ff18b7770b52dff4919810bd0ff4"
+    },
+    {
+      "symbol": "02800.HK",
+      "market": "HK",
+      "futu": {
+        "symbol": "02800.HK",
+        "market": "HK",
+        "assetType": "ETF",
+        "exchange": "HK_MAINBOARD",
+        "observedAt": "2026-10-16T09:50:58.398729+00:00",
+        "provider": "futu"
+      },
+      "futuReceiptSha256": "2b3b20d1054e57df52af7be34b9d9677bea4dcbf21e7ce50a28cc8bb5515a592",
+      "identity": {
+        "metadata": {
+          "currency": "HKD",
+          "exchangeName": "HKG",
+          "exchangeTimezoneName": "Asia/Hong_Kong",
+          "fullExchangeName": "HKSE",
+          "instrumentType": "ETF",
+          "symbol": "2800.HK"
+        },
+        "observedAt": "2026-10-16T09:51:01.410520+00:00",
+        "publisher": "Yahoo Finance",
+        "sdk": "yfinance",
+        "sdkVersion": "1.7.0"
+      },
+      "identityReceiptSha256": "78c3509377b4d510b01e7a8b92818219aefffb40c9b78335959c4fca01036c2a"
     }
   ]
 }

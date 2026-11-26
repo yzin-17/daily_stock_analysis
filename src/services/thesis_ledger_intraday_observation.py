@@ -135,7 +135,7 @@ def main():
     parser.add_argument('--plan', action='store_true', help='只读来源目录，不请求上游')
     args = parser.parse_args()
     previous = json.load(sys.stdin) if args.previous_stdin else {}
-    if (previous and (previous.get('contractVersion') != 1 or previous.get('markets') != args.markets
+    if (previous and ((type(previous.get('contractVersion')) is not int or previous.get('contractVersion') != 1) or previous.get('markets') != args.markets
                       or len(previous.get('observations', [])) > 500)):
         parser.error('历史采样报告与本次市场不匹配或超出预算')
     logging.disable(logging.CRITICAL)

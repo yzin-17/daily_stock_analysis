@@ -54,3 +54,86 @@ def test_missing_or_fractional_lot_and_unknown_exchange_remain_unknown():
     sdk, _ = sdk_for('US.AAPL', lot_size=1.5, suspension=False, sec_status='NORMAL')
     facts = read_futu_quote(sdk, 'localhost', 11111, 'AAPL.US', 'STOCK')['execution_facts']
     assert facts['sharesPerLot'] is None and facts['exchange'] is None
+
+
+def test_hk_snapshot_reuses_registered_currency_and_returns_current_facts(monkeypatch):
+    sdk, ctx = sdk_for('HK.00700', update_time='2026-11-23 09:31:35',
+                      suspension=False, sec_status='NORMAL', lot_size=100)
+    ctx.get_stock_basicinfo.return_value = 0, pd.DataFrame([{
+        'code': 'HK.00700', 'stock_type': 'STOCK', 'stock_id': 123,
+        'exchange_type': 'HK_MAINBOARD', 'delisting': False}])
+    raw = read_futu_quote(sdk, 'localhost', 11111, '00700.HK', 'STOCK')
+    assert raw['units']['priceCurrency'] == 'HKD'
+    assert raw['execution_facts']['market'] == 'HK'
+    assert raw['execution_facts']['symbol'] == '00700.HK'
+    assert raw['execution_facts']['tradingState'] == 'normal'
+    assert raw['execution_facts']['sharesPerLot'] == '100'
+
+    class Adapter:
+        def get_realtime_quote(self, *args, **kwargs):
+            return raw
+
+    def no_us_rules(*args, **kwargs):
+        pytest.fail('港股当前观察不能启动美国规则核验')
+    monkeypatch.setattr('src.services.us_live_execution_rules.current_us_cash_rules', no_us_rules)
+    result = quote(QuoteQuery(symbol='00700.HK', instrument_type='STOCK'), ReadContext(Adapter()))
+    assert result.units.priceCurrency == 'HKD'
+    assert result.execution_facts.market == 'HK'
+    assert result.execution_rules is None
+    ctx.get_stock_basicinfo.assert_called_once()
+    ctx.get_market_snapshot.assert_called_once_with(['HK.00700'])
+
+
+@pytest.mark.parametrize('symbol,asset,exchange', [
+    ('00147.HK', 'STOCK', 'HK_MAINBOARD'), ('02801.HK', 'ETF', 'HK_MAINBOARD'),
+    ('02800.HK', 'STOCK', 'HK_MAINBOARD'),
+    ('00700.HK', 'STOCK', 'US_NASDAQ'),
+])
+def test_hk_currency_requires_its_registered_symbol_asset_and_exchange(symbol, asset, exchange):
+    code = 'HK.' + symbol.split('.')[0]
+    sdk, ctx = sdk_for(code, asset, suspension=False, sec_status='NORMAL', lot_size=100)
+    ctx.get_stock_basicinfo.return_value = 0, pd.DataFrame([{
+        'code': code, 'stock_type': asset, 'exchange_type': exchange, 'delisting': False}])
+    raw = read_futu_quote(sdk, 'localhost', 11111, symbol, asset)
+    assert raw.get('units') is None
+    assert raw['execution_facts']['market'] == 'HK'
+
+
+def test_hk_unknown_observation_remains_unknown_and_keeps_price():
+    sdk, _ = sdk_for('HK.00700', suspension=None, sec_status='NONE', lot_size=None)
+    raw = read_futu_quote(sdk, 'localhost', 11111, '00700.HK', 'STOCK')
+    assert raw['price'] == 12
+    assert raw['execution_facts']['tradingState'] == 'unknown'
+    assert raw['execution_facts']['sharesPerLot'] is None
+
+
+@pytest.mark.parametrize('symbol,market,valid', [
+    ('00700.HK', 'HK', True), ('AAPL.US', 'US', True),
+    ('00700.HK', 'US', False), ('AAPL.US', 'HK', False),
+])
+def test_current_fact_market_and_symbol_are_correlated(symbol, market, valid):
+    from pydantic import ValidationError
+    from src.services.thesis_ledger_quote_execution_facts import QuoteExecutionFacts
+    sdk, _ = sdk_for('US.AAPL', lot_size=1)
+    facts = read_futu_quote(sdk, 'localhost', 11111, 'AAPL.US', 'STOCK')['execution_facts']
+    facts.update(symbol=symbol, market=market)
+    if valid:
+        assert QuoteExecutionFacts.model_validate(facts).symbol == symbol
+    else:
+        with pytest.raises(ValidationError):
+            QuoteExecutionFacts.model_validate(facts)
+
+
+def test_hk_currency_observation_must_be_visible_at_the_quote_fetch_time(monkeypatch):
+    from data_provider import futu_market
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.fromisoformat('2026-10-16T09:45:00+00:00').astimezone(tz)
+    monkeypatch.setattr(futu_market, 'datetime', Clock)
+    sdk, ctx = sdk_for('HK.00700')
+    ctx.get_stock_basicinfo.return_value = 0, pd.DataFrame([{
+        'code': 'HK.00700', 'stock_type': 'STOCK', 'exchange_type': 'HK_MAINBOARD'}])
+    raw = read_futu_quote(sdk, 'localhost', 11111, '00700.HK', 'STOCK')
+    assert raw.get('units') is None
+    assert raw['execution_facts']['tradingState'] == 'unknown'

@@ -25,12 +25,13 @@ def market_daily_tradability(request: Mapping, execution: Any, context: Mapping,
             route_key=request["routeKey"], route_target={
                 "providerId": execution.provider, "upstreamSource": execution.upstream_source,
             }, provider_revision=execution.provider_revision,
+            allow_price_only=request.get("dailyObservationContract") is not None,
         )
         if evidence["calendar"]["expectedSessions"] != expected:
             raise ValueError("来源日历不符")
         if evidence["listing"] != daily_listing_information(context["listing"]) or evidence["calendar"]["source"]["provider"] != context["calendar"]["source"] or evidence["calendar"]["source"]["revision"] != context["calendar"]["revision"]:
             raise ValueError("独立范围事实不符")
-        observed = [day["date"] for day in evidence["days"] if day["state"] == "observed-traded"]
+        observed = [day["date"] for day in evidence["days"] if day["state"] in {"observed-traded", "observed-price-only"}]
         if sorted(actual_dates) != observed or len(set(actual_dates)) != len(actual_dates):
             raise ValueError("实际价格日期与日级状态不符")
         return [evidence]
@@ -41,11 +42,15 @@ def market_daily_tradability(request: Mapping, execution: Any, context: Mapping,
 def combined_observed_dates(windows: list[dict], expected: list[str]) -> list[str]:
     states: dict[str, str] = {}
     for evidence in windows:
+        if evidence["priceOnlyAllowed"] != windows[0]["priceOnlyAllowed"]:
+            raise ValueError("多窗口价格观察许可不一致")
         for day in evidence["days"]:
+            if day["state"] == "observed-price-only" and not evidence["priceOnlyAllowed"]:
+                raise ValueError("无成交量的价格观察需要显式许可")
             previous = states.get(day["date"])
             if previous is not None and previous != day["state"]:
                 raise ValueError("重叠来源窗口日级状态冲突")
             states[day["date"]] = day["state"]
     if sorted(states) != expected:
         raise ValueError("逐窗证据未覆盖全部预期交易日")
-    return [day for day in expected if states[day] == "observed-traded"]
+    return [day for day in expected if states[day] in {"observed-traded", "observed-price-only"}]

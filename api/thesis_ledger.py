@@ -24,9 +24,11 @@ from fastapi.responses import JSONResponse
 from api.thesis_ledger_source_basis import native_field_units, native_source_basis
 from api.thesis_ledger_source_identity import upstream_source as _upstream_source
 
+from src.services.thesis_ledger_daily_tradability import DAILY_TRADABILITY_CONTRACT
 from src.services.thesis_ledger_control import (
     CONSUMER_NAMESPACE,
-    CONTROL_CONTRACT_V3_VERSION,
+    CONTROL_CONTRACT,
+    CONTROL_CONTRACT_VERSION,
     ControlContractError,
     ThesisLedgerControlStore,
 )
@@ -230,7 +232,7 @@ def _fixture_quote(symbol: str) -> dict[str, Any]:
     price = _fixture_price(canonical)
     now = _fixture_timestamp()
     return {
-        "version": 3,
+        "version": 1,
         "symbol": canonical,
         "open": round(price * 0.99, 4),
         "high": round(price * 1.01, 4),
@@ -252,7 +254,7 @@ def _fixture_chip(symbol: str) -> dict[str, Any]:
     price = _fixture_price(canonical)
     calculated_at = _fixture_timestamp()
     return {
-        "version": 3,
+        "version": 1,
         "symbol": canonical,
         "buckets": [
             {"price": round(price * 0.9, 4), "weight": 0.2},
@@ -292,7 +294,7 @@ def _fixture_fund_nav(symbol: str) -> dict[str, Any]:
         _error("fixture_not_found", f"没有 {symbol} 的确定性基金净值 fixture", 404)
     nav_date = datetime(2025, 1, 9, 7, 0, tzinfo=timezone.utc).isoformat()
     return {
-        "version": 3,
+        "version": 1,
         "symbol": canonical,
         "unitNav": unit_nav,
         "navDate": nav_date,
@@ -326,7 +328,7 @@ def _fixture_fund_holdings(symbol: str) -> dict[str, Any]:
         json.dumps(holdings, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()
     return {
-        "version": 3,
+        "version": 1,
         "fundSymbol": canonical,
         "reportPeriod": "2024-Q4",
         "disclosureDate": _fixture_timestamp(),
@@ -398,7 +400,7 @@ def _fixture_fx_rates(
                 }
             )
     return {
-        "version": 3,
+        "version": 1,
         "baseCurrency": base_currency,
         "asOf": as_of.isoformat(),
         "fetchedAt": _fixture_timestamp(),
@@ -433,7 +435,7 @@ def _real_fund_nav(symbol: str, request_id: str | None = None, *, public_nav_onl
     parsed_date = datetime.fromisoformat(nav.point.nav_date)
     age_days = max(0, (datetime.now(timezone.utc).date() - parsed_date.date()).days)
     return {
-        "version": 3,
+        "version": 1,
         "symbol": canonical,
         "unitNav": nav.point.unit_nav,
         "navDate": nav.point.nav_date,
@@ -501,7 +503,7 @@ def _real_fund_nav_history(
             continue
         result.append(
             {
-                "version": 3,
+                "version": 1,
                 "symbol": canonical,
                 "unitNav": point.unit_nav,
                 "navDate": nav_date,
@@ -588,6 +590,8 @@ def _bar_series_fingerprint(
         payload.append(canonical_market_coverage_proof_v3(coverage_proof))
     if "fieldUnits" in identity:
         payload.append(["fieldUnits", identity["fieldUnits"]["volume"], identity["fieldUnits"]["amount"]])
+    if identity.get("dailyObservationContract") == DAILY_TRADABILITY_CONTRACT:
+        payload.append(["dailyObservationContract", DAILY_TRADABILITY_CONTRACT])
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
@@ -619,12 +623,12 @@ def _market_data_v3_request(payload: Any, fallback_request_id: str) -> dict[str,
         else fallback_request_id
     )
     version = value.get("contractVersion")
-    if isinstance(version, bool) or version != 3:
+    if type(version) is not int or version != 1:
         _market_data_v3_error("unsupported_data_contract_version", 422, request_id)
     required_fields = {"contractVersion", "requestId", "symbol", "routeKey", "start", "end"}
     if (
         not required_fields.issubset(value)
-        or set(value) - required_fields - {"routeTarget", "tradabilityMode"}
+        or set(value) - required_fields - {"routeTarget", "tradabilityMode", "dailyObservationContract"}
     ):
         _market_data_v3_error("invalid_response", 422, request_id)
     symbol = value.get("symbol")
@@ -693,7 +697,7 @@ def _market_data_v3_request(payload: Any, fallback_request_id: str) -> dict[str,
         }
 
     request_data = {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "requestId": request_id,
         "symbol": symbol,
         "routeKey": dict(route_key),
@@ -703,9 +707,18 @@ def _market_data_v3_request(payload: Any, fallback_request_id: str) -> dict[str,
     if route_target is not None:
         request_data["routeTarget"] = route_target
     if "tradabilityMode" in value:
-        if value["tradabilityMode"] != "assume-untradable-no-bar" or route_key["market"] not in {"CN", "HK", "US"} or route_key["timeframe"] != "1d":
+        from src.services.thesis_ledger_research_calendar import futu_minute_research
+        if not (value["tradabilityMode"] == "assume-untradable-no-bar" and route_key["timeframe"] == "1d"
+                or futu_minute_research(value)):
             _market_data_v3_error("invalid_response", 422, request_id)
         request_data["tradabilityMode"] = value["tradabilityMode"]
+    if "dailyObservationContract" in value:
+        observation_contract = value["dailyObservationContract"]
+        if (observation_contract != DAILY_TRADABILITY_CONTRACT
+                or route_key["timeframe"] != "1d"
+                or request_data.get("tradabilityMode") != "assume-untradable-no-bar"):
+            _market_data_v3_error("invalid_request", 422, request_id)
+        request_data["dailyObservationContract"] = observation_contract
     return request_data
 
 
@@ -739,39 +752,11 @@ def _market_data_v3_pagination_proof(
         _market_data_v3_error(error.code, 422 if error.code == "insufficient_coverage" else 502, request_id)
 
 
-def _market_data_v3_response(
-    request_data: Mapping[str, Any],
-    execution: Any,
-    coverage_context: Mapping[str, Any],
-) -> dict[str, Any]:
-    request_id = str(request_data["requestId"])
+def _daily_window_inputs(request_data, execution, coverage_context):
     route_key = request_data["routeKey"]
-    expected_sessions = coverage_context.get("expectedPostListingSessionDates")
-    if not isinstance(expected_sessions, list) or not expected_sessions:
-        _market_data_v3_error("insufficient_coverage", 422, request_id)
-    provider = str(getattr(execution, "provider", "") or "").strip().lower()
-    upstream_source = str(getattr(execution, "upstream_source", "") or "").strip().lower()
-    route_index = getattr(execution, "route_index", None)
-    policy_revision = getattr(execution, "effective_revision", None)
-    if (
-        provider not in market_v3_bar_provider_ids()
-        or not upstream_source
-        or not MARKET_DATA_V3_METHOD_VERSION
-        or not isinstance(route_index, int)
-        or isinstance(route_index, bool)
-        or route_index not in {0, 1}
-        or not isinstance(policy_revision, int)
-        or isinstance(policy_revision, bool)
-        or policy_revision < 0
-    ):
-        _market_data_v3_error("invalid_response", 502, request_id)
-    route_target = request_data.get("routeTarget")
-    if isinstance(route_target, Mapping) and (
-        provider != route_target.get("providerId")
-        or upstream_source != route_target.get("upstreamSource")
-        or route_index != route_target.get("routeIndex")
-    ):
-        _market_data_v3_error("invalid_response", 502, request_id)
+    request_id = request_data["requestId"]
+    expected_sessions = coverage_context["expectedPostListingSessionDates"]
+    provider, upstream_source = execution.provider, execution.upstream_source
     from src.services.thesis_ledger_zero_volume_observations import executable_research_frame
     frame = executable_research_frame(request_data, getattr(execution, "value", None), _market_data_v3_error)
     pagination_proof = _market_data_v3_pagination_proof(
@@ -819,6 +804,49 @@ def _market_data_v3_response(
         daily_windows = market_daily_tradability(request_data, execution, coverage_context, trading_dates, fetched_at)
     except Exception as error:
         _market_data_v3_error(getattr(error, "code", "invalid_response"), 422, request_id)
+    return frame, pagination_proof, fetched_at, points, trading_dates, daily_windows
+
+
+def _market_data_v3_response(
+    request_data: Mapping[str, Any],
+    execution: Any,
+    coverage_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    request_id = str(request_data["requestId"])
+    route_key = request_data["routeKey"]
+    expected_sessions = coverage_context.get("expectedPostListingSessionDates")
+    if not isinstance(expected_sessions, list) or not expected_sessions:
+        _market_data_v3_error("insufficient_coverage", 422, request_id)
+    provider = str(getattr(execution, "provider", "") or "").strip().lower()
+    upstream_source = str(getattr(execution, "upstream_source", "") or "").strip().lower()
+    route_index = getattr(execution, "route_index", None)
+    policy_revision = getattr(execution, "effective_revision", None)
+    if (
+        provider not in market_v3_bar_provider_ids()
+        or not upstream_source
+        or not MARKET_DATA_V3_METHOD_VERSION
+        or not isinstance(route_index, int)
+        or isinstance(route_index, bool)
+        or route_index not in {0, 1}
+        or not isinstance(policy_revision, int)
+        or isinstance(policy_revision, bool)
+        or policy_revision < 0
+    ):
+        _market_data_v3_error("invalid_response", 502, request_id)
+    route_target = request_data.get("routeTarget")
+    if isinstance(route_target, Mapping) and (
+        provider != route_target.get("providerId")
+        or upstream_source != route_target.get("upstreamSource")
+        or route_index != route_target.get("routeIndex")
+    ):
+        _market_data_v3_error("invalid_response", 502, request_id)
+    minute = request_data.get("tradabilityMode") == "observed-bars-only"
+    if minute:
+        from api.thesis_ledger_minute_window import minute_window_inputs
+        inputs = minute_window_inputs(request_data, execution, coverage_context, _number)
+    else:
+        inputs = _daily_window_inputs(request_data, execution, coverage_context)
+    frame, pagination_proof, fetched_at, points, trading_dates, daily_windows = inputs
     if any(point["completionStatus"] != "complete" for point in points):
         _market_data_v3_error("insufficient_coverage", 422, request_id)
     attrs = getattr(frame, "attrs", {})
@@ -843,18 +871,22 @@ def _market_data_v3_response(
             "timeframe": route_key["timeframe"],
             "adjustment": route_key["adjustment"],
             **units,
+            **({"dailyObservationContract": DAILY_TRADABILITY_CONTRACT} if request_data.get("dailyObservationContract") == DAILY_TRADABILITY_CONTRACT else {}),
         },
         coverage_proof=coverage_proof,
     )
     source_basis = native_source_basis(
         route_key["adjustment"], MARKET_DATA_V3_METHOD_VERSION, fingerprint, fetched_at, units,
     )
+    if minute:
+        source_basis["volumeBasis"] = "original"
     response = {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "requestId": request_id,
         "symbol": request_data["symbol"],
         "routeKey": dict(route_key),
         "bars": points,
+        **({"timestampConvention": "interval-end"} if minute else {}),
         "coverageProof": coverage_proof,
         "coverage": {
             "requestedStart": request_data["start"],
@@ -881,9 +913,10 @@ def market_data_capabilities_v3() -> dict[str, Any]:
     """Report Data contract support independently from the Control handshake."""
     from src.services.thesis_ledger_multi_window_fingerprint import MULTI_WINDOW_PROTOCOL
     return {
-        "dataContractVersions": [3],
+        "dataContract": "dsa-data-v1",
         "serviceCapabilities": {"fundNav": True},
         "multiWindowProtocols": [MULTI_WINDOW_PROTOCOL],
+        "dailyObservationContract": DAILY_TRADABILITY_CONTRACT,
     }
 
 
@@ -912,8 +945,8 @@ def calculate_indicators(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         normalize_indicator_parameters,
     )
 
-    if payload.get("contractVersion") != 3:
-        _error("invalid_request", "指标计算请求必须使用 Contract V3", 422)
+    if (type(payload.get("contractVersion")) is not int or payload.get("contractVersion") != 1):
+        _error("invalid_request", "指标计算请求必须使用 dsa-data-v1", 422)
     points = payload.get("points")
     input_fingerprint = str(payload.get("inputFingerprint") or "")
     if not isinstance(points, list) or not points or not input_fingerprint:
@@ -969,7 +1002,7 @@ def calculate_indicators(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
             }
         )
     return {
-        "contractVersion": 3,
+        "contractVersion": 1,
         "engineVersion": "dsa-indicator-v3",
         "inputFingerprint": input_fingerprint,
         "results": results,
@@ -1008,7 +1041,7 @@ def _fund_holdings_payload(symbol: str, value: Any, provider: str, fallback_used
     if holdings.symbol != canonical or holdings.provider != provider:
         _error("upstream_invalid_response", "基金持仓证券或来源不匹配", 502)
     return {
-        "version": 3,
+        "version": 1,
         "fundSymbol": canonical,
         "reportPeriod": holdings.report_period,
         "disclosureDate": holdings.disclosure_date,
@@ -1067,7 +1100,7 @@ def _real_chip(symbol: str, request_id: str | None = None) -> dict[str, Any]:
     if chip.symbol != _canonical_symbol(symbol) or chip.provider != provider:
         _error("upstream_invalid_response", "筹码摘要证券或来源不匹配", 502)
     return {
-        "version": 3,
+        "version": 1,
         "symbol": chip.symbol,
         "averageCost": chip.average_cost,
         "profitRatio": chip.profit_ratio,
@@ -1271,13 +1304,14 @@ def _require_control_envelope(payload: Any) -> dict[str, Any]:
 
 def _control_envelope(payload: Any) -> dict[str, Any]:
     value = _require_control_envelope(payload)
-    if value.get("contractVersion") != CONTROL_CONTRACT_V3_VERSION:
+    version = value.get("contractVersion")
+    if type(version) is not int or version != CONTROL_CONTRACT_VERSION:
         error = ControlContractError(
             "CONTROL_CONTRACT_UNSUPPORTED",
-            "Control 路由只支持 Contract V3",
+            "Control 路由只支持 dsa-control-v1",
             request_id=str(value.get("requestId") or ""),
-            details={"supportedVersions": [CONTROL_CONTRACT_V3_VERSION]},
-            contract_version=CONTROL_CONTRACT_V3_VERSION,
+            details={"expectedContract": CONTROL_CONTRACT},
+            contract_version=CONTROL_CONTRACT_VERSION,
         )
         _control_http_error(error)
     if value.get("consumer") != CONSUMER_NAMESPACE:
@@ -1285,7 +1319,7 @@ def _control_envelope(payload: Any) -> dict[str, Any]:
             "INVALID_CONSUMER",
             "Control Contract consumer namespace 不正确",
             request_id=str(value.get("requestId") or ""),
-            contract_version=CONTROL_CONTRACT_V3_VERSION,
+            contract_version=CONTROL_CONTRACT_VERSION,
         )
         _control_http_error(error)
     return value
@@ -1299,7 +1333,7 @@ def _control_v3_envelope(payload: Any) -> dict[str, Any]:
                 "INVALID_PROVIDER_CREDENTIALS",
                 "Provider 凭证必须使用 credentials 字段",
                 request_id=str(value.get("requestId") or ""),
-                contract_version=CONTROL_CONTRACT_V3_VERSION,
+                contract_version=CONTROL_CONTRACT_VERSION,
             )
         )
     return value
@@ -1310,25 +1344,26 @@ def control_handshake(payload: dict[str, Any] = Body(default_factory=dict)) -> d
     """协商独立 Control Contract，不返回任何凭证内容。"""
     value = _control_envelope(payload)
     request_id = value.get("requestId")
-    if set(value) != {"contractVersion", "consumer", "requestId", "supportedVersions"}:
+    if set(value) != {"contractVersion", "consumer", "requestId", "contract"}:
         _control_http_error(ControlContractError(
-            "INVALID_HANDSHAKE", "Control Contract V3 handshake 字段不符合严格契约",
-            request_id=str(request_id or ""), contract_version=CONTROL_CONTRACT_V3_VERSION,
+            "INVALID_HANDSHAKE", "dsa-control-v1 握手字段不符合合同",
+            request_id=str(request_id or ""), contract_version=CONTROL_CONTRACT_VERSION,
         ))
     if not isinstance(request_id, str) or not request_id.strip():
         _control_http_error(ControlContractError(
-            "INVALID_HANDSHAKE", "Control Contract V3 handshake requestId 不能为空",
-            contract_version=CONTROL_CONTRACT_V3_VERSION,
+            "INVALID_HANDSHAKE", "dsa-control-v1 握手 requestId 不能为空",
+            contract_version=CONTROL_CONTRACT_VERSION,
         ))
-    if value.get("supportedVersions") != [CONTROL_CONTRACT_V3_VERSION]:
+    if value.get("contract") != CONTROL_CONTRACT:
         _control_http_error(ControlContractError(
-            "CONTROL_CONTRACT_UNSUPPORTED", "没有共同的 Control Contract 版本",
+            "CONTROL_CONTRACT_UNSUPPORTED", "Control 握手需要 dsa-control-v1",
             request_id=request_id.strip(),
-            details={"supportedVersions": [CONTROL_CONTRACT_V3_VERSION]},
-            contract_version=CONTROL_CONTRACT_V3_VERSION,
+            details={"expectedContract": CONTROL_CONTRACT},
+            contract_version=CONTROL_CONTRACT_VERSION,
         ))
     return {
-        "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+        "contractVersion": CONTROL_CONTRACT_VERSION,
+        "contract": CONTROL_CONTRACT,
         "consumer": CONSUMER_NAMESPACE,
         "accepted": True,
         "providerRegistry": True,
@@ -1341,7 +1376,7 @@ def control_handshake(payload: dict[str, Any] = Body(default_factory=dict)) -> d
 @router_v3.get("/control/providers", dependencies=[Depends(require_control_token)])
 def control_providers() -> dict[str, Any]:
     return {
-        "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+        "contractVersion": CONTROL_CONTRACT_VERSION,
         "consumer": CONSUMER_NAMESPACE,
         "providers": _control_store().provider_registry(),
     }
@@ -1351,13 +1386,13 @@ def control_providers() -> dict[str, Any]:
 def control_route_capabilities_v3(
     contract_version: Optional[int] = Query(default=None, alias="contractVersion"), event_admissions: Optional[Literal['v1']] = Query(default=None, alias="eventAdmissions"),
 ) -> dict[str, Any]:
-    if contract_version != CONTROL_CONTRACT_V3_VERSION:
+    if contract_version != CONTROL_CONTRACT_VERSION:
         _control_http_error(
             ControlContractError(
                 "CONTROL_CONTRACT_UNSUPPORTED",
-                "路由能力目录只支持 Control Contract V3",
-                details={"supportedVersions": [CONTROL_CONTRACT_V3_VERSION]},
-                contract_version=CONTROL_CONTRACT_V3_VERSION,
+                "路由能力目录只支持 dsa-control-v1",
+                details={"expectedContract": CONTROL_CONTRACT},
+                contract_version=CONTROL_CONTRACT_VERSION,
             )
         )
     try:
@@ -1366,15 +1401,15 @@ def control_route_capabilities_v3(
         return get_thesis_ledger_runtime().market_route_catalog_v3(**({'event_admissions': True} if event_admissions == 'v1' else {}))
     except Exception as exc:
         logger.warning(
-            "ThesisLedger Control V3 route catalog unavailable error_type=%s",
+            "ThesisLedger dsa-control-v1 route catalog unavailable error_type=%s",
             type(exc).__name__,
         )
         _control_http_error(
             ControlContractError(
                 "ROUTE_CATALOG_UNAVAILABLE",
-                "Control V3 精确路由能力目录暂时不可用",
+                "dsa-control-v1 精确路由能力目录暂时不可用",
                 status_code=503,
-                contract_version=CONTROL_CONTRACT_V3_VERSION,
+                contract_version=CONTROL_CONTRACT_VERSION,
             )
         )
 
@@ -1422,12 +1457,12 @@ def control_provider_remove(
 @router_v3.post("/control/policies/apply", dependencies=[Depends(require_control_token)])
 def control_apply_policy(payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
     try:
-        if not isinstance(payload, dict) or payload.get("contractVersion") != CONTROL_CONTRACT_V3_VERSION:
+        if not isinstance(payload, dict) or (type(payload.get("contractVersion")) is not int or payload.get("contractVersion") != CONTROL_CONTRACT_VERSION):
             raise ControlContractError(
                 "CONTROL_CONTRACT_UNSUPPORTED",
-                "策略写入只支持 Control Contract V3",
-                details={"supportedVersions": [CONTROL_CONTRACT_V3_VERSION]},
-                contract_version=CONTROL_CONTRACT_V3_VERSION,
+                "策略写入只支持 dsa-control-v1",
+                details={"expectedContract": CONTROL_CONTRACT},
+                contract_version=CONTROL_CONTRACT_VERSION,
             )
         value = _control_envelope(payload)
         return _control_store().apply_policy_v3(value)
@@ -1439,17 +1474,17 @@ def control_apply_policy(payload: dict[str, Any] = Body(default_factory=dict)) -
 def control_effective_policy(
     contract_version: Optional[int] = Query(default=None, alias="contractVersion"),
 ) -> dict[str, Any]:
-    if contract_version not in (None, CONTROL_CONTRACT_V3_VERSION):
+    if contract_version not in (None, CONTROL_CONTRACT_VERSION):
         _control_http_error(ControlContractError(
             "CONTROL_CONTRACT_UNSUPPORTED",
-            "生效策略只支持 Control Contract V3",
-            details={"supportedVersions": [CONTROL_CONTRACT_V3_VERSION]},
-            contract_version=CONTROL_CONTRACT_V3_VERSION,
+            "生效策略只支持 dsa-control-v1",
+            details={"expectedContract": CONTROL_CONTRACT},
+            contract_version=CONTROL_CONTRACT_VERSION,
         ))
     store = _control_store()
     projection = store.policy_projection_v3()
     return {
-        "contractVersion": CONTROL_CONTRACT_V3_VERSION,
+        "contractVersion": CONTROL_CONTRACT_VERSION,
         "consumer": CONSUMER_NAMESPACE,
         "projection": {"effective": projection["effective"]} if projection else None,
     }

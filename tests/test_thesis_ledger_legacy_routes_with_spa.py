@@ -16,7 +16,7 @@ def test_removed_thesis_ledger_post_does_not_fall_into_spa_method_gate(monkeypat
         response = client.post(
             f"{prefix}/control/handshake",
             headers=headers,
-            json={"contractVersion": 3},
+            json={"contractVersion": 1},
         )
         assert response.status_code == 404
         assert response.json()["error"] == "not_found"

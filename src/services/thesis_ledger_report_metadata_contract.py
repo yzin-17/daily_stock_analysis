@@ -1,4 +1,4 @@
-"""单标研报最小元数据合同；日期精度与局部读取边界显式保留。"""
+"""外部研报元数据合同，支持可选日期筛选和精确来源绑定。"""
 
 from datetime import date, datetime
 from typing import Literal
@@ -18,19 +18,19 @@ class ReportMetadataRequest(MetadataModel):
     symbol: str = Field(pattern=r'^[0-9]{6}\.(SH|SZ)$')
     instrument_type: Literal['STOCK'] = 'STOCK'
     requestId: str = Field(min_length=1, max_length=128)
-    start: str
-    end: str
+    start: str | None = None
+    end: str | None = None
     page: int = Field(ge=1, le=1000)
     pageSize: int = Field(ge=1, le=20)
     requestBudgetMs: int = Field(ge=500, le=5000)
 
     @model_validator(mode='after')
-    def window(self):
+    def filters(self):
         for value in (self.start, self.end):
-            if date.fromisoformat(value).isoformat() != value:
-                raise ValueError('研报窗口需要 ISO 日期')
-        if self.start > self.end:
-            raise ValueError('研报日期窗口逆序')
+            if value is not None and date.fromisoformat(value).isoformat() != value:
+                raise ValueError('研报筛选需要 ISO 日期')
+        if self.start is not None and self.end is not None and self.start > self.end:
+            raise ValueError('研报日期筛选逆序')
         return self
 
     def route_key(self):
@@ -47,7 +47,7 @@ class ReportMetadataRequest(MetadataModel):
 
 class ReportMetadataWireRequest(ReportMetadataRequest):
     instrument_type: Literal['STOCK'] = Field(default='STOCK', alias='assetType')
-    contractVersion: Literal[3]
+    contractVersion: Literal[1]
     consumer: Literal['thesis-ledger']
 
 
@@ -73,13 +73,13 @@ class ReportMetadataItem(MetadataModel):
 
 class ReportMetadataResult(MetadataModel):
     capability: Literal['RESEARCH_REPORT_METADATA'] = CAPABILITY
-    metadataVersion: Literal['research-report-metadata-v1'] = 'research-report-metadata-v1'
+    metadataVersion: Literal['market-external-report-metadata-v1'] = 'market-external-report-metadata-v1'
     adapterRevision: str = Field(min_length=1)
     sourceRevision: str = Field(min_length=1)
     requestId: str
     symbol: str = Field(pattern=r'^[0-9]{6}\.(SH|SZ)$')
-    start: str
-    end: str
+    start: str | None = None
+    end: str | None = None
     page: int = Field(ge=1, le=1000)
     pageSize: int = Field(ge=1, le=20)
     totalItems: int = Field(ge=0)
@@ -118,8 +118,10 @@ def correlate(request, result, target):
             raise ValueError('研报结果与请求不一致')
     if (result.providerId, result.upstreamSource) != (target.get('providerId'), target.get('upstreamSource')):
         raise ValueError('研报结果与来源目标不一致')
-    if any(not request.start <= item.publishedDate <= request.end for item in result.items):
-        raise ValueError('研报日期超出请求窗口')
+    for item in result.items:
+        if ((request.start is not None and item.publishedDate < request.start)
+                or (request.end is not None and item.publishedDate > request.end)):
+            raise ValueError('研报日期超出可选筛选')
     return result
 
 

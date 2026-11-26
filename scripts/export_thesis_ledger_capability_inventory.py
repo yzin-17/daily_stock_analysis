@@ -131,7 +131,7 @@ def product_consumers():
     for path in sorted(directory.rglob("*.ts")):
         source = path.read_text()
         imports = re.findall(r"from ['\"]([^'\"]*(?:integration/dsa|market-data-reader|dsa[^'\"]*)[^'\"]*)['\"]", source)
-        endpoints = sorted(set(re.findall(r"/api/v3/thesis-ledger/[a-zA-Z0-9/_-]+", source)))
+        endpoints = sorted(set(re.findall(r"/api/v1/thesis-ledger/[a-zA-Z0-9/_-]+", source)))
         if imports or endpoints:
             result.append({"path": str(path.relative_to(root)), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                            "imports": sorted(set(imports)), "endpoints": endpoints})

@@ -2,13 +2,13 @@
 
 ## 范围
 
-DSA 对主仓提供的周期点进行纯指标计算，支持 `5d / 1w / 1mo / 1y`。主仓负责日线聚合、完整日历/Session、来源价格口径、评估时刻和覆盖证明；DSA 不采集基础行情或重建这些事实。本能力不改变 Provider 原始 bars 周期或 Data V3 capabilities 握手。
+DSA 对主仓提供的周期点进行纯指标计算，支持 `5d / 1w / 1mo / 1y`。主仓负责日线聚合、完整日历/Session、来源价格口径、评估时刻和覆盖证明；DSA 不采集基础行情或重建这些事实。本能力不改变 Provider 原始 bars 周期或 `dsa-data-v1` 握手。
 
 原生 `1m / 1d` 指标请求保留 Contract V3、原 identity/points 指纹与既有公式。四种新周期使用独立派生绑定；不能仅替换 timeframe 并将数值摘要当成完整聚合摘要。
 
 ## 请求绑定
 
-计算路径仍为 `POST /api/v3/thesis-ledger/market/indicators/calculate`，使用现行独立 DSA Bearer Token。派生请求保留 `contractVersion / identity / points / requests / inputFingerprint`，并增加严格 `periodContext`：
+计算路径仍为 `POST /api/v1/thesis-ledger/market/indicators/calculate`，使用现行独立 DSA Bearer Token。派生请求保留 `contractVersion / identity / points / requests / inputFingerprint`，并增加严格 `periodContext`：
 
 | 字段                   | 含义                                                                                                  |
 | ---------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -23,7 +23,7 @@ DSA 校验实际点摘要、完整绑定摘要、证券类型、时间顺序、O
 
 ## 独立能力声明
 
-`GET /api/v3/thesis-ledger/market/indicators/capabilities` 使用同一 DSA Bearer Token，声明 `provided-points`、四种派生周期、输入上限、参数范围和预热规则：
+`GET /api/v1/thesis-ledger/market/indicators/capabilities` 使用同一 DSA Bearer Token，声明 `provided-points`、四种派生周期、输入上限、参数范围和预热规则：
 
 - MA：`max(period,60)-1`，现有 MA 输出包含 ma5/ma10/ma20/ma60。
 - MACD：`slow+signal`。
@@ -46,4 +46,4 @@ python -m pytest tests/test_thesis_ledger_period_indicators.py tests/test_thesis
 
 ## 兼容与回退
 
-旧日线请求、Data V3 handshake、原始 Provider 路由和指标公式保留。没有新环境变量、依赖或数据库变更。主仓尚未完成真实聚合装配时，公开派生请求继续明确降级；DSA 计算能力不能替代 Server/图表完整验收。回退时由版本发布入口恢复对应应用代码，保留现行原生请求；不清理业务数据或卷。
+旧日线请求、`dsa-data-v1`、原始 Provider 路由和指标公式保留。没有新环境变量、依赖或数据库变更。主仓尚未完成真实聚合装配时，公开派生请求继续明确降级；DSA 计算能力不能替代 Server/图表完整验收。回退时由版本发布入口恢复对应应用代码，保留现行原生请求；不清理业务数据或卷。

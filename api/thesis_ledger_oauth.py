@@ -71,7 +71,7 @@ def _error(error: Exception):
     raise HTTPException(
         status_code=status,
         detail={
-            "contractVersion": 3,
+            "contractVersion": 1,
             "code": code,
             "message": "Longbridge 浏览器授权未完成，请检查授权状态。",
         },
@@ -85,7 +85,7 @@ async def create_session(request: Request, payload: dict = Body(...)):
         if set(value) - {"clientId", "contractVersion", "consumer", "requestId"}:
             raise OAuthStateError("OAUTH_REQUEST_INVALID")
         session = await _manager(request).create(value.get("clientId"))
-        return {"contractVersion": 3, "consumer": "thesis-ledger", **session}
+        return {"contractVersion": 1, "consumer": "thesis-ledger", **session}
     except Exception as error:
         _error(error)
 
@@ -93,7 +93,7 @@ async def create_session(request: Request, payload: dict = Body(...)):
 @router.get("/sessions/current")
 async def current_session(request: Request):
     try:
-        return {"contractVersion": 3, "consumer": "thesis-ledger", "session": _manager(request).current()}
+        return {"contractVersion": 1, "consumer": "thesis-ledger", "session": _manager(request).current()}
     except Exception as error:
         _error(error)
 
@@ -101,7 +101,7 @@ async def current_session(request: Request):
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, request: Request):
     try:
-        return {"contractVersion": 3, "consumer": "thesis-ledger", **_manager(request).get(session_id)}
+        return {"contractVersion": 1, "consumer": "thesis-ledger", **_manager(request).get(session_id)}
     except Exception as error:
         _error(error)
 
@@ -113,6 +113,6 @@ async def cancel_session(session_id: str, request: Request, payload: dict = Body
         if set(value) != {"contractVersion", "consumer", "requestId"}:
             raise OAuthStateError("OAUTH_REQUEST_INVALID")
         session = await _manager(request).cancel(session_id)
-        return {"contractVersion": 3, "consumer": "thesis-ledger", **session}
+        return {"contractVersion": 1, "consumer": "thesis-ledger", **session}
     except Exception as error:
         _error(error)

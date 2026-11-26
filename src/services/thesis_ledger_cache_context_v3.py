@@ -18,7 +18,7 @@ CAPABILITIES = {'REALTIME_QUOTE', 'FUND_NAV', 'FUND_NAV_HISTORY', 'FUND_HOLDINGS
 
 class CacheContextRequest(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
-    contractVersion: Literal[3]
+    contractVersion: Literal[1]
     consumer: Literal['thesis-ledger']
     requestId: str = Field(min_length=1)
     capability: Literal['REALTIME_QUOTE', 'FUND_NAV', 'FUND_NAV_HISTORY', 'FUND_HOLDINGS', 'CHIP_SUMMARY']
@@ -50,7 +50,7 @@ class CacheRouteKey(BaseModel):
 
 class CacheContextResponse(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
-    contractVersion: Literal[3]
+    contractVersion: Literal[1]
     consumer: Literal['thesis-ledger']
     requestId: str
     symbol: str
@@ -155,7 +155,7 @@ def read_cache_context(runtime, payload):
         raise CacheContextError('policy_not_applied')
     scoped = {**before, 'policyRevision': epoch, 'sourceDesiredRevision': epoch}
     generation = sha256(json.dumps(scoped, ensure_ascii=True, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    response = {'contractVersion': 3, 'consumer': 'thesis-ledger', 'requestId': request.requestId,
+    response = {'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': request.requestId,
             'symbol': request.symbol, 'capability': request.capability, 'routeKey': key,
             'policyRevision': before['policyRevision'], 'generation': generation,
                 'ready': before['ready'], 'reason': before['reason']}

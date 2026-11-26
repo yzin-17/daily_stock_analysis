@@ -40,7 +40,7 @@ def market_events(request: Request, payload: Any = Body(...)) -> dict[str, Any] 
     except (EventV3Error, KnownCashReadError) as error:
         status = 422 if error.code in {"invalid_request", "not_adapted", "not_admitted", "policy_not_applied"} else 503
         content = {
-            "contractVersion": 3, "requestId": request_id,
+            "contractVersion": 1, "requestId": request_id,
             "error": {"code": error.code, "message": f"方案读取失败：{error.reason}" if isinstance(error, KnownCashReadError) else "事件来源暂不可用"},
         }
         if isinstance(error, KnownCashReadError):

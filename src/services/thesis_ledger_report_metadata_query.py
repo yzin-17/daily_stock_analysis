@@ -4,7 +4,7 @@ from .thesis_ledger_capability_contracts import CapabilityContractError, ReadCon
 from .thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from .thesis_ledger_current_data_route import select_current_data_targets, CurrentDataRouteError
 from .thesis_ledger_feature_policy import feature_provider_epoch
-from .thesis_ledger_report_metadata_contract_v2 import CAPABILITY, CONTRACT, ReportMetadataRequest
+from .thesis_ledger_report_metadata_contract import CAPABILITY, CONTRACT, ReportMetadataRequest
 
 
 def read_report_metadata_probe(runtime, key, target, snapshot, symbol, _end):

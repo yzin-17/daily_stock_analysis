@@ -9,6 +9,7 @@ from .futu_market import RESULT_PREFIX, FutuMarketError, read_futu_quote
 from .futu_daily import read_futu_daily
 from .futu_minute import read_futu_minute
 from .futu_static_info import read_futu_static_info, find_futu_instrument
+from .futu_trading_state import read_futu_trading_state
 from .exact_daily_contract import ExactDailyError
 
 
@@ -21,6 +22,8 @@ def _read(request):
         result = {"items": find_futu_instrument(futu, host, port, request.get("symbol"))}
     elif request.get("operation") == "static-info":
         result = read_futu_static_info(futu, host, port, request.get("symbol"), request.get("instrumentType"))
+    elif request.get("operation") == "trading-state":
+        result = read_futu_trading_state(futu, host, port, request.get("symbol"))
     elif request.get("operation") == "daily":
         frame = read_futu_daily(futu, host, port, request)
         attrs = {**frame.attrs, "fieldAvailability": {k: bool(v) for k, v in frame.attrs["fieldAvailability"].items()}}

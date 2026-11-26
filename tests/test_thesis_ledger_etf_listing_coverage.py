@@ -27,7 +27,7 @@ def test_510300_listing_is_bound_to_disclosed_identity_and_source():
 ])
 def test_current_qfq_window_has_strict_coverage_before_upstream_read(provider, source, index):
     request = _market_data_v3_request({
-        "contractVersion": 3, "requestId": "listing-coverage-check", "symbol": "510300.SH",
+        "contractVersion": 1, "requestId": "listing-coverage-check", "symbol": "510300.SH",
         "routeKey": {"kind": "bar", "market": "CN", "assetType": "ETF", "capability": "DAILY_BAR",
                      "timeframe": "1d", "adjustment": "qfq"},
         "routeTarget": {"providerId": provider, "upstreamSource": source, "routeIndex": index},

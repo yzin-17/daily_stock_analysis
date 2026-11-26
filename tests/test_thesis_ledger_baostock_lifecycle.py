@@ -7,7 +7,7 @@ import pytest
 from src.services.thesis_ledger_baostock_lifecycle import normalize_baostock_lifecycle, read_baostock_lifecycle
 from src.services.thesis_ledger_baostock_status_source import read_baostock_status_response
 from src.services.thesis_ledger_status_cache import HistoricalStatusCache
-from tests.test_thesis_ledger_baostock_status_routes import request, value
+from tests.test_thesis_ledger_baostock_status_routes import legacy_request as request, value
 
 CLOCK = "2026-10-09T00:00:00+00:00"
 

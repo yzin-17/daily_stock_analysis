@@ -45,7 +45,14 @@ class DailyParameters(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     interactive_chart: bool = False
     historical_tradability: bool = False
+    allow_price_only: bool = False
     target_timeout_seconds: float = Field(default=4.5, gt=0, le=4.5)
+
+    @model_validator(mode="after")
+    def observation_scope(self):
+        if self.allow_price_only and not self.historical_tradability:
+            raise ValueError("无成交量的价格观察须明确请求日级证据")
+        return self
 
     def get(self, name: str, default=None):
         return getattr(self, name, default)

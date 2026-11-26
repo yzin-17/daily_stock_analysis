@@ -1,4 +1,4 @@
-"""精确 K 线策略及目标选择；日线和分钟共用原 V3 路由约束。"""
+"""按现行生效策略选择日线和分钟 K 线的精确目标。"""
 
 from typing import Any, Mapping
 from src.services.thesis_ledger_provider_runtime import (
@@ -16,7 +16,7 @@ def execute_bar_route(
     *,
     route_target: Mapping[str, Any] | None = None,
 ) -> ProviderExecution:
-    """Fetch one exact V3 bar route without consulting the V1/V2 policy."""
+    """Read one exact bar route from the current Control policy."""
     if not isinstance(request, ThesisLedgerDataRequest):
         raise TypeError("request 必须是 ThesisLedgerDataRequest")
     if (
@@ -34,7 +34,7 @@ def execute_bar_route(
         or route_key.get("assetType") != request.instrument_type
         or route_key.get("market") != current_data_route_key(request.capability, request.instrument_type, request.symbol)["market"]
     ):
-        raise ProviderCallError("invalid_request", "Data V3 BarSeries 请求与精确 RouteKey 不匹配")
+        raise ProviderCallError("invalid_request", "dsa-data-v1 BarSeries 请求与精确 RouteKey 不匹配")
     pinned_target: dict[str, Any] | None = None
     if route_target is not None:
         if not isinstance(route_target, Mapping) or set(route_target) != {
@@ -42,7 +42,7 @@ def execute_bar_route(
             "upstreamSource",
             "routeIndex",
         }:
-            raise ProviderCallError("invalid_request", "Data V3 RouteTarget pin 格式非法")
+            raise ProviderCallError("invalid_request", "dsa-data-v1 RouteTarget pin 格式非法")
         provider_id = route_target.get("providerId")
         upstream_source = route_target.get("upstreamSource")
         route_index = route_target.get("routeIndex")
@@ -57,7 +57,7 @@ def execute_bar_route(
             or isinstance(route_index, bool)
             or route_index not in {0, 1}
         ):
-            raise ProviderCallError("invalid_request", "Data V3 RouteTarget pin 格式非法")
+            raise ProviderCallError("invalid_request", "dsa-data-v1 RouteTarget pin 格式非法")
         pinned_target = {
             "providerId": provider_id,
             "upstreamSource": upstream_source,
@@ -65,10 +65,10 @@ def execute_bar_route(
         }
 
     effective_policy = runtime.store.effective_policy_v3()
-    if not isinstance(effective_policy, Mapping) or effective_policy.get("contractVersion") != 3:
-        raise ProviderCallError("NO_ELIGIBLE_PROVIDER", "Control V3 路由策略不可用")
+    if not isinstance(effective_policy, Mapping) or (type(effective_policy.get("contractVersion")) is not int or effective_policy.get("contractVersion") != 1):
+        raise ProviderCallError("NO_ELIGIBLE_PROVIDER", "dsa-control-v1 路由策略不可用")
     if not effective_policy.get("enabled"):
-        raise ProviderCallError("NO_ELIGIBLE_PROVIDER", "Control V3 路由策略已禁用")
+        raise ProviderCallError("NO_ELIGIBLE_PROVIDER", "dsa-control-v1 路由策略已禁用")
     if pinned_target is not None:
         effective_revision = effective_policy.get("revision")
         source_desired_revision = effective_policy.get("sourceDesiredRevision")
@@ -82,11 +82,11 @@ def execute_bar_route(
         ):
             raise ProviderCallError(
                 "invalid_response",
-                "Control V3 Effective revision 与 sourceDesiredRevision 不一致",
+                "dsa-control-v1 Effective revision 与 sourceDesiredRevision 不一致",
             )
     routes = effective_policy.get("routes")
     if not isinstance(routes, list):
-        raise ProviderCallError("invalid_response", "Control V3 Effective 路由格式非法")
+        raise ProviderCallError("invalid_response", "dsa-control-v1 Effective 路由格式非法")
     if pinned_target is not None:
         matching_routes = [
             entry
@@ -94,7 +94,7 @@ def execute_bar_route(
             if isinstance(entry, Mapping) and entry.get("key") == dict(route_key)
         ]
         if len(matching_routes) > 1:
-            raise ProviderCallError("invalid_response", "Control V3 Effective 精确行情路由重复")
+            raise ProviderCallError("invalid_response", "dsa-control-v1 Effective 精确行情路由重复")
         route = matching_routes[0] if matching_routes else None
     else:
         route = next(
@@ -106,13 +106,13 @@ def execute_bar_route(
             None,
         )
     if route is None:
-        raise ProviderCallError("NO_ELIGIBLE_PROVIDER", "Control V3 未配置精确行情路由")
+        raise ProviderCallError("NO_ELIGIBLE_PROVIDER", "dsa-control-v1 未配置精确行情路由")
 
     targets = route.get("targets")
     if not isinstance(targets, list):
-        raise ProviderCallError("invalid_response", "Control V3 Effective RouteTarget 格式非法")
+        raise ProviderCallError("invalid_response", "dsa-control-v1 Effective RouteTarget 格式非法")
     if len(targets) > 2:
-        raise ProviderCallError("invalid_response", "Control V3 Effective RouteTarget 数量非法")
+        raise ProviderCallError("invalid_response", "dsa-control-v1 Effective RouteTarget 数量非法")
     effective_targets = targets
     if pinned_target is not None:
         target_identities: set[tuple[str, str]] = set()
@@ -124,7 +124,7 @@ def execute_bar_route(
                 "eligible",
                 "reason",
             }:
-                raise ProviderCallError("invalid_response", "Control V3 Effective RouteTarget 格式非法")
+                raise ProviderCallError("invalid_response", "dsa-control-v1 Effective RouteTarget 格式非法")
             candidate_provider = candidate.get("providerId")
             candidate_source = candidate.get("upstreamSource")
             candidate_index = candidate.get("routeIndex")
@@ -148,10 +148,10 @@ def execute_bar_route(
                 )
                 or candidate_eligible != (candidate_reason is None)
             ):
-                raise ProviderCallError("invalid_response", "Control V3 Effective RouteTarget 状态非法")
+                raise ProviderCallError("invalid_response", "dsa-control-v1 Effective RouteTarget 状态非法")
             identity = (candidate_provider, candidate_source)
             if identity in target_identities:
-                raise ProviderCallError("invalid_response", "Control V3 Effective RouteTarget 重复")
+                raise ProviderCallError("invalid_response", "dsa-control-v1 Effective RouteTarget 重复")
             target_identities.add(identity)
         matching_targets = [
             target
@@ -163,7 +163,7 @@ def execute_bar_route(
         if len(matching_targets) != 1:
             raise ProviderCallError(
                 "NO_ELIGIBLE_PROVIDER",
-                "Data V3 所选 RouteTarget 不在当前 Effective 中或存在歧义",
+                "dsa-data-v1 所选 RouteTarget 不在当前 Effective 中或存在歧义",
             )
         target = matching_targets[0]
         route_index = target.get("routeIndex")
@@ -175,7 +175,7 @@ def execute_bar_route(
         ):
             raise ProviderCallError(
                 "NO_ELIGIBLE_PROVIDER",
-                "Data V3 所选 RouteTarget 顺序已变化",
+                "dsa-data-v1 所选 RouteTarget 顺序已变化",
             )
         if target.get("eligible") is not True:
             reason = str(target.get("reason") or "")
@@ -183,10 +183,10 @@ def execute_bar_route(
                 raise ProviderCallError("unsupported_adjustment", "所选来源不支持请求的价格口径")
             raise ProviderCallError(
                 "NO_ELIGIBLE_PROVIDER",
-                "Data V3 所选 RouteTarget 当前不可执行",
+                "dsa-data-v1 所选 RouteTarget 当前不可执行",
             )
         if target.get("reason") is not None:
-            raise ProviderCallError("invalid_response", "Control V3 Effective RouteTarget 状态矛盾")
+            raise ProviderCallError("invalid_response", "dsa-control-v1 Effective RouteTarget 状态矛盾")
         effective_targets = [target]
 
     route_targets: list[RouteTarget] = []
@@ -194,10 +194,10 @@ def execute_bar_route(
     seen_target_identities: set[tuple[str, str]] = set()
     for target in effective_targets:
         if not isinstance(target, Mapping):
-            raise ProviderCallError("invalid_response", "Control V3 Effective RouteTarget 格式非法")
+            raise ProviderCallError("invalid_response", "dsa-control-v1 Effective RouteTarget 格式非法")
         adapter_reason = market_v3_bar_adapter_reason(dict(route_key), dict(target))
         if target.get("eligible") and adapter_reason is not None:
-            raise ProviderCallError("invalid_response", "Control V3 标记了未适配的精确行情来源")
+            raise ProviderCallError("invalid_response", "dsa-control-v1 标记了未适配的精确行情来源")
         if not target.get("eligible"):
             continue
         provider_id = str(target.get("providerId") or "").strip().lower()
@@ -210,10 +210,10 @@ def execute_bar_route(
             or isinstance(route_index, bool)
             or route_index not in {0, 1}
         ):
-            raise ProviderCallError("invalid_response", "Control V3 Effective RouteTarget 非法")
+            raise ProviderCallError("invalid_response", "dsa-control-v1 Effective RouteTarget 非法")
         target_identity = (provider_id, upstream_source)
         if target_identity in seen_target_identities:
-            raise ProviderCallError("invalid_response", "Control V3 Effective RouteTarget 重复")
+            raise ProviderCallError("invalid_response", "dsa-control-v1 Effective RouteTarget 重复")
         seen_target_identities.add(target_identity)
         exact_target = {"providerId": provider_id, "upstreamSource": upstream_source}
         _, admission_reason = price_route_admission(
@@ -227,7 +227,7 @@ def execute_bar_route(
         if admission_scope_rejected:
             raise ProviderCallError(
                 "insufficient_coverage",
-                "Control V3 RouteTarget admission scope 不覆盖请求窗口",
+                "dsa-control-v1 RouteTarget admission scope 不覆盖请求窗口",
             )
         reasons = [
             str(target.get("reason") or "")
@@ -236,7 +236,7 @@ def execute_bar_route(
         ]
         if any(reason in {"unsupported_adjustment", "basis_incompatible"} for reason in reasons):
             raise ProviderCallError("unsupported_adjustment", "来源不支持请求的价格口径")
-        raise ProviderCallError("NO_ELIGIBLE_PROVIDER", "Control V3 没有可执行的精确行情来源")
+        raise ProviderCallError("NO_ELIGIBLE_PROVIDER", "dsa-control-v1 没有可执行的精确行情来源")
 
     def operation(provider_id: str, adapter: Any, upstream_source: str | None) -> Any:
         if request.capability == "MINUTE_BAR":

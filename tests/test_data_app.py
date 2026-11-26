@@ -37,23 +37,34 @@ def test_health_and_root_are_data_json_without_frontend(client):
 @pytest.mark.parametrize("method", ["GET", "POST", "PATCH", "DELETE"])
 def test_retired_prefixes_return_same_not_found_without_spa_or_product_handlers(client, path, method):
     response = client.request(method, path)
-    assert response.status_code == 404 and response.json() == {"error": "not_found"}
+    assert response.status_code == 404 and response.json() == {"detail": "Not Found"}
     assert "text/html" not in response.headers["content-type"]
 
 
 def test_data_and_control_tokens_remain_separate_and_request_error_is_structured(client):
-    path = "/api/v3/thesis-ledger/market/fx-rates"
+    path = "/api/v1/thesis-ledger/market/fx-rates"
     params = {"baseCurrency": "CNY", "currencies": "USD", "asOf": "2026-10-16"}
     assert client.get(path, params=params).status_code == 401
     assert client.get(path, params=params, headers={"authorization": "Bearer fixture-control-token"}).status_code == 401
     headers = {"authorization": "Bearer fixture-data-token", "x-request-id": "data-app-fixture-request"}
-    assert client.get(path, params=params, headers=headers).json()["version"] == 3
+    assert client.get(path, params=params, headers=headers).json()["version"] == 1
     bad = client.get(path, params={**params, "asOf": "bad"}, headers=headers)
     assert bad.status_code == 422 and bad.json()["detail"]["code"] == "invalid_as_of"
     assert bad.json()["detail"]["requestId"] == "data-app-fixture-request"
-    control = "/api/v3/thesis-ledger/control/providers"
+    control = "/api/v1/thesis-ledger/control/providers"
     assert client.get(control, headers=headers).status_code == 401
     assert client.get(control, headers={"authorization": "Bearer fixture-control-token"}).status_code == 200
+
+
+def test_control_handshake_requires_the_control_contract_name(client):
+    path = "/api/v1/thesis-ledger/control/handshake"
+    headers = {"authorization": "Bearer fixture-control-token"}
+    body = {"contractVersion": 1, "contract": "dsa-control-v1", "consumer": "thesis-ledger", "requestId": "fixture"}
+    assert client.post(path, json=body, headers=headers).json()["contract"] == "dsa-control-v1"
+    rejected = client.post(path, json={**body, "contract": "dsa-data-v1"}, headers=headers)
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"]["expectedContract"] == "dsa-control-v1"
+    assert client.post(path.replace("/api/v1/", "/api/v3/"), json=body, headers=headers).status_code == 404
 
 
 @pytest.mark.parametrize("error,status", [(DataConfigurationError("fixture-private-canary"), 503),
@@ -91,9 +102,9 @@ async def run():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://isolated") as client:
             assert (await client.get("/api/health")).json()["status"] == "ok"
             schema = (await client.get("/openapi.json")).json()
-            assert all(path.startswith("/api/v3/thesis-ledger/") or path in ("/api/health", "/health")
+            assert all(path.startswith("/api/v1/thesis-ledger/") or path in ("/api/health", "/health")
                        for path in schema["paths"])
-            assert "/api/v3/thesis-ledger/control/providers/longbridge/oauth/sessions" in schema["paths"]
+            assert "/api/v1/thesis-ledger/control/providers/longbridge/oauth/sessions" in schema["paths"]
             assert (await client.post("/api/v1/analysis")).status_code == 404
             assert (await client.get("/stocks.index.json")).status_code == 200
     assert not any(name == p or name.startswith(p + ".") for name in sys.modules for p in forbidden)

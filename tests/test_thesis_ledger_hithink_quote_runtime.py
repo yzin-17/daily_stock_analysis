@@ -38,7 +38,7 @@ def test_hithink_quote_manifest_keeps_stock_and_etf_sources_separate():
 
 def _policy(asset_type, source, revision=1):
     return {
-        "contractVersion": 3, "consumer": "thesis-ledger",
+        "contractVersion": 1, "consumer": "thesis-ledger",
         "requestId": f"quote-revision-{revision}", "revision": revision,
         "enabled": True,
         "routes": [{"key": hithink_quote_route_key(asset_type), "targets": [

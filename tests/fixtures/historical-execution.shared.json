@@ -1,0 +1,117 @@
+{
+  "description": "受控 ETF 完整执行资料，仅用于离线验证，不认证真实规则或来源覆盖。",
+  "originals": {
+    "snapshot": "受控盘中状态原文；仅用于离线测试。",
+    "rule": "受控完整执行制度原文；仅用于离线测试，不代表真实 ETF 规则。"
+  },
+  "request": {
+    "contractVersion": 1,
+    "consumer": "thesis-ledger",
+    "requestId": "controlled-execution",
+    "routeKey": {
+      "kind": "data",
+      "market": "CN",
+      "assetType": "ETF",
+      "capability": "HISTORICAL_EXECUTION_CONTEXT"
+    },
+    "routeTarget": {
+      "providerId": "historical-execution-archive",
+      "upstreamSource": "qualified-cn-execution",
+      "routeIndex": 0
+    },
+    "policyRevision": 1,
+    "symbol": "588000.SH",
+    "asOf": "2026-11-10T05:01:00.000Z"
+  },
+  "context": {
+    "asOf": "2026-11-10T05:01:00.000Z",
+    "fact": {
+      "symbol": "588000.SH",
+      "market": "CN",
+      "instrumentType": "ETF",
+      "currency": "CNY",
+      "lotSize": "100",
+      "tickSize": "0.001",
+      "tradable": true,
+      "executionRules": {
+        "status": "supported",
+        "version": "controlled-v1",
+        "range": {
+          "start": "2026-11-02",
+          "end": "2026-11-10"
+        },
+        "price": {
+          "reference": "previousClose",
+          "maxUpRatio": null,
+          "maxDownRatio": null
+        },
+        "positionSettlement": {
+          "sellableAfterTradingDays": 1
+        },
+        "cashSettlement": {
+          "buyDebitAfterTradingDays": 0,
+          "sellCreditAfterTradingDays": 0
+        },
+        "statutoryCharges": [
+          {
+            "code": "controlledHandling",
+            "side": "both",
+            "rate": "0.00004",
+            "minimum": null
+          },
+          {
+            "code": "controlledSellLevy",
+            "side": "sell",
+            "rate": "0.00001",
+            "minimum": null
+          }
+        ]
+      },
+      "provider": "historical-execution-archive",
+      "providerRevision": "controlled-v1",
+      "occurredAt": "2026-11-02T00:00:00.000Z",
+      "availableAt": "2026-11-01T00:00:00.000Z"
+    },
+    "trading": {
+      "state": "trading",
+      "intradayHalts": [],
+      "evidenceRefs": [
+        "status"
+      ]
+    },
+    "priceRule": {
+      "kind": "exact",
+      "currency": "CNY",
+      "lower": "1.000",
+      "upper": "1.600"
+    },
+    "ruleEvidenceRefs": [
+      "rules"
+    ],
+    "ruleCoverage": {
+      "quantity": true,
+      "price": true,
+      "positionSettlement": true,
+      "cashSettlement": true,
+      "statutoryCharges": true
+    },
+    "evidence": [
+      {
+        "id": "status",
+        "kind": "snapshot",
+        "sha256": "17e1c583e922cf4bfef0f432823113489316753e0d9e0d969a230512c9dfbe23",
+        "reference": "https://fixture.invalid/snapshot",
+        "availableAt": "2026-11-10T05:01:00.000Z",
+        "observedAt": "2026-11-16T00:00:00.000Z"
+      },
+      {
+        "id": "rules",
+        "kind": "rule",
+        "sha256": "491b67bc1624a7582affd24e17b8fd7a437d7e6adbcf1524028315d8fc007c74",
+        "reference": "https://fixture.invalid/rules",
+        "availableAt": "2026-11-01T00:00:00.000Z",
+        "observedAt": "2026-11-16T00:00:00.000Z"
+      }
+    ]
+  }
+}
