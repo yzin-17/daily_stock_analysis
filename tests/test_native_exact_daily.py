@@ -168,7 +168,7 @@ def test_pytdx_keeps_raw_metrics_and_date(store, symbol, date_field):
     assert registered == [(key, target, True)]
     assert not any(provider == 'pytdx' for _, _, provider, _ in NATIVE_DAILY_ROUTES)
     assert market_v3_current_route_revisions(key, target, PROVIDER_MANIFESTS['pytdx']) == {
-        'adapterRevision': 'dsa-v3-cn-stock-pytdx-none-exact-daily-v1',
+        'adapterRevision': 'dsa-v3-cn-stock-pytdx-none-exact-daily-v2',
         'sourceRevision': PROTOCOL, 'credentialRevision': 'not-required'}
     from src.services.thesis_ledger_provider_runtime import ProviderCallError
     from dataclasses import replace
@@ -179,6 +179,42 @@ def test_pytdx_keeps_raw_metrics_and_date(store, symbol, date_field):
         runtime.execute_market_bars_v3(replace(query, adjustment='qfq'), {**key, 'adjustment': 'qfq'})
     assert calls == [(symbol, "2026-05-18", "2026-05-18")]
     no_admissions(store)
+
+
+@pytest.mark.parametrize(
+    "start, expected_dates, expected_volumes",
+    [("2026-05-18", ["2026-05-18"], [100.]), ("2026-05-15", ["2026-05-15", "2026-05-18"], [90., 100.])],
+)
+def test_pytdx_exact_daily_includes_the_end_date_session(store, monkeypatch, start, expected_dates, expected_volumes):
+    from data_provider.pytdx_fetcher import PytdxFetcher
+
+    calls = []
+
+    def get_security_bars(**options):
+        calls.append((options["market"], options["code"], options["category"]))
+        return [
+            {"datetime": day + " 15:00:00", "open": 1., "high": 1.2, "low": .9, "close": 1.1, "vol": volume}
+            for day, volume in (("2026-05-14", 80.), ("2026-05-15", 90.), ("2026-05-18", 100.), ("2026-05-19", 110.))
+        ]
+
+    @contextmanager
+    def session(_):
+        yield SimpleNamespace(get_security_bars=get_security_bars, to_df=pd.DataFrame)
+
+    monkeypatch.setattr(PytdxFetcher, "_pytdx_session", session)
+    key = {"kind": "bar", "market": "CN", "assetType": "STOCK", "capability": "DAILY_BAR",
+           "timeframe": "1d", "adjustment": "none"}
+    target = {"providerId": "pytdx", "upstreamSource": "pytdx"}
+    assert apply(store, key, target)["effective"]["routes"][0]["targets"][0]["eligible"]
+    query = ThesisLedgerDataRequest("DAILY_BAR", "600519.SH", instrument_type="STOCK", timeframe="1d",
+                                   adjustment="none", start=start, end="2026-05-18")
+    runtime = ThesisLedgerProviderRuntime(store, adapters={"pytdx": PytdxFetcher(hosts=[])})
+    result = runtime.execute_market_bars_v3(query, key).value
+
+    assert result["date"].tolist() == expected_dates
+    assert result["volume"].tolist() == expected_volumes
+    assert result["amount"].isna().all()
+    assert calls == [(1, "600519", 9)]
 
 
 def test_missing_amount_stays_unknown_and_invalid_price_is_rejected():

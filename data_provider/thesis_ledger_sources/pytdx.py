@@ -75,7 +75,7 @@ INTRADAY_BINDINGS = intraday_bindings(read_native_intraday, 'pytdx', assets=('ST
 
 SOURCE = SourceDefinition("pytdx", manifest, factory, (*INTRADAY_BINDINGS,
     DailyBinding(ExactKey("CN", "STOCK", "DAILY_BAR", "none"), "pytdx",
-                 "dsa-v3-cn-stock-pytdx-none-exact-daily-v1", PROTOCOL, PROTOCOL,
+                 "dsa-v3-cn-stock-pytdx-none-exact-daily-v2", PROTOCOL, PROTOCOL,
                  None, daily, gated=True),
     QuoteBinding(ExactKey("CN", "STOCK", "REALTIME_QUOTE"), "pytdx",
         "pytdx-stock-quote-v2", "pytdx-direct-v1", quote),

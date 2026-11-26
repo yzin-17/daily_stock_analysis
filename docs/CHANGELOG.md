@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 通达信精确日线按交易日闭区间取数，纳入结束日带收盘时刻的日线。
+
 - [修复] 腾讯科创板 `688`、`689` 日线保留原股数，普通股票和 ETF 继续将手数转换为股。
 
 - [修复] 日线读取和精确路由诊断标明具名 Data 与 Control 合同，现行接入文档对齐 V1 路径和请求版本。

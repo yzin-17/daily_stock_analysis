@@ -362,9 +362,10 @@ class PytdxFetcher(BaseFetcher):
                 # 转换为 DataFrame
                 df = api.to_df(data)
                 
-                # 过滤日期范围
+                # SDK 日线可能带收盘时刻，按交易日闭区间过滤。
                 df['datetime'] = pd.to_datetime(df['datetime'])
-                df = df[(df['datetime'] >= start_date) & (df['datetime'] <= end_date)]
+                trading_dates = df['datetime'].dt.date
+                df = df[(trading_dates >= start_dt.date()) & (trading_dates <= end_dt.date())]
                 
                 return df
                 

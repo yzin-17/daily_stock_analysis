@@ -12,7 +12,7 @@
 | efinance | 内地股票、ETF | 东方财富 `get_quote_history`，显式 `fqt=0/1/2`，固定完整证券标识 |
 | BaoStock | 沪深股票 | `query_history_k_data_plus`，显式 `adjustflag=3/2/1`；北交所明确未覆盖 |
 | TickFlow | 内地股票 | `klines.get`，显式 `none/forward/backward`，原始毫秒时间及完整代码 |
-| pytdx | 沪深股票 | 原始不复权日线，保留交易所后缀；北交所明确未覆盖 |
+| pytdx | 沪深股票 | 原始不复权日线，保留交易所后缀，按交易日闭区间筛选含收盘时刻的数据；北交所明确未覆盖 |
 | Tushare | 内地股票、港股股票、内地 ETF | 股票 `daily/hk_daily` 不复权；ETF 保留原 `fund_daily` 分段契约 |
 | Yahoo Finance | 内地、港股、美股的股票/ETF；登记的美股指数 | `download(auto_adjust=True)` 来源前复权价格；区间结束日期转为次日，指数必须匹配已有映射 |
 | Longbridge | 港股、美股的股票/ETF | `history_candlesticks_by_date`，显式 `NoAdjust/ForwardAdjust` |
