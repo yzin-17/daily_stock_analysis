@@ -101,12 +101,12 @@ class AdmissionTests(unittest.TestCase):
             worker.apply_or_verify(self.save(request, value), self.database, self.directory)
         self.no_admission()
 
-    def test_legacy_result_contract_remains_supported_without_writing(self):
+    def test_legacy_result_contract_is_rejected_without_writing(self):
         request, value = self.evidence()
         value['result']['metadataVersion'] = 'research-report-metadata-v1'
-        _, result = worker.validate_evidence(value, request, self.state,
-            datetime.now(timezone.utc), fresh=True)
-        self.assertEqual(result.metadataVersion, 'research-report-metadata-v1')
+        with self.assertRaisesRegex(ValueError, 'metadataVersion'):
+            worker.validate_evidence(value, request, self.state,
+                datetime.now(timezone.utc), fresh=True)
         self.no_admission()
 
     def test_malformed_result_is_rejected_as_validation_error(self):

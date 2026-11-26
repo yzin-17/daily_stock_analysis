@@ -91,16 +91,27 @@ jobs:
             if [ "$attempt" -eq 3 ]; then exit 1; fi
             sleep 15
           done
-      - uses: actions/setup-node@v4
-        if: matrix.shard == 1
-        with:
-          node-version: 24
       - name: 检出共享合同夹具
         env:
           CUTOVER_REF: ${{ startsWith(github.ref_name, 'codex/named-v1-cutover-') && github.ref_name || '' }}
         run: |
           git clone --depth 1 --branch "${CUTOVER_REF:-main}" https://github.com/yzin-17/thesis-ledger.git ../thesis-ledger
           git -C ../thesis-ledger rev-parse HEAD
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: 构建共享 Schema
+        working-directory: ../thesis-ledger
+        env:
+          COREPACK_NPM_REGISTRY: https://registry.npmmirror.com
+          pnpm_config_registry: https://registry.npmmirror.com
+          npm_config_registry: https://registry.npmmirror.com
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter '@thesis-ledger/schemas...' build
       - name: 验证本地数据工具与构建命令
         if: matrix.shard == 1
         env:

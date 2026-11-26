@@ -5,7 +5,8 @@ tenacity>=8.2.0
 cryptography==50.0.1
 pypdf==6.19.0
 exchange-calendars==4.13.2
-pandas>=2.0.0
+# 固定旧指标基线验证过的滚动窗口及指数移动平均实现。
+pandas==3.0.5
 numpy>=1.24.0
 pypinyin>=0.50.0
 openpyxl>=3.1.0
@@ -15,7 +16,8 @@ croniter==7.0.0
 
 # 行情与数据 SDK；安装不代表凭据有效、权限或来源已准入。
 efinance>=0.5.5
-akshare>=1.12.0
+# 验证过新闻 SDK 入口及无 Cookie 的请求边界。
+akshare==1.18.94
 tushare>=1.4.0
 pytdx>=1.72
 baostock>=0.8.0

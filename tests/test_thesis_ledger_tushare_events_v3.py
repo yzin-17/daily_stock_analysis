@@ -388,7 +388,7 @@ def test_http_success_consumes_actual_built_schema_exchange_without_rebuild(stat
     script = ('const fs=require("fs");const s=require(process.argv[1]);'
               'const value=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));'
               's.marketEventExchangeV3Schema.parse(value); console.log("synthetic exchange passed");')
-    result = subprocess.run(["rtk", "proxy", "node", "-e", script, str(schemas), str(exchange)],
+    result = subprocess.run(["node", "-e", script, str(schemas), str(exchange)],
                             capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "synthetic exchange passed"
