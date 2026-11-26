@@ -5,8 +5,7 @@ tenacity>=8.2.0
 cryptography==50.0.1
 pypdf==6.19.0
 exchange-calendars==4.13.2
-# 固定旧指标基线验证过的滚动窗口及指数移动平均实现。
-pandas==3.0.5
+pandas>=2.0.0
 numpy>=1.24.0
 pypinyin>=0.50.0
 openpyxl>=3.1.0

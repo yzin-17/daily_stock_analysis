@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -15,6 +16,9 @@ from src.data.technical_indicators import calculate_macd, calculate_moving_avera
 from src.services.technical_indicator_series import build_indicator_points
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures/data_indicators_legacy_v1.json").read_text())
+LEGACY_VALUES = json.loads(
+    (Path(__file__).parent / "fixtures/data_indicators_legacy_values_v1.json").read_text()
+)
 
 
 def normalized(value):
@@ -39,6 +43,14 @@ def frame_for(case):
     })
 
 
+def assert_legacy_values(actual, archived):
+    # 历史基线按 12 位小数归一化。跨平台只容许该精度内的浮点差，保留缺值位置。
+    np.testing.assert_allclose(
+        np.asarray(actual, dtype=float), np.asarray(archived, dtype=float),
+        atol=1e-12, rtol=0, equal_nan=True,
+    )
+
+
 @pytest.mark.parametrize("case", FIXTURE["cases"], ids=lambda case: case["name"])
 def test_all_kernel_values_and_formal_outputs_match_pre_extraction_baseline(case):
     frame = frame_for(case)
@@ -48,11 +60,18 @@ def test_all_kernel_values_and_formal_outputs_match_pre_extraction_baseline(case
     calculated = calculate_macd(calculated, fast=params["fast"], slow=params["slow"], signal=params["signal"])
     calculated = calculate_rsi(calculated, periods=(params["short"], params["mid"], params["long"]))
     rows = calculated[case["columns"]].values.tolist()
-    assert digest(rows) == case["valuesDigest"]
-    assert (normalized(rows[-1]) if rows else []) == case["last"]
+    archived = LEGACY_VALUES[case["name"]]
+    assert digest(archived["rows"]) == case["valuesDigest"]
+    assert (archived["rows"][-1] if archived["rows"] else []) == case["last"]
+    assert_legacy_values(rows, archived["rows"])
     for name, expected in case["formal"].items():
         _, points, fingerprint, row_fingerprints = build_indicator_points(frame, name, params, str)
-        assert digest(points) == expected["pointsDigest"]
+        archived_points = []
+        for point, values in zip(points, archived["series"][name], strict=True):
+            assert point["values"].keys() == values.keys()
+            assert_legacy_values([point["values"][key] for key in values], list(values.values()))
+            archived_points.append({**point, "values": values})
+        assert digest(archived_points) == expected["pointsDigest"]
         assert fingerprint == expected["inputFingerprint"]
         assert digest(row_fingerprints) == expected["rowFingerprintDigest"]
     pd.testing.assert_frame_equal(frame, unchanged)
