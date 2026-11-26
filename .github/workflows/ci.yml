@@ -95,15 +95,19 @@ jobs:
         if: matrix.shard == 1
         with:
           node-version: 24
+      - name: 检出共享合同夹具
+        env:
+          CUTOVER_REF: ${{ startsWith(github.ref_name, 'codex/named-v1-cutover-') && github.ref_name || '' }}
+        run: |
+          git clone --depth 1 --branch "${CUTOVER_REF:-main}" https://github.com/yzin-17/thesis-ledger.git ../thesis-ledger
+          git -C ../thesis-ledger rev-parse HEAD
       - name: 验证本地数据工具与构建命令
         if: matrix.shard == 1
         env:
           CUTOVER_REF: ${{ startsWith(github.ref_name, 'codex/named-v1-cutover-') && github.ref_name || '' }}
         run: |
           git clone --depth 1 --branch "${CUTOVER_REF:-main}" https://github.com/yzin-17/thesis-ledger-infra.git ../thesis-ledger-infra
-          git clone --depth 1 --branch "${CUTOVER_REF:-main}" https://github.com/yzin-17/thesis-ledger.git ../thesis-ledger
           git -C ../thesis-ledger-infra rev-parse HEAD
-          git -C ../thesis-ledger rev-parse HEAD
           node --test scripts/local-runtime/*.test.mjs scripts/deployment/*.test.mjs scripts/prepare-local-sdk-source.test.mjs
           for test_file in scripts/local-runtime/*.test.py; do PYTHONPATH="$PWD" python -B "$test_file"; done
           for test_file in scripts/deployment/*.test.py; do python -B "$test_file"; done

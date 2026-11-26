@@ -182,10 +182,14 @@ def test_pytdx_hour_uses_native_category_and_rejects_repeated_pages():
         read_minute(request, context)
 
 
-def test_longbridge_hour_pins_session_and_rejects_truncated_window():
+def test_longbridge_hour_pins_session_and_rejects_truncated_window(monkeypatch):
     from data_provider.longbridge_intraday import read_minute
-    from longbridge.openapi import Period, AdjustType, TradeSessions
-    from unittest.mock import Mock
+    from longbridge import openapi
+    from longbridge.openapi import Period, AdjustType
+    from unittest.mock import Mock, sentinel
+    # CI 的旧版发行 wheel 不含此枚举。镜像构建单独验证实际 SDK 的正常时段接口。
+    if not hasattr(openapi, "TradeSessions"):
+        monkeypatch.setattr(openapi, "TradeSessions", SimpleNamespace(Intraday=sentinel.intraday), raising=False)
     client = Mock()
     client.history_candlesticks_by_date.return_value = [SimpleNamespace(timestamp=datetime(2026, 11, 6, 2, 30, tzinfo=timezone.utc),
         open=4, high=4, low=4, close=4, volume=0, turnover=None)]
@@ -193,7 +197,8 @@ def test_longbridge_hour_pins_session_and_rejects_truncated_window():
     value = read_minute(query(), context)
     assert value.rows[0].complete is None
     args = client.history_candlesticks_by_date.call_args.args
-    assert args[:3] == ('510300.SH', Period.Min_60, AdjustType.NoAdjust) and args[-1] == TradeSessions.Intraday
+    assert args[:3] == ('510300.SH', Period.Min_60, AdjustType.NoAdjust)
+    assert args[-1] == openapi.TradeSessions.Intraday
     client.history_candlesticks_by_date.return_value *= 1000
     with pytest.raises(CapabilityContractError, match='上限'):
         read_minute(query(), context)

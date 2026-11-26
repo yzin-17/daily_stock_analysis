@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.thesis_ledger import router_v3
+from src.data_config import DataServiceConfig
 from src.services.thesis_ledger_control import ControlContractError, ThesisLedgerControlStore
 
 
@@ -280,10 +281,13 @@ def test_v3_policy_apply_matches_wire_and_is_default_read(monkeypatch, tmp_path)
 
 def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatch, tmp_path):
     monkeypatch.setenv("HITHINK_API_KEY", "synthetic-catalog-readiness-only")
-    monkeypatch.setenv("TICKFLOW_API_KEY", "synthetic-catalog-readiness-only")
-    monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "synthetic-catalog-readiness-only")
-    monkeypatch.setenv("FINNHUB_API_KEY", "synthetic-catalog-readiness-only")
     client = _client(monkeypatch, tmp_path)
+    monkeypatch.setattr("src.data_config._instance", DataServiceConfig(
+        database_path=str(tmp_path / "stock_analysis.db"),
+        tickflow_api_key="synthetic-catalog-readiness-only",
+        alphavantage_api_key="synthetic-catalog-readiness-only",
+        finnhub_api_key="synthetic-catalog-readiness-only",
+    ))
     headers = {"authorization": "Bearer control-token"}
     assert client.get(
         "/api/v3/thesis-ledger/control/routes/capabilities?contractVersion=1",

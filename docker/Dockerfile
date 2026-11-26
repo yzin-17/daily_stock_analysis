@@ -95,7 +95,7 @@ RUN python -c "import importlib.metadata as m; import rqdatac, rqdatac_fund; ass
 COPY --from=sdk-builder /wheels/*.whl /tmp/longbridge-wheels/
 COPY --from=sdk-builder /wheels/data-runtime-inputs.json /app/scripts/data-runtime-inputs.json
 RUN pip install --no-deps --force-reinstall /tmp/longbridge-wheels/*.whl && \
-    python -c "from longbridge.openapi import OAuthBuilder; assert OAuthBuilder.THESIS_LEDGER_STORAGE_VERSION == 1" && \
+    python -c "from longbridge.openapi import OAuthBuilder, TradeSessions; assert OAuthBuilder.THESIS_LEDGER_STORAGE_VERSION == 1; assert TradeSessions.Intraday is not None" && \
     rm -rf /tmp/longbridge-wheels
 
 # 复制应用代码

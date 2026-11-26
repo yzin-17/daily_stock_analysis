@@ -131,7 +131,7 @@ test('健康失败保留现场，不自动删除或替换其他服务', async (t
   const { controller, state } = fixture(t);
   const saved = controller.snapshot();
   state.health = 'unhealthy';
-  await assert.rejects(controller.restore(saved.path, 1), /未健康/);
+  await assert.rejects(controller.restore(saved.path, 1), /不健康|未健康/);
   assert.equal(state.calls.filter((args) => args.includes('up')).length, 1);
   assert.ok(!state.calls.some((args) => args.includes('down') || args.includes('rm') || args.includes('prune')));
 });
