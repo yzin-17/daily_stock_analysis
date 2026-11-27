@@ -95,11 +95,16 @@ jobs:
         if: matrix.shard == 1
         with:
           node-version: 24
+      - name: 准备跨仓数据合同
+        run: |
+          if [ "$(basename "$GITHUB_WORKSPACE")" != daily-stock-analysis ]; then
+            ln -s "$GITHUB_WORKSPACE" ../daily-stock-analysis
+          fi
+          git clone --depth 1 https://github.com/yzin-17/thesis-ledger.git ../thesis-ledger
       - name: 验证本地数据工具与构建命令
         if: matrix.shard == 1
         run: |
           git clone --depth 1 https://github.com/yzin-17/thesis-ledger-infra.git ../thesis-ledger-infra
-          git clone --depth 1 https://github.com/yzin-17/thesis-ledger.git ../thesis-ledger
           node --test scripts/local-runtime/*.test.mjs scripts/deployment/*.test.mjs scripts/prepare-local-sdk-source.test.mjs
           for test_file in scripts/local-runtime/*.test.py; do PYTHONPATH="$PWD" python -B "$test_file"; done
           for test_file in scripts/deployment/*.test.py; do python -B "$test_file"; done
