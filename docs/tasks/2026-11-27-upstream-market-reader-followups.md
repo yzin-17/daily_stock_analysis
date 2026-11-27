@@ -9,6 +9,7 @@
 - [x] 用当前凭证运行 TickFlow 逐功能权限检查，并验证报价拆批。
 - [x] TickFlow ETF 精确报价接入，并通过 `510300.SH` 真实 DSA API 验收（AC5）。
 - [x] TickFlow ETF 不复权日线接入，并通过 `510300.SH` 真实 DSA API 验收（AC6）。
+- [x] 修复并通过完整远端数据门禁（AC7）。
 
 ## 本地验证
 
@@ -53,6 +54,15 @@
 - **远端 CI 首轮**。手动门禁在 `e411bfb7` 上发现 Runner 的 DSA 检出目录名与同级仓库约定不同，另有测试分片缺少主仓 Schema。通过 `4b3e3ffd` 修复同级布局和各分片的 Schema 来源，通过 `4a30fcfb` 将部署测试的健康失败断言与现行 infra 错误对齐。[首轮 GitHub Actions](https://github.com/yzin-17/daily_stock_analysis/actions/runs/45954529827)
 - **远端 CI 复验**。执行提交为 `4a30fcfb`，2026-11-27 15:12:54（中国标准时间）完成。结论 `failure`。输入检查、`ai-governance`、`docker-build` 与镜像 smoke 通过，3 个后端分片和汇总 `backend-gate` 失败。[复验 GitHub Actions](https://github.com/yzin-17/daily_stock_analysis/actions/runs/45955026148)
 - **复验发现**。第 1 个分片在旧报告元数据版本测试失败。第 2、3 个分片报告指标指纹、Yahoo 新闻、AkShare 新闻模块、Longbridge SDK 和 Tushare 跨仓测试缺少 `rtk` 等失败，相关实现或依赖配置沿用合入前基线。与本批直接相关的 ETF 绑定数量、目录夹具和 CI 手动入口断言由 `eb2f2165`、`608e2fd2` 修正并推送，45 项本地定向回归通过。两次后续提交仅改测试，部署源码与远端 CI 所测的源码一致。
+
+## 后端门禁修复
+
+- `9940952b` 将依赖与已核验新闻适配器对齐（AKShare 1.18.94、yfinance 1.7.0）。Linux 离线分片在 Ubuntu 24.04 / Python 3.12 使用具备分钟时段枚举的 Longbridge SDK，镜像保留对自建 SDK 的验收。
+- 每个后端分片按主仓锁文件构建跨仓 Schema，Tushare 合同测试直接使用 Runner 的 Node。隔离检出按同样命令构建通过。
+- 研报准入从原始旧证据映射已知版本标记，再执行具名 V1 的完整校验。指标的逐行基线从原冻结哈希匹配的数值提取，逐值比较，绝对容差为 `1e-11`，输入指纹仍精确比较。
+- 本地 144 项定向回归及 11 项研报工具测试通过。远端首轮修复验证中，治理、输入检查、镜像和第 3 分片通过。第 1、2 分片只剩同一目录测试失败。[首轮修复验证](https://github.com/yzin-17/daily_stock_analysis/actions/runs/45957885420)
+- `87f96ff6` 将目录测试的合成凭证和启用状态显式保存到测试专用 SQLite，隔离进程级配置缓存。20 项目录和准入定向回归、52 项配置与目录组合回归均通过。
+- 完整 CI 于 2026-11-27 15:43:40（中国标准时间）在 `87f96ff6` 上通过。输入变更检测、治理、3 个离线分片、`backend-gate`、Docker 镜像构建及冒烟检查均通过。本轮验收范围为 CI 构建和测试，目标运行环境的部署证据仍对应上节提交。[完整门禁复验](https://github.com/yzin-17/daily_stock_analysis/actions/runs/45958992041)
 
 ## 待独立验收
 
