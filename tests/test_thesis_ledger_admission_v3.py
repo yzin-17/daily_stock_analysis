@@ -73,8 +73,8 @@ def test_supported_price_adapters_do_not_require_manual_admission(tmp_path):
             for key, target in iter_market_v3_bar_adapters()
         ]
 
-    assert len(reasons) == 21
-    assert reasons == [None] * 21
+    assert len(reasons) == 22
+    assert all(reason is None for reason in reasons)
 
 
 def test_tencent_etf_hfq_is_ready_without_manual_adjustment_admission(tmp_path):

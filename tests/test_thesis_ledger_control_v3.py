@@ -279,6 +279,7 @@ def test_v3_policy_apply_matches_wire_and_is_default_read(monkeypatch, tmp_path)
 
 
 def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatch, tmp_path):
+    monkeypatch.setattr("src.data_config._instance", None)
     monkeypatch.setenv("HITHINK_API_KEY", "synthetic-catalog-readiness-only")
     monkeypatch.setenv("TICKFLOW_API_KEY", "synthetic-catalog-readiness-only")
     monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "synthetic-catalog-readiness-only")
@@ -391,6 +392,7 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
         ("ETF", "efinance", "eastmoney"),
         ("STOCK", "akshare", "eastmoney"),
         ("ETF", "tencent", "tencent"),
+        ("ETF", "tickflow", "tickflow"),
     }
     for entry in quote_targets:
         if entry["target"]["providerId"] in {"akshare", "efinance", "pytdx", "yfinance", "tencent", "hithink", "tickflow", "alphavantage", "finnhub"}:
@@ -464,6 +466,7 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     }
     expected.add(("ETF", "qfq", "hithink", "fund-market-historical"))
     expected.add(("ETF", "none", "tushare", "tushare"))
+    expected.add(("ETF", "none", "tickflow", "tickflow"))
     expected |= {
         ("STOCK", adjustment, "hithink", "hithink-financial-api")
         for adjustment in ("none", "qfq", "hfq")
@@ -475,7 +478,7 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     expected |= {("STOCK", "none", provider, provider) for provider in ("pytdx", "tushare")}
     expected |= {(asset, "qfq", "yfinance", "yfinance") for asset in ("STOCK", "ETF")}
     assert set(rows) == expected
-    assert len(rows) == 48
+    assert len(rows) == 49
     foreign_rows = {
         (entry["key"]["market"], entry["key"]["assetType"], entry["key"]["adjustment"],
          entry["target"]["providerId"], entry["target"]["upstreamSource"])
@@ -498,7 +501,7 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
         ("US", "STOCK", "none", "alphavantage", "alphavantage"),
     }
     assert foreign_rows == foreign_expected
-    assert len(bars) == 78
+    assert len(bars) == 79
     assert [entry["key"] for entry in bars if entry["target"]["upstreamSource"] == "yahoo-gme-share-window"] == [{
         "kind": "bar", "market": "US", "assetType": "STOCK", "capability": "DAILY_BAR", "timeframe": "1d", "adjustment": "none",
     }]

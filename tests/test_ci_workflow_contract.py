@@ -20,15 +20,24 @@ def filters():
 
 def test_data_ci_keeps_shards_and_failure_aggregation():
     ci = workflow()
+    assert ci["on"]["pull_request"]["branches"] == ["main"]
+    assert "workflow_dispatch" in ci["on"]
     jobs = ci["jobs"]
     assert jobs["changes"]["outputs"] == {
-        "backend": "${{ steps.filter.outputs.backend }}", "docker": "${{ steps.filter.outputs.docker }}",
+        "backend": "${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.backend }}",
+        "docker": "${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.docker }}",
     }
+    filter_step = next(step for step in jobs["changes"]["steps"] if step.get("id") == "filter")
+    assert filter_step["if"] == "github.event_name == 'pull_request'"
     backend = jobs["backend-tests"]
     assert backend["needs"] == ["changes", "ai-governance"]
     assert backend["if"] == "needs.changes.outputs.backend == 'true'"
     assert backend["strategy"]["fail-fast"] == "false"
     assert backend["strategy"]["matrix"]["shard"] == ["1", "2", "3"]
+    sibling_setup = next(
+        step for step in backend["steps"] if step.get("name") == "准备跨仓数据合同"
+    )
+    assert "if" not in sibling_setup and "../thesis-ledger" in sibling_setup["run"]
     gate = jobs["backend-gate"]
     assert gate["needs"] == ["changes", "ai-governance", "backend-tests"]
     assert gate["if"] == "always()"
