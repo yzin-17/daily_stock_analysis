@@ -15,11 +15,13 @@ croniter==7.0.0
 
 # 行情与数据 SDK；安装不代表凭据有效、权限或来源已准入。
 efinance>=0.5.5
-akshare>=1.12.0
+# 个股新闻适配器已核验的 SDK 实现。
+akshare==1.18.94
 tushare>=1.4.0
 pytdx>=1.72
 baostock>=0.8.0
-yfinance>=0.2.0
+# Search.news 的隔离会话与 SDK 缓存合同已核验的版本。
+yfinance==1.7.0
 # Linux / Python 3.11 的旧 wheel 保持兼容；Docker 另构建受校验的原生 OAuth SDK。
 longbridge==0.2.74; platform_system == "Linux" and python_version < "3.12"
 longbridge>=4.0.5,<5; platform_system != "Linux" or python_version >= "3.12"

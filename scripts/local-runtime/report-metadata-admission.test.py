@@ -102,11 +102,14 @@ class AdmissionTests(unittest.TestCase):
         self.no_admission()
 
     def test_legacy_result_contract_remains_supported_without_writing(self):
-        request, value = self.evidence()
-        value['result']['metadataVersion'] = 'research-report-metadata-v1'
-        _, result = worker.validate_evidence(value, request, self.state,
-            datetime.now(timezone.utc), fresh=True)
-        self.assertEqual(result.metadataVersion, 'research-report-metadata-v1')
+        for version in ('research-report-metadata-v1', 'research-report-metadata-v2'):
+            with self.subTest(version=version):
+                request, value = self.evidence()
+                value['result']['metadataVersion'] = version
+                _, result = worker.validate_evidence(value, request, self.state,
+                    datetime.now(timezone.utc), fresh=True)
+                self.assertEqual(result.metadataVersion, 'market-external-report-metadata-v1')
+                self.assertEqual(value['result']['metadataVersion'], version)
         self.no_admission()
 
     def test_malformed_result_is_rejected_as_validation_error(self):

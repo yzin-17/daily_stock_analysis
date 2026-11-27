@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -34,7 +35,7 @@ def digest(value):
 
 def frame_for(case):
     return pd.DataFrame({
-        "date": pd.date_range("2025-01-01", periods=len(case["closes"])).astype(str),
+        "date": pd.date_range("2025-01-01", periods=len(case["closes"])).strftime("%Y-%m-%d"),
         "close": pd.Series(case["closes"], dtype=float),
     })
 
@@ -48,11 +49,20 @@ def test_all_kernel_values_and_formal_outputs_match_pre_extraction_baseline(case
     calculated = calculate_macd(calculated, fast=params["fast"], slow=params["slow"], signal=params["signal"])
     calculated = calculate_rsi(calculated, periods=(params["short"], params["mid"], params["long"]))
     rows = calculated[case["columns"]].values.tolist()
-    assert digest(rows) == case["valuesDigest"]
-    assert (normalized(rows[-1]) if rows else []) == case["last"]
+    baseline = np.asarray(case["values"], dtype=float).reshape(-1, len(case["columns"]))
+    actual = np.asarray(rows, dtype=float).reshape(-1, len(case["columns"]))
+    # 容许跨架构的末位浮点误差，缺失值位置和完整输入指纹仍逐项核对。
+    np.testing.assert_allclose(actual, baseline, rtol=0, atol=1e-11, equal_nan=True)
     for name, expected in case["formal"].items():
         _, points, fingerprint, row_fingerprints = build_indicator_points(frame, name, params, str)
-        assert digest(points) == expected["pointsDigest"]
+        assert [point["timestamp"] for point in points] == frame["date"].tolist()
+        assert [point["inputFingerprint"] for point in points] == row_fingerprints
+        assert all(set(point["values"]) == set(expected["projections"]) for point in points)
+        for field, (column, first_defined) in expected["projections"].items():
+            values = baseline[:, case["columns"].index(column)].copy()
+            values[:first_defined] = np.nan
+            actual_values = np.asarray([point["values"][field] for point in points], dtype=float)
+            np.testing.assert_allclose(actual_values, values, rtol=0, atol=1e-11, equal_nan=True)
         assert fingerprint == expected["inputFingerprint"]
         assert digest(row_fingerprints) == expected["rowFingerprintDigest"]
     pd.testing.assert_frame_equal(frame, unchanged)

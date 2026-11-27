@@ -67,7 +67,7 @@ jobs:
 
   backend-tests:
     name: backend-tests (${{ matrix.shard }}/3)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [changes, ai-governance]
     if: needs.changes.outputs.backend == 'true'
     strategy:
@@ -78,7 +78,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -92,15 +92,19 @@ jobs:
             sleep 15
           done
       - uses: actions/setup-node@v4
-        if: matrix.shard == 1
         with:
           node-version: 24
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.16.1
       - name: 准备跨仓数据合同
         run: |
           if [ "$(basename "$GITHUB_WORKSPACE")" != daily-stock-analysis ]; then
             ln -s "$GITHUB_WORKSPACE" ../daily-stock-analysis
           fi
           git clone --depth 1 https://github.com/yzin-17/thesis-ledger.git ../thesis-ledger
+          pnpm --dir ../thesis-ledger --filter '@thesis-ledger/schemas...' install --frozen-lockfile --ignore-scripts
+          pnpm --dir ../thesis-ledger --filter '@thesis-ledger/schemas...' --recursive run build
       - name: 验证本地数据工具与构建命令
         if: matrix.shard == 1
         run: |

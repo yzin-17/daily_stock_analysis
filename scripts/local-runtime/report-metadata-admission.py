@@ -93,14 +93,19 @@ def validate_evidence(evidence, payload, state, now, *, fresh):
             'result', 'startedAt', 'completedAt', 'control'} or evidence['version'] != VERSION
             or evidence['project'] != payload['project'] or evidence['key'] != KEY or evidence['target'] != TARGET):
         raise ValueError('证据身份或结构不匹配')
-    if isinstance(evidence['result'], dict) and evidence['result'].get('metadataVersion') == 'market-external-report-metadata-v1':
-        from src.services.thesis_ledger_report_metadata_contract import CONTRACT, ReportMetadataRequest, ReportMetadataResult
     query = ReportMetadataRequest.model_validate(evidence['request'])
     if any(getattr(query, name) != payload[name] for name in ['symbol', 'start', 'end']):
         raise ValueError('证据与确认范围不匹配')
     if (query.page, query.pageSize, query.requestBudgetMs) != (1, 2, 3000):
         raise ValueError('证据超出批准的单页预算')
-    result = CONTRACT.correlate_result(query, ReportMetadataResult.model_validate_json(canonical(evidence['result'])), TARGET)
+    result_payload = evidence['result']
+    if isinstance(result_payload, dict):
+        version = result_payload.get('metadataVersion')
+        if version in ('research-report-metadata-v1', 'research-report-metadata-v2'):
+            if version == 'research-report-metadata-v1' and (query.start is None or query.end is None):
+                raise ValueError('旧版研报证据要求完整日期窗口')
+            result_payload = {**result_payload, 'metadataVersion': 'market-external-report-metadata-v1'}
+    result = CONTRACT.correlate_result(query, ReportMetadataResult.model_validate_json(canonical(result_payload)), TARGET)
     if not result.items or result.historyComplete:
         raise ValueError('缺少可验证的单页元数据')
     revisions = state['revisions']
