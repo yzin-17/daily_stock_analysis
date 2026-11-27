@@ -10,6 +10,7 @@ import requests
 from .tushare_endpoint import DEFAULT_TUSHARE_HTTP_URL
 
 _frequency_limit = re.compile(r"每(分钟|小时|天|日|秒)最多访问该接口\s*([0-9]{1,9})\s*次")
+_endpoint_permission_denial = re.compile(r"没有接口[（(][a-z0-9_]+[)）]访问权限")
 _error_messages = {
     "authentication_failed": "Tushare 凭据认证失败",
     "permission_denied": "Tushare 接口权限或积分不足",
@@ -37,7 +38,8 @@ def _error_code(message, api_code, status_code):
         "invalidtoken", "token无效", "token不对", "token错误", "token已过期", "token失效", "无效的token",
     )):
         return "authentication_failed"
-    if api_code == 2002 or any(term in text for term in (
+    endpoint_denied = api_code == 40203 and _endpoint_permission_denial.search(text) is not None
+    if api_code == 2002 or endpoint_denied or any(term in text for term in (
         "没有访问该接口的权限", "没有该接口的访问权限", "没有接口权限", "没有接口访问权限",
         "无接口访问权限", "暂无访问权限", "无访问权限", "没有访问权限", "权限不足",
         "没有权限", "无权访问", "积分不足", "permissiondenied", "insufficientpoints",

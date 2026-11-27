@@ -60,6 +60,7 @@ def test_account_probe_and_data_read_use_their_own_responses(monkeypatch):
     (envelope(2002, msg="每分钟最多访问该接口 80 次，权限说明"), "rate_limited"),
     (envelope(2002, msg="访问频率过高，请查看接口权限说明"), "rate_limited"),
     (envelope(2002, msg="token不对"), "authentication_failed"),
+    (envelope(40203, msg="抱歉，您没有接口(cyq_chips)访问权限，权限的具体详情访问：https://tushare.pro/document/1?doc_id=108。"), "permission_denied"),
     (envelope(40203, msg="未知错误"), "upstream_failure"),
     (SimpleNamespace(status_code=401), "authentication_failed"),
     (SimpleNamespace(status_code=403), "upstream_failure"),

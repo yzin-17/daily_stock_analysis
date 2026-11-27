@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] TickFlow 按当前凭证已验证的容量拆分报价请求，按标的身份和有效现价写入预取缓存。
 - [新功能] TickFlow 接入沪深 ETF 精确单标报价和免凭证不复权日线，新增独立报价和日线权限检查，保留上游量额。
 - [修复] 对齐已核验的 AKShare 和 Yahoo 新闻 SDK，恢复旧版研报证据的读取映射与跨仓 Schema 门禁。
+- [修复] 识别 Tushare 带接口名的 `40203` 明确权限拒绝，保留未知回包和限频的独立分类。
 
 - [修复] 校验 Tushare 回包结构与行情必需字段，区分权限拒绝、限频、认证失败、有效空结果与异常回包。
 
