@@ -28,7 +28,8 @@ def test_four_unique_bindings_and_actual_adapter_revision_changes():
         'finnhub': ('finnhub-us-stock-exact-quote-v1', 'finnhub-direct-quote-v1'),
         'alphavantage': ('alphavantage-us-stock-exact-quote-v2', 'alphavantage-direct-quote-v1')}
     for provider, revisions in expected.items():
-        bindings = [b for b in CAPABILITY_SOURCES.source(provider).bindings if b.key.capability == 'REALTIME_QUOTE']
+        bindings = [b for b in CAPABILITY_SOURCES.source(provider).bindings
+                    if b.key.capability == 'REALTIME_QUOTE' and b.key.asset_type == 'STOCK']
         assert len(bindings) == 1
         key = bindings[0].key.route_key()
         assert (key['market'], 'STOCK', 'REALTIME_QUOTE', provider, provider) not in _DATA_ADAPTERS
