@@ -42,9 +42,18 @@
 - **精确日线**。调用 `POST /api/v1/thesis-ledger/market/bars`，固定路由索引 0，请求编号 `tickflow-etf-a159a080-daily`。免凭证端点先返回 `510300.SH/CN/SH/etf` 的当前证券元数据，再返回 2026-11-23 至 2026-11-25 的 3 根不复权日线。DSA HTTP 200，独立交易日覆盖完整，末日收盘价 3.970，单页读取完成。K 线回包身份依请求绑定，当前元数据与历史时点身份分开记录。首次尝试在元数据成功后触及验收脚本共用的请求预算，独立重跑以 2 次匿名上游请求通过。
 - 权限检查新增 ETF 报价单标及 ETF 不复权日线两个独立探测，单轮上限由 14 增至 16，总时限仍为 18 秒。股票报价容量仍由股票样本的权限检查确定。
 - 一致性复核通过。195 项定向回归覆盖现有股票能力、ETF 身份校验、权限、数据目录和显式路由，语法、关键 lint 和数据边界检查均通过。
-- 本次结果来自隔离工作树与真实 TickFlow。目标容器部署、实际业务策略和远端 CI 仍待对应阶段验收。
+- 上述结果来自隔离工作树与真实 TickFlow。目标容器证据见下节。
+
+## 合入、部署与目标验收
+
+- **合入**。Tushare 修复 `65127177` 和行情来源批次 `17d6738f` 快进合入 DSA 的 `yzin`，已推送 `origin/yzin`。为在无 PR 的情况下执行完整门禁，`e411bfb7` 给原 CI 增加手动入口。
+- **部署**。2026-11-27 14:49（中国标准时间），在 `/Users/yzin/code/thesis-ledger-workspace/thesis-ledger-infra` 执行 `DSA_SOURCE_DIR=/Users/yzin/code/thesis-ledger-workspace/daily-stock-analysis ./scripts/sync-code.sh dsa`，退出码 0。DSA 容器 `8b9686a0c319` 重启后为 `healthy`，镜像 ID 仍为 `sha256:5b2ab24cd84cbf3dab6e5158f131b6b1087ef4e7300e7e1353753de50f7aa27e`。容器内 TickFlow 报价、免凭证日线、权限检查、Tushare HTTP、efinance、Yahoo、富途共 7 个源码文件的 SHA-256 与宿主一致。快更内容位于容器可写层。
+- **目标 ETF 精确报价**。调用部署服务的 `POST /api/v1/thesis-ledger/control/providers/tickflow/test`，使用当前凭证的只读诊断，指定 `CN/ETF/REALTIME_QUOTE` 和 `tickflow/tickflow`。请求 `target-tickflow-etf-quote-2b3cedcbdb` 返回 HTTP 200、`ready`、`healthy`、`attempted=true`，样本 `510300.SH`，耗时 4891 毫秒。验收前后核对实际策略版本 203、路由及账号权限报告一致。业务策略的 ETF 报价仍由原目标提供。
+- **目标 ETF 不复权日线**。在 DSA 仓根目录执行 `./scripts/local-runtime/probe-backtest-daily-sources.sh --symbol 510300.SH --asset ETF --adjustment none --start 2026-11-23 --end 2026-11-25 --target tickflow/tickflow`。目标容器用临时控制库隔离选路，读取和校验 3 根、覆盖 3 个交易日、单页完成、耗时 2376 毫秒，成交量和金额单位保持未知，指纹为 `064205d023db199613c1d0abbd060a8c14ddbc67526715875234650b06d10dec`。首轮因真实控制状态指纹在诊断期间发生变化退出 1，独立重跑退出 0，报告 `productionControlUnchanged=true`。业务日线路由仍由原目标提供。
+- **远端 CI 首轮**。手动门禁在 `e411bfb7` 上发现 Runner 的 DSA 检出目录名与同级仓库约定不同，另有测试分片缺少主仓 Schema。通过 `4b3e3ffd` 修复同级布局和各分片的 Schema 来源，通过 `4a30fcfb` 将部署测试的健康失败断言与现行 infra 错误对齐。[首轮 GitHub Actions](https://github.com/yzin-17/daily_stock_analysis/actions/runs/45954529827)
+- **远端 CI 复验**。执行提交为 `4a30fcfb`，2026-11-27 15:12:54（中国标准时间）完成。结论 `failure`。输入检查、`ai-governance`、`docker-build` 与镜像 smoke 通过，3 个后端分片和汇总 `backend-gate` 失败。[复验 GitHub Actions](https://github.com/yzin-17/daily_stock_analysis/actions/runs/45955026148)
+- **复验发现**。第 1 个分片在旧报告元数据版本测试失败。第 2、3 个分片报告指标指纹、Yahoo 新闻、AkShare 新闻模块、Longbridge SDK 和 Tushare 跨仓测试缺少 `rtk` 等失败，相关实现或依赖配置沿用合入前基线。与本批直接相关的 ETF 绑定数量、目录夹具和 CI 手动入口断言由 `eb2f2165`、`608e2fd2` 修正并推送，45 项本地定向回归通过。两次后续提交仅改测试，部署源码与远端 CI 所测的源码一致。
 
 ## 待独立验收
 
 - TickPlus 的公开 HTTPS 行情地址在本地代理下未完成握手，公开 SDK 的行情 HTTPS 能力和接口命名仍需核实。保持独立来源待准入状态。
-- 目标环境和远端 CI 待后续验收。
