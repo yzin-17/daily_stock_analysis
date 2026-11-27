@@ -279,12 +279,14 @@ def test_v3_policy_apply_matches_wire_and_is_default_read(monkeypatch, tmp_path)
 
 
 def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatch, tmp_path):
-    monkeypatch.setattr("src.data_config._instance", None)
-    monkeypatch.setenv("HITHINK_API_KEY", "synthetic-catalog-readiness-only")
-    monkeypatch.setenv("TICKFLOW_API_KEY", "synthetic-catalog-readiness-only")
-    monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "synthetic-catalog-readiness-only")
-    monkeypatch.setenv("FINNHUB_API_KEY", "synthetic-catalog-readiness-only")
     client = _client(monkeypatch, tmp_path)
+    store = ThesisLedgerControlStore(str(tmp_path / "stock_analysis.db"))
+    for provider in ("hithink", "tickflow", "alphavantage", "finnhub"):
+        store.save_provider_config(provider, {
+            "requestId": f"catalog-readiness-{provider}",
+            "enabled": True,
+            "credentials": {"method": "api_key", "values": {"apiKey": "synthetic-catalog-readiness-only"}},
+        })
     headers = {"authorization": "Bearer control-token"}
     assert client.get(
         "/api/v3/thesis-ledger/control/routes/capabilities?contractVersion=1",
@@ -396,7 +398,7 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     }
     for entry in quote_targets:
         if entry["target"]["providerId"] in {"akshare", "efinance", "pytdx", "yfinance", "tencent", "hithink", "tickflow", "alphavantage", "finnhub"}:
-            assert entry["state"] == "ready"
+            assert entry["state"] == "ready", entry
         else:
             assert entry["state"] in {"credential_missing", "not_admitted"}
     event_identity = lambda entry: (entry['key']['capability'], entry['target']['providerId'], entry['target']['upstreamSource'])
