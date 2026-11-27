@@ -8,6 +8,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+import requests
+
 from tests.litellm_stub import ensure_litellm_stub
 
 ensure_litellm_stub()
@@ -25,6 +28,90 @@ from data_provider.tushare_fetcher import (
     _TushareHttpClient,
     _resolve_tushare_http_url,
 )
+from data_provider.tushare_account_access import probe_account_access
+from data_provider.tushare_http_client import TushareApiError
+from src.services.thesis_ledger_provider_errors import classify_provider_failure
+
+
+def envelope(code=0, *, msg=None, data=None):
+    if data is None and code == 0:
+        data = {"fields": ["ts_code"], "items": []}
+    return SimpleNamespace(status_code=200, text=json.dumps({"code": code, "msg": msg, "data": data}))
+
+
+def test_account_probe_and_data_read_use_their_own_responses(monkeypatch):
+    token = "fixture-token"
+    client = _TushareHttpClient(token)
+    context = SimpleNamespace(key={"market": "CN", "assetType": "STOCK", "capability": "DAILY_BAR"},
+                              target={"upstreamSource": "tushare"}, timeout_seconds=1.5,
+                              adapter=SimpleNamespace(_api=_TushareHttpClient(token)))
+    post = MagicMock(side_effect=[envelope(2002), envelope()])
+    monkeypatch.setattr("data_provider.tushare_http_client.requests.post", post)
+    assert probe_account_access(context) == {
+        "state": "permission_missing", "attempted": True, "errorCode": "permission_denied",
+    }
+    assert post.call_args.kwargs["timeout"] == 1.5
+    assert post.call_args.kwargs["json"]["params"] == {"ts_code": "600519.SH", "trade_date": "20250115"}
+    assert client.daily().empty and post.call_count == 2
+
+
+@pytest.mark.parametrize("reply,code", [
+    (envelope(2002, msg="权限不足 fixture-token"), "permission_denied"),
+    (envelope(2002, msg="每分钟最多访问该接口 80 次，权限说明"), "rate_limited"),
+    (envelope(2002, msg="访问频率过高，请查看接口权限说明"), "rate_limited"),
+    (envelope(2002, msg="token不对"), "authentication_failed"),
+    (envelope(40203, msg="未知错误"), "upstream_failure"),
+    (SimpleNamespace(status_code=401), "authentication_failed"),
+    (SimpleNamespace(status_code=403), "upstream_failure"),
+    (SimpleNamespace(status_code=429), "rate_limited_global"),
+    (SimpleNamespace(status_code=503), "upstream_failure"),
+])
+def test_each_request_uses_current_upstream_response(monkeypatch, reply, code):
+    client = _TushareHttpClient("fixture-token")
+    post = MagicMock(side_effect=[reply, envelope()])
+    monkeypatch.setattr("data_provider.tushare_http_client.requests.post", post)
+    with pytest.raises(TushareApiError) as error:
+        client.daily()
+    assert error.value.code == code
+    assert "fixture-token" not in str(error.value)
+    runtime_code = "permission_denied" if error.value.status_code == 403 else code
+    assert classify_provider_failure(error.value) == runtime_code
+    assert client.daily().empty and post.call_count == 2
+
+
+def test_network_failure_never_blocks_the_next_request(monkeypatch):
+    client = _TushareHttpClient("fixture-token")
+    post = MagicMock(side_effect=[requests.Timeout(), envelope()])
+    monkeypatch.setattr("data_provider.tushare_http_client.requests.post", post)
+    with pytest.raises(requests.Timeout):
+        client.daily()
+    assert client.daily().empty and post.call_count == 2
+
+
+@pytest.mark.parametrize("wire", [
+    "<html>upstream error</html>",
+    "[]",
+    '{"code": true, "data": {"fields": [], "items": []}}',
+    '{"code": "0", "data": {"fields": [], "items": []}}',
+    '{"code": 0}',
+    '{"code": 0, "data": []}',
+    '{"code": 0, "data": {"fields": ["x"]}}',
+    '{"code": 0, "data": {"fields": ["x", "x"], "items": []}}',
+    '{"code": 0, "data": {"fields": ["x", 1], "items": []}}',
+    '{"code": 0, "data": {"fields": ["x"], "items": {"x": 1}}}',
+    '{"code": 0, "data": {"fields": ["x"], "items": [{"x": 1}]}}',
+    '{"code": 0, "data": {"fields": ["x"], "items": [[1, 2]]}}',
+    '{"code": 0, "data": {"fields": ["x", "y"], "items": [[1]]}}',
+    '{"code": 0, "data": {"fields": ["x"], "items": [[NaN]]}}',
+])
+def test_malformed_wire_envelope_is_not_accepted_as_empty(monkeypatch, wire):
+    client = _TushareHttpClient("fixture-token")
+    post = MagicMock(side_effect=[SimpleNamespace(status_code=200, text=wire), envelope()])
+    monkeypatch.setattr("data_provider.tushare_http_client.requests.post", post)
+    with pytest.raises(TushareApiError) as error:
+        client.daily()
+    assert error.value.code == "invalid_response"
+    assert client.daily().empty and post.call_count == 2
 
 
 class TestTushareHttpClient(unittest.TestCase):

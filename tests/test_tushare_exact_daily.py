@@ -88,7 +88,7 @@ def test_deadline_prevents_second_partition(fetcher):
 def test_endpoint_permission_failure_does_not_retry_or_fallback(fetcher):
     denied = Mock(status_code=200, text=json_module.dumps({"code": -2002, "msg": "fixture permission denied"}))
     with patch("data_provider.tushare_fetcher.requests.post", return_value=denied) as post:
-        with pytest.raises(Exception, match="fixture permission denied"):
+        with pytest.raises(Exception, match="Tushare 接口权限或积分不足"):
             read(fetcher)
     assert post.call_count == 1
 

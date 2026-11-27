@@ -47,15 +47,13 @@ def digest(value):
 def source_failure(error, endpoint):
     code = classify_provider_failure(error)
     message = "历史目录接口不可用（" + endpoint + "）"
-    # 只投影固定频率字段，不透传 SDK 原文或连接信息。
-    limit = re.search(r"每(分钟|小时|天|日)最多访问该接口\s*(\d+)\s*次", str(error))
-    if not limit and getattr(error, 'api_code', None) in (2002, 40203):
-        code = 'permission_denied'
+    # 只投影已从上游确认的固定频率字段。
+    limit = getattr(error, 'frequency_limit', None)
     api_code = getattr(error, 'api_code', None)
     if type(api_code) is int:
         message += "，来源代码 " + str(api_code)
     if code == 'rate_limited' and limit:
-        message += "，每" + limit[1] + "最多" + limit[2] + "次"
+        message += "，每" + limit[0] + "最多" + limit[1] + "次"
     return ProviderCallError(code, message)
 
 

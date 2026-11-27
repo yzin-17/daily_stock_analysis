@@ -84,7 +84,12 @@ def read_frame(adapter, request, market):
     if "ts_code" not in raw or not raw["ts_code"].eq(request.symbol).all():
         raise ExactDailyError("invalid_response", "Tushare 日线标的身份不一致")
     raw = raw.rename(columns={"trade_date": "date", "vol": "volume"})
-    raw["date"] = pd.to_datetime(raw["date"], format="%Y%m%d").dt.strftime("%Y-%m-%d")
+    try:
+        if not raw["date"].map(lambda value: isinstance(value, str) and len(value) == 8 and value.isascii() and value.isdigit()).all():
+            raise ValueError()
+        raw["date"] = pd.to_datetime(raw["date"], format="%Y%m%d").dt.strftime("%Y-%m-%d")
+    except (KeyError, TypeError, ValueError):
+        raise ExactDailyError("invalid_response", "Tushare 日线日期无效") from None
     timezone = "Asia/Shanghai" if market == "CN" else "Asia/Hong_Kong"
     return normalize_exact_daily(raw, start=request.start, end=request.end, source="tushare", timezone=timezone)
 
@@ -127,7 +132,7 @@ def quote(query, context):
 
 def chip(query, context):
     from data_provider.chip_summary_projection import project
-    return project(context.adapter.get_chip_distribution(query.symbol.split('.')[0]), query,
+    return project(context.adapter.get_chip_distribution(query.symbol, strict=True), query,
                    'tushare', 'tushare', 'tushare-cyq-estimate-v1')
 
 

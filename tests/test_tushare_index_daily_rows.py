@@ -104,6 +104,14 @@ class TestIndexDailyRows(unittest.TestCase):
             with self.subTest(frame=frame):
                 self.assertIsNone(self.read(frame))
 
+    def test_invalid_required_prices_reject_index_and_missing_amount_stays_unknown(self):
+        for close in [None, 0, float('inf')]:
+            with self.subTest(close=close):
+                self.assertIsNone(self.read(pd.DataFrame([row(close=close)])))
+        result = self.read(pd.DataFrame([row()]).drop(columns=['amount', 'vol']))[0]
+        self.assertIsNone(result['amount'])
+        self.assertIsNone(result['volume'])
+
     def test_rejected_index_does_not_discard_valid_other_indices(self):
         self.fetcher._api.index_daily.side_effect = lambda **kwargs: pd.DataFrame([
             row(code='wrong' if kwargs['ts_code'] == CODES[0] else kwargs['ts_code'])

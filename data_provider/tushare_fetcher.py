@@ -8,13 +8,11 @@ TushareFetcher - 备用数据源 1 (Priority 2)
 特点：需要 Token、有请求配额限制
 优点：数据质量高、接口稳定
 
-流控策略：
-1. 实现"每分钟调用计数器"
-2. 超过免费配额（80次/分）时，强制休眠到下一分钟
-3. 使用 tenacity 实现指数退避重试
+权限和访问频次以本次上游响应为准。
 """
 
 import logging
+import math
 import re
 import time
 from datetime import datetime, timedelta
@@ -36,10 +34,11 @@ from .sector_rankings_contract import normalize_sector_rankings
 from .tushare_fund_daily import fetch_tushare_fund_daily
 from .tushare_exact_daily import TushareExactDailyMixin
 from .tushare_endpoint import _resolve_tushare_http_url
-from .tushare_http_client import _TushareHttpClient
+from .tushare_http_client import TushareApiError, _TushareHttpClient
 from .tushare_fund_adj import TushareFundFactorsMixin
 from .tushare_fund_dividend_reader import TushareFundDividendsMixin
 from src.data_config import get_data_config as get_config
+from src.services.thesis_ledger_quote_values import optional_quote_number
 import os
 from zoneinfo import ZoneInfo
 
@@ -85,14 +84,7 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
     优先级：2
     数据来源：Tushare Pro API
     
-    关键策略：
-    - 每分钟调用计数器，防止超出配额
-    - 超过 80 次/分钟时强制等待
-    - 失败后指数退避重试
-    
-    配额说明（Tushare 免费用户）：
-    - 每分钟最多 80 次请求
-    - 每天最多 500 次请求
+    接口权限和访问频次由上游反馈。
     """
     
     name = "TushareFetcher"
@@ -236,11 +228,13 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
             end_date=requested_end_date,
         )
 
-        if df_cal is None or df_cal.empty or "cal_date" not in df_cal.columns:
+        if df_cal is None or df_cal.empty:
             logger.warning("[Tushare] trade_cal 返回为空，无法更新交易日历缓存")
             self.date_list = []
             self._date_list_end = requested_end_date
             return self.date_list
+        if not {"cal_date", "is_open"}.issubset(df_cal.columns) or not df_cal["is_open"].isin([0, 1]).all():
+            raise TushareApiError(code="invalid_response")
 
         trade_dates = sorted(
             df_cal[df_cal["is_open"] == 1]["cal_date"].astype(str).tolist(),
@@ -450,13 +444,11 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
             return df
             
         except Exception as e:
-            error_msg = str(e).lower()
-            
-            # 检测配额超限
-            if any(keyword in error_msg for keyword in ['quota', '配额', 'limit', '权限']):
-                logger.warning(f"Tushare 配额可能超限: {e}")
-                raise RateLimitError(f"Tushare 配额超限: {e}") from e
-            
+            code = e.code if isinstance(e, TushareApiError) else TushareApiError(str(e)).code
+            if code in {"rate_limited", "rate_limited_global"}:
+                raise RateLimitError("Tushare 请求频率或额度受限") from e
+            if isinstance(e, TushareApiError):
+                raise
             raise DataFetchError(f"Tushare 获取数据失败: {e}") from e
     
     def _normalize_data(self, df: pd.DataFrame, stock_code: str) -> pd.DataFrame:
@@ -636,10 +628,7 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
 
         normalized_code = normalize_stock_code(stock_code)
 
-        from .realtime_types import (
-            RealtimeSource,
-            safe_float, safe_int
-        )
+        from .realtime_types import RealtimeSource
 
         # 速率限制检查
         self._check_rate_limit()
@@ -650,31 +639,36 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
             # 尝试调用 Pro 实时接口 (需要积分)
             df = self._api.quotation(ts_code=ts_code)
 
-            if df is not None and not df.empty:
+            if df is not None and len(df) == 1:
                 row = df.iloc[0]
+                price = optional_quote_number(row.get('price'))
+                pre_close = optional_quote_number(row.get('pre_close'))
+                if not price or not pre_close or ('ts_code' in row and row['ts_code'] != ts_code):
+                    raise TushareApiError(code="invalid_response")
+                volume = optional_quote_number(row.get('vol'))
                 logger.debug(f"Tushare Pro 实时行情获取成功: {stock_code}")
 
                 return UnifiedRealtimeQuote(
                     code=normalized_code,
                     name=str(row.get('name', '')),
                     source=RealtimeSource.TUSHARE,
-                    price=safe_float(row.get('price')),
-                    change_pct=safe_float(row.get('pct_chg')),  # Pro 接口通常直接返回涨跌幅
-                    change_amount=safe_float(row.get('change')),
-                    volume=safe_int(row.get('vol')),
-                    amount=safe_float(row.get('amount')),
-                    high=safe_float(row.get('high')),
-                    low=safe_float(row.get('low')),
-                    open_price=safe_float(row.get('open')),
-                    pre_close=safe_float(row.get('pre_close')),
-                    turnover_rate=safe_float(row.get('turnover_ratio')), # Pro 接口可能有换手率
-                    pe_ratio=safe_float(row.get('pe')),
-                    pb_ratio=safe_float(row.get('pb')),
-                    total_mv=safe_float(row.get('total_mv')),
+                    price=price,
+                    change_pct=optional_quote_number(row.get('pct_chg'), signed=True),
+                    change_amount=optional_quote_number(row.get('change'), signed=True),
+                    volume=int(volume) if volume is not None else None,
+                    amount=optional_quote_number(row.get('amount')),
+                    high=optional_quote_number(row.get('high')),
+                    low=optional_quote_number(row.get('low')),
+                    open_price=optional_quote_number(row.get('open')),
+                    pre_close=pre_close,
+                    turnover_rate=optional_quote_number(row.get('turnover_ratio')),
+                    pe_ratio=optional_quote_number(row.get('pe'), signed=True),
+                    pb_ratio=optional_quote_number(row.get('pb'), signed=True),
+                    total_mv=optional_quote_number(row.get('total_mv')),
                 )
         except Exception as e:
             # 仅记录调试日志，不报错，继续尝试降级
-            logger.debug(f"Tushare Pro 实时行情不可用 (可能是积分不足): {e}")
+            logger.debug("Tushare Pro 实时行情读取失败 %s: %s", stock_code, e)
 
         # 降级：尝试旧版接口
         try:
@@ -685,34 +679,36 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
             # 调用旧版实时接口 (ts.get_realtime_quotes)
             df = ts.get_realtime_quotes(symbol)
 
-            if df is None or df.empty:
+            if df is None or len(df) != 1:
                 return None
 
             row = df.iloc[0]
 
             # 计算涨跌幅
-            price = safe_float(row['price'])
-            pre_close = safe_float(row['pre_close'])
-            change_pct = 0.0
-            change_amount = 0.0
-
-            if price and pre_close and pre_close > 0:
-                change_amount = price - pre_close
-                change_pct = (change_amount / pre_close) * 100
+            price = optional_quote_number(row.get('price'))
+            pre_close = optional_quote_number(row.get('pre_close'))
+            if not price or not pre_close:
+                return None
+            change_amount = price - pre_close
+            change_pct = (change_amount / pre_close) * 100
+            if not math.isfinite(change_pct):
+                return None
+            volume = optional_quote_number(row.get('volume'))
+            name = row.get('name')
 
             # 构建统一对象
             return UnifiedRealtimeQuote(
                 code=normalized_code,
-                name=str(row['name']),
+                name=name if isinstance(name, str) else '',
                 source=RealtimeSource.TUSHARE,
                 price=price,
                 change_pct=round(change_pct, 2),
                 change_amount=round(change_amount, 2),
-                volume=safe_int(row['volume']) // 100,  # 转换为手
-                amount=safe_float(row['amount']),
-                high=safe_float(row['high']),
-                low=safe_float(row['low']),
-                open_price=safe_float(row['open']),
+                volume=int(volume) // 100 if volume is not None else None,
+                amount=optional_quote_number(row.get('amount')),
+                high=optional_quote_number(row.get('high')),
+                low=optional_quote_number(row.get('low')),
+                open_price=optional_quote_number(row.get('open')),
                 pre_close=pre_close,
             )
 
@@ -729,7 +725,6 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
         if self._api is None:
             return None
 
-        from .realtime_types import safe_float
         from .tushare_index_daily_rows import select_latest_index_daily_row
 
         # 指数映射：Tushare代码 -> 名称
@@ -760,20 +755,29 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
                     df = self._api.index_daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
                     row = select_latest_index_daily_row(df, ts_code, start_date, end_date)
                     if row is not None:
+                        current = optional_quote_number(row.get('close'))
+                        change_pct = optional_quote_number(row.get('pct_chg'), signed=True)
+                        if not current or change_pct is None:
+                            continue
+                        amount = optional_quote_number(row.get('amount'))
                         results.append({
                             'code': ts_code.split('.')[0], # 兼容 sh000001 格式需转换，这里保持纯数字
                             'name': name,
-                            'current': safe_float(row['close']),
-                            'change': safe_float(row['change']),
-                            'change_pct': safe_float(row['pct_chg']),
-                            'open': safe_float(row['open']),
-                            'high': safe_float(row['high']),
-                            'low': safe_float(row['low']),
-                            'prev_close': safe_float(row['pre_close']),
-                            'volume': safe_float(row['vol']),
-                            'amount': safe_float(row['amount']) * 1000, # 千元转元
+                            'current': current,
+                            'change': optional_quote_number(row.get('change'), signed=True),
+                            'change_pct': change_pct,
+                            'open': optional_quote_number(row.get('open')),
+                            'high': optional_quote_number(row.get('high')),
+                            'low': optional_quote_number(row.get('low')),
+                            'prev_close': optional_quote_number(row.get('pre_close')),
+                            'volume': optional_quote_number(row.get('vol')),
+                            'amount': optional_quote_number(amount * 1000) if amount is not None else None,
                             'amplitude': 0.0 # Tushare index_daily 不直接返回振幅
                         })
+                except TushareApiError as error:
+                    if error.code in {"permission_denied", "authentication_failed", "rate_limited", "rate_limited_global"}:
+                        return None
+                    logger.debug("Tushare 获取指数 %s 失败: %s", name, error)
                 except Exception as e:
                     logger.debug(f"Tushare 获取指数 {name} 失败: {e}")
                     continue
@@ -852,13 +856,9 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
 
                     # 获取股票基础信息（包含代码和名称）
                     df_basic = self._call_api_with_rate_limit("stock_basic", fields='ts_code,name')
-                    df = pd.merge(df, df_basic, on='ts_code', how='left')
-                    # 将 daily的 amount 列的值乘以 1000 来和其他数据源保持一致
-                    if 'amount' in df.columns:
-                        df['amount'] = df['amount'] * 1000
-
+                    df = pd.merge(df, df_basic, on='ts_code', how='left', validate='many_to_one')
                     if df is not None and not df.empty:
-                        return self._calc_market_stats(df)
+                        return self._calc_market_stats(df, amount_unit=1000)
                 except Exception as e:
                     logger.error(f"[Tushare] ts.pro_api().daily 获取数据失败: {e}")
                     
@@ -870,93 +870,64 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
         return None
     
     def _calc_market_stats(
-            self,
-            df: pd.DataFrame,
-            ) -> Optional[Dict[str, Any]]:
-            """从行情 DataFrame 计算涨跌统计。"""
-            import numpy as np
+        self, df: pd.DataFrame, *, amount_unit: int = 1,
+    ) -> Optional[Dict[str, Any]]:
+        """按完整的有效行情行计算涨跌统计。"""
+        aliases = (
+            ('代码', '股票代码', 'ts_code', 'stock_code'),
+            ('名称', '股票名称', 'name'),
+            ('最新价', 'close', 'lastPrice'),
+            ('昨收', '昨日收盘', 'pre_close', 'lastClose'),
+            ('成交额', 'amount'),
+        )
+        columns = [next((field for field in names if field in df.columns), None) for names in aliases]
+        if None in columns or not df.columns.is_unique:
+            return None
+        stats = dict(up_count=0, down_count=0, flat_count=0, limit_up_count=0, limit_down_count=0)
+        total_amount = 0.0
+        seen = set()
+        for code, name, current, previous, turnover in df[columns].itertuples(index=False, name=None):
+            amount = optional_quote_number(turnover)
+            if amount == 0:
+                continue
+            current_price = optional_quote_number(current)
+            pre_close = optional_quote_number(previous)
+            if (amount is None or not current_price or not pre_close
+                    or not isinstance(code, str) or not isinstance(name, str) or not name.strip()):
+                return None
+            pure_code = normalize_stock_code(code)
+            if not re.fullmatch(r'[0-9]{6}', pure_code) or pure_code in seen:
+                return None
+            seen.add(pure_code)
+            total_amount += amount
+            if is_bse_code(pure_code):
+                ratio = 0.30
+            elif is_kc_cy_stock(pure_code):
+                ratio = 0.20
+            elif is_st_stock(name):
+                ratio = 0.05
+            else:
+                ratio = 0.10
 
-            df = df.copy()
-            
-            # 1. 提取基础比对数据：最新价、昨收
-            # 兼容不同接口返回的列名 sina/em efinance tushare xtdata
-            code_col = next((c for c in ['代码', '股票代码', 'ts_code','stock_code'] if c in df.columns), None)
-            name_col = next((c for c in ['名称', '股票名称','name','name'] if c in df.columns), None)
-            close_col = next((c for c in ['最新价', '最新价', 'close','lastPrice'] if c in df.columns), None)
-            pre_close_col = next((c for c in ['昨收', '昨日收盘', 'pre_close','lastClose'] if c in df.columns), None)
-            amount_col = next((c for c in ['成交额', '成交额', 'amount','amount'] if c in df.columns), None) 
-            
-            limit_up_count = 0
-            limit_down_count = 0
-            up_count = 0
-            down_count = 0
-            flat_count = 0
-
-            for code, name, current_price, pre_close, amount in zip(
-                df[code_col], df[name_col], df[close_col], df[pre_close_col], df[amount_col]
-            ):
-                
-                # 停牌过滤 efinance 的停牌数据有时候会缺失价格显示为 '-'，em 显示为none
-                if pd.isna(current_price) or pd.isna(pre_close) or current_price in ['-'] or pre_close in ['-'] or amount == 0:
-                    continue
-                
-                # em、efinance 为str 需要转换为float
-                current_price = float(current_price)
-                pre_close = float(pre_close)
-                
-                # 获取去除前缀的纯数字代码
-                pure_code = normalize_stock_code(str(code)) 
-
-                # A. 确定每只股票的涨跌幅比例 (使用纯数字代码判断)
-                if is_bse_code(pure_code): 
-                    ratio = 0.30
-                elif is_kc_cy_stock(pure_code): #pure_code.startswith(('688', '30')):
-                    ratio = 0.20
-                elif is_st_stock(name): #'ST' in str_name:
-                    ratio = 0.05
-                else:
-                    ratio = 0.10
-
-                # B. 严格按照 A 股规则计算涨跌停价：昨收 * (1 ± 比例) -> 四舍五入保留2位小数
-                limit_up_price = np.floor(pre_close * (1 + ratio) * 100 + 0.5) / 100.0
-                limit_down_price = np.floor(pre_close * (1 - ratio) * 100 + 0.5) / 100.0
-
-                limit_up_price_Tolerance = round(abs(pre_close * (1 + ratio) - limit_up_price), 10)
-                limit_down_price_Tolerance = round(abs(pre_close * (1 - ratio) - limit_down_price), 10)
-
-                # C. 精确比对
-                if current_price > 0 :
-                    is_limit_up = (current_price > 0) and (abs(current_price - limit_up_price) <= limit_up_price_Tolerance)
-                    is_limit_down = (current_price > 0) and (abs(current_price - limit_down_price) <= limit_down_price_Tolerance)
-
-                    if is_limit_up:
-                        limit_up_count += 1
-                    if is_limit_down:
-                        limit_down_count += 1
-
-                    if current_price > pre_close:
-                        up_count += 1
-                    elif current_price < pre_close:
-                        down_count += 1
-                    else:
-                        flat_count += 1
-                    
-            # 统计数量
-            stats = {
-                'up_count': up_count,
-                'down_count': down_count,
-                'flat_count': flat_count,
-                'limit_up_count': limit_up_count,
-                'limit_down_count': limit_down_count,
-                'total_amount': 0.0,
-            }
-            
-            # 成交额统计
-            if amount_col and amount_col in df.columns:
-                df[amount_col] = pd.to_numeric(df[amount_col], errors='coerce')
-                stats['total_amount'] = (df[amount_col].sum() / 1e8)
-                
-            return stats
+            for direction, change in (('up', ratio), ('down', -ratio)):
+                theoretical = pre_close * (1 + change)
+                cents = theoretical * 100 + 0.5
+                if not math.isfinite(cents):
+                    return None
+                limit_price = math.floor(cents) / 100
+                tolerance = round(abs(theoretical - limit_price), 10)
+                if abs(current_price - limit_price) <= tolerance:
+                    stats[f'limit_{direction}_count'] += 1
+            if current_price > pre_close:
+                stats['up_count'] += 1
+            elif current_price < pre_close:
+                stats['down_count'] += 1
+            else:
+                stats['flat_count'] += 1
+        total_amount = total_amount / 1e8 * amount_unit
+        if not seen or not math.isfinite(total_amount):
+            return None
+        return {**stats, 'total_amount': total_amount}
 
     def get_trade_time(self,early_time='09:30',late_time='16:30') -> Optional[str]:
         '''
@@ -1004,7 +975,11 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
         2. 东财接口 (ts.pro_api().moneyflow_ind_dc)
         注意：每个接口的行业分类和板块定义不同，会导致结果两者不一致
         """
-        start_date = self.get_trade_time(early_time="00:00", late_time="15:30")
+        try:
+            start_date = self.get_trade_time(early_time="00:00", late_time="15:30")
+        except (TushareApiError, requests.exceptions.RequestException, TimeoutError) as error:
+            logger.warning("Tushare 行业板块排行无法确认交易日: %s", error)
+            return None
         if not start_date:
             return None
 
@@ -1050,7 +1025,7 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
     
 
     
-    def get_chip_distribution(self, stock_code: str) -> Optional[ChipDistribution]:
+    def get_chip_distribution(self, stock_code: str, *, strict=False) -> Optional[ChipDistribution]:
         """
         获取筹码分布数据
         
@@ -1085,7 +1060,7 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
             if not start_date:
                 return None
 
-            ts_code = self._convert_stock_code(stock_code)
+            ts_code = stock_code if strict else self._convert_stock_code(stock_code)
 
             df = self._call_api_with_rate_limit(
                 "cyq_chips",
@@ -1094,6 +1069,9 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
                 end_date=start_date,
             )
             if df is not None and not df.empty:
+                if strict:
+                    self._require_chip_identity(df, ts_code, start_date)
+                chips = self._normalize_chip_rows(df)
                 daily_df = self._call_api_with_rate_limit(
                     "daily",
                     ts_code=ts_code,
@@ -1102,8 +1080,11 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
                 )
                 if daily_df is None or daily_df.empty:
                     return None
-                current_price = daily_df.iloc[0]['close']
-                metrics = self.compute_cyq_metrics(df, current_price)
+                if len(daily_df) != 1:
+                    raise TushareApiError(code="invalid_response")
+                if strict:
+                    self._require_chip_identity(daily_df, ts_code, start_date)
+                metrics = self._compute_normalized_chip_metrics(chips, daily_df.iloc[0].get('close'))
 
                 chip = ChipDistribution(
                     code=stock_code,
@@ -1124,8 +1105,30 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
                 return chip
 
         except Exception as e:
+            if strict:
+                raise
             logger.warning(f"[Tushare] 获取筹码分布失败 {stock_code}: {e}")
             return None
+
+    @staticmethod
+    def _require_chip_identity(frame, symbol, day):
+        if (not {'ts_code', 'trade_date'}.issubset(frame.columns)
+                or not frame['ts_code'].eq(symbol).fillna(False).all()
+                or not frame['trade_date'].eq(day).fillna(False).all()):
+            raise TushareApiError(code="invalid_response")
+
+    @staticmethod
+    def _normalize_chip_rows(df):
+        if df.empty or not {'price', 'percent'}.issubset(df.columns):
+            raise TushareApiError(code="invalid_response")
+        chips = df[['price', 'percent']].apply(lambda column: column.map(optional_quote_number))
+        if chips.isna().any().any() or (chips['price'] <= 0).any():
+            raise TushareApiError(code="invalid_response")
+        total_percent = float(chips['percent'].sum())
+        if total_percent <= 0 or not math.isfinite(total_percent):
+            raise TushareApiError(code="invalid_response")
+        chips['norm_percent'] = chips['percent'] / total_percent * 100
+        return chips.sort_values('price').reset_index(drop=True)
 
     def compute_cyq_metrics(self, df: pd.DataFrame, current_price: float) -> dict:
         """
@@ -1134,15 +1137,13 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
         :param current_price: 股票当天的当前价/收盘价 (用于计算获利比例)  
         :return: 包含各项筹码指标的字典  
         """
-        import numpy as np
-        # 1. 确保按价格从小到大排序 (Tushare 返回的数据往往是纯倒序的)
-        df_sorted = df.sort_values(by='price', ascending=True).reset_index(drop=True)
+        return self._compute_normalized_chip_metrics(self._normalize_chip_rows(df), current_price)
 
-        # 2. 防止原始数据 percent 总和产生浮点数误差，归一化到 100%
-        total_percent = df_sorted['percent'].sum()
-
-        df_sorted['norm_percent'] = df_sorted['percent'] / total_percent * 100
-
+    @staticmethod
+    def _compute_normalized_chip_metrics(df_sorted, current_price):
+        current_price = optional_quote_number(current_price)
+        if not current_price:
+            raise TushareApiError(code="invalid_response")
         # 3. 计算筹码的累积分布
         df_sorted['cumsum'] = df_sorted['norm_percent'].cumsum()
 
@@ -1152,7 +1153,9 @@ class TushareFetcher(TushareExactDailyMixin, TushareFundFactorsMixin, TushareFun
 
         # --- 平均成本 ---
         # 价格的加权平均值
-        avg_cost = np.average(df_sorted['price'], weights=df_sorted['norm_percent'])
+        avg_cost = (df_sorted['price'] * (df_sorted['norm_percent'] / 100)).sum()
+        if not math.isfinite(avg_cost):
+            raise TushareApiError(code="invalid_response")
 
         # --- 辅助函数：求指定累积比例处的价格 ---
         def get_percentile_price(target_pct):

@@ -166,6 +166,7 @@ def test_control_http_keeps_account_report_separate_with_offline_upstream(runtim
     (TushareApiError("权限不足", api_code=2002), "permission_missing", "permission_denied"),
     (TushareApiError("您没有接口权限", api_code=40203), "permission_missing", "permission_denied"),
     (TushareApiError("未知错误", api_code=40203), "unknown", "upstream_failure"),
+    (TushareApiError("权限不足", api_code=9999), "unknown", "upstream_failure"),
     (TushareApiError("每分钟访问次数已满，权限说明", api_code=40203), "unknown", "rate_limited"),
     (TushareApiError("token不对", api_code=2002), "credential_invalid", "authentication_failed"),
     (TushareApiError("HTTP 403", status_code=403), "unknown", "upstream_failure"),

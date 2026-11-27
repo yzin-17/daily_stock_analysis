@@ -62,9 +62,12 @@ def test_tushare_actual_factory_preserves_calendar_cyq_daily_algorithm_and_cache
         if name == 'trade_cal':
             fields, items = ['cal_date','is_open'], [['20260701',1],['20260630',1]]
         elif name == 'cyq_chips':
-            fields, items = ['price','percent'], ([] if empty else [[9.0,25.0],[10.0,50.0],[11.0,25.0]])
+            fields = ['ts_code', 'trade_date', 'price', 'percent']
+            items = [] if empty else [
+                ['600519.SH', '20260701', price, percent] for price, percent in [(9.0, 25.0), (10.0, 50.0), (11.0, 25.0)]
+            ]
         elif name == 'daily':
-            fields, items = ['close'], [[10.0]]
+            fields, items = ['ts_code', 'trade_date', 'close'], [['600519.SH', '20260701', 10.0]]
         else:
             pytest.fail('不应调用其他 SDK 接口')
         return SimpleNamespace(status_code=200,text=__import__('json').dumps({'code':0,'data':{'fields':fields,'items':items}}))
@@ -95,6 +98,33 @@ def test_tushare_actual_factory_preserves_calendar_cyq_daily_algorithm_and_cache
     after = runtime._adapter('tushare', snapshot=snapshot)
     assert (after is normal) == (cache_source == 'environment')
     no_admissions(store)
+
+
+@pytest.mark.parametrize("identity", [[], ["000001.SZ", "20260701"], ["600519.SH", "20260630"]])
+def test_tushare_exact_chip_rejects_unknown_wrong_or_stale_identity(monkeypatch, store, identity):
+    import json
+    from data_provider.tushare_fetcher import TushareFetcher
+    calls = []
+
+    def post(_, **options):
+        name = options["json"]["api_name"]
+        calls.append(name)
+        if name == "trade_cal":
+            fields, items = ["cal_date", "is_open"], [["20260701", 1]]
+        else:
+            fields, items = ["price", "percent"], [[10.0, 100.0]]
+            if identity:
+                fields += ["ts_code", "trade_date"]
+                items = [items[0] + identity]
+        return SimpleNamespace(status_code=200, text=json.dumps({"code": 0, "data": {"fields": fields, "items": items}}))
+
+    monkeypatch.setattr(TushareFetcher, "_get_china_now", lambda _: datetime(2026, 7, 1, 20))
+    monkeypatch.setattr("data_provider.tushare_http_client.requests.post", post)
+    runtime = configure(store, "tushare")
+    with pytest.raises(ThesisLedgerGatewayError) as error:
+        runtime.execute_request(ThesisLedgerDataRequest("CHIP_SUMMARY", "600519.SH"))
+    assert error.value.code == "invalid_response"
+    assert calls == ["trade_cal", "cyq_chips"]
 
 
 @pytest.mark.parametrize('options', [{'start':'2026-01-01'}, {'end':'2026-01-03'}, {'limit':1},

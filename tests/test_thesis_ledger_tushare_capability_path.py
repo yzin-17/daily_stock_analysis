@@ -3,16 +3,18 @@
 import json as json_module
 import time
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pandas as pd
 import pytest
 
 from data_provider.base import RateLimitError
 from data_provider.thesis_ledger_sources.tushare import SOURCE, PROTOCOL
+from data_provider.tushare_http_client import TushareApiError
 from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
 from src.services.thesis_ledger_capability_contracts import CapabilityContractError, DailyQuery, ReadContext
 from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
-from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest, ThesisLedgerProviderRuntime
+from src.services.thesis_ledger_provider_runtime import ProviderCallError, ThesisLedgerDataRequest, ThesisLedgerProviderRuntime
 from tests.test_configured_market_routes import store, apply, no_admissions
 
 
@@ -118,7 +120,7 @@ def test_actual_factory_control_runtime_http_and_single_response(monkeypatch, st
 
 
 @pytest.mark.parametrize('failure,code', [('empty', 'not_covered'), ('missing-symbol', 'invalid_response'),
-    ('wrong-symbol', 'invalid_response')])
+    ('wrong-symbol', 'invalid_response'), ('missing-date', 'invalid_response'), ('bad-date', 'invalid_response')])
 def test_identity_and_empty_failures_remain_classified(failure, code):
     raw = pd.DataFrame({'ts_code': ['600519.SH'], 'trade_date': ['20260518'],
         'open': [1.], 'high': [1.2], 'low': [.9], 'close': [1.1]})
@@ -128,6 +130,10 @@ def test_identity_and_empty_failures_remain_classified(failure, code):
         raw = raw.drop(columns='ts_code')
     elif failure == 'wrong-symbol':
         raw['ts_code'] = '000001.SZ'
+    elif failure == 'missing-date':
+        raw = raw.drop(columns='trade_date')
+    elif failure == 'bad-date':
+        raw['trade_date'] = '20260230'
     adapter = SimpleNamespace(_token='synthetic', _api=object(), _minute_start=None,
         _check_rate_limit=lambda: None, _build_api_client=lambda _: SimpleNamespace(query=lambda *a, **kw: raw))
     with pytest.raises(CapabilityContractError) as error:
@@ -140,9 +146,29 @@ def test_upstream_rate_limit_is_preserved_without_local_wait(monkeypatch, store)
     adapter = ThesisLedgerProviderRuntime(store)._adapter('tushare', snapshot(), cache=False)
     adapter._call_count = 1_000_000
     adapter._minute_start = time.time()
-    from data_provider.tushare_http_client import TushareApiError
     monkeypatch.setattr('data_provider.tushare_fetcher.requests.post', lambda *a, **kw: SimpleNamespace(status_code=429))
     monkeypatch.setattr('data_provider.tushare_fetcher.time.sleep', lambda *a: pytest.fail('精确读取不应等待额度'))
     with pytest.raises(TushareApiError) as error:
         SOURCE.bindings[0].read(DailyQuery.from_request(request()), ReadContext(adapter))
     assert error.value.status_code == 429
+
+
+def test_exact_daily_uses_current_upstream_after_permission_recovery(monkeypatch, store):
+    store.save_provider_config('tushare', {"enabled": True, "requestId": "fixture",
+        "credentials": {"method": "token", "values": {"token": "synthetic"}}})
+    key = SOURCE.bindings[0].key.route_key()
+    apply(store, key, {'providerId': 'tushare', 'upstreamSource': 'tushare'})
+    denied = SimpleNamespace(status_code=200, text='{"code":2002,"msg":"权限不足"}')
+    allowed = SimpleNamespace(status_code=200, text=json_module.dumps({"code": 0, "data": {
+        "fields": ["ts_code", "trade_date", "open", "high", "low", "close"],
+        "items": [["600519.SH", "20260518", 1., 1.2, .9, 1.1]],
+    }}))
+    post = Mock(side_effect=[denied, allowed])
+    monkeypatch.setattr('data_provider.tushare_http_client.requests.post', post)
+    runtime = ThesisLedgerProviderRuntime(store)
+    with pytest.raises(ProviderCallError) as failure:
+        runtime.execute_market_bars_v3(request(), key)
+    assert failure.value.code == 'permission_denied'
+    result = runtime.execute_market_bars_v3(request(), key)
+    assert result.provider == 'tushare' and result.value['close'].tolist() == [1.1]
+    assert post.call_count == 2

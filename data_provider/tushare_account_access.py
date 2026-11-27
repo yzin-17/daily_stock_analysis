@@ -20,15 +20,14 @@ def failure_result(error):
     if isinstance(error, (requests.Timeout, requests.ConnectionError, TimeoutError)):
         code = "network_failure"
     elif isinstance(error, TushareApiError):
-        text = str(error).lower().replace(" ", "")
-        if error.status_code == 429:
-            code = "rate_limited_global"
-        elif any(part in text for part in ("每分钟", "每天", "每日", "每小时", "每秒", "访问频率", "访问次数", "频次", "频率超限", "ratelimit", "toomany", "quota")):
-            code = "rate_limited"
-        elif error.status_code == 401 or any(part in text for part in ("invalidtoken", "token无效", "token不对", "token错误", "token已过期", "token失效", "无效的token")):
-            state, code = "credential_invalid", "authentication_failed"
-        elif error.api_code == 2002 or (error.api_code == 40203 and any(part in text for part in ("权限", "积分不足"))):
-            state, code = "permission_missing", "permission_denied"
+        code = error.code
+        if code == "authentication_failed":
+            state = "credential_invalid"
+        elif code == "permission_denied":
+            if error.api_code in {2002, 40203}:
+                state = "permission_missing"
+            else:
+                code = "upstream_failure"
     elif isinstance(error, (ValueError, TypeError, AttributeError)):
         code = "invalid_response"
     return {"state": state, "attempted": True, "errorCode": code}

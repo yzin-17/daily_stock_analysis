@@ -8,6 +8,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 
 from tests.litellm_stub import ensure_litellm_stub
 
@@ -22,6 +23,7 @@ if not json_repair_available and "json_repair" not in sys.modules:
     sys.modules["json_repair"] = MagicMock()
 
 from data_provider.tushare_fetcher import TushareFetcher
+from data_provider.tushare_http_client import TushareApiError
 
 
 class TestTushareFetcherFollowUps(unittest.TestCase):
@@ -239,3 +241,43 @@ class TestTushareFetcherFollowUps(unittest.TestCase):
         self.assertEqual(quote.code, "000001")
         self.assertEqual(quote.name, "平安银行")
         tushare_module.get_realtime_quotes.assert_called_once_with("000001")
+
+
+@pytest.mark.parametrize("amount", [None, "invalid", "Infinity", -1])
+def test_market_stats_rejects_unknown_active_turnover(amount):
+    fetcher = TestTushareFetcherFollowUps._make_fetcher()
+    frame = pd.DataFrame([
+        dict(ts_code="600519.SH", name="贵州茅台", close="11", pre_close="10", amount="100"),
+        dict(ts_code="000001.SZ", name="平安银行", close=9, pre_close=10, amount=amount),
+    ])
+    assert fetcher._calc_market_stats(frame) is None
+    frame.loc[1, ["close", "pre_close", "amount"]] = [None, None, "0"]
+    assert fetcher._calc_market_stats(frame, amount_unit=1000) == {
+        "up_count": 1, "down_count": 0, "flat_count": 0, "limit_up_count": 1,
+        "limit_down_count": 0, "total_amount": pytest.approx(0.001),
+    }
+
+
+@pytest.mark.parametrize("price,percent", [(0, 50), (float("inf"), 50), (9, -1), (9, 0), (9, None)])
+def test_invalid_chip_rows_do_not_call_daily_or_become_empty(price, percent):
+    fetcher = TestTushareFetcherFollowUps._make_fetcher()
+    fetcher.get_trade_time = MagicMock(return_value="20260317")
+    fetcher._api.cyq_chips.return_value = pd.DataFrame({
+        "ts_code": ["600519.SH"], "trade_date": ["20260317"], "price": [price], "percent": [percent],
+    })
+    assert fetcher.get_chip_distribution("600519") is None
+    with pytest.raises(TushareApiError) as error:
+        fetcher.get_chip_distribution("600519.SH", strict=True)
+    assert error.value.code == "invalid_response"
+    fetcher._api.daily.assert_not_called()
+
+
+@pytest.mark.parametrize("price,pre_close", [("bad", "10"), ("11", None), ("11", "Infinity")])
+def test_legacy_quote_never_fabricates_a_zero_change(price, pre_close):
+    fetcher = TestTushareFetcherFollowUps._make_fetcher()
+    fetcher._api.quotation.return_value = pd.DataFrame({"price": [None], "pre_close": [10]})
+    sdk = MagicMock()
+    sdk.get_realtime_quotes.return_value = pd.DataFrame({"price": [price], "pre_close": [pre_close]})
+    with patch.dict(sys.modules, {"tushare": sdk}):
+        assert fetcher.get_realtime_quote("600519") is None
+    sdk.get_realtime_quotes.assert_called_once()
