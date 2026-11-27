@@ -20,6 +20,10 @@ def symbol_in_scope(symbol):
     return re.fullmatch(r"(?:60|68)[0-9]{4}\.SH|(?:00|30)[0-9]{4}\.SZ", symbol) is not None
 
 
+def etf_symbol_in_scope(symbol):
+    return re.fullmatch(r"(?:51|52|56|58)[0-9]{4}\.SH|(?:15|16|18)[0-9]{4}\.SZ", symbol) is not None
+
+
 class FreeHistoryConnection:
     """仅持有单次免费日线连接，不复用完整服务Key、缓存或报价客户端。"""
 
@@ -76,15 +80,18 @@ def validate_compact(payload, request, count):
 
 def daily(query, context, *, upstream_source=UPSTREAM):
     try:
-        if query.instrument_type != "STOCK" or not symbol_in_scope(query.symbol):
-            raise ExactDailyError("invalid_request", "免费历史当前仅支持沪深A股完整证券代码")
+        if query.instrument_type == "ETF":
+            if not etf_symbol_in_scope(query.symbol) or query.adjustment != "none":
+                raise ExactDailyError("invalid_request", "免费 ETF 日线需要沪深完整代码和不复权口径")
+        elif query.instrument_type != "STOCK" or not symbol_in_scope(query.symbol):
+            raise ExactDailyError("invalid_request", "免费股票日线需要沪深完整证券代码")
         if (date.fromisoformat(query.end) - date.fromisoformat(query.start)).days + 1 > MAXIMUM_WINDOW_DAYS:
             raise ExactDailyError("invalid_request", "免费历史窗口超过3650日的有界读取预算")
         instrument = context.adapter._get_client().instruments.get(query.symbol)
         if (not isinstance(instrument, dict) or instrument.get("symbol") != query.symbol
                 or instrument.get("exchange") != query.symbol.rsplit(".", 1)[1]
-                or instrument.get("region") != "CN" or instrument.get("type") != "stock"):
-            raise ExactDailyError("invalid_response", "免费标的元数据未确认所请求沪深股票身份")
+                or instrument.get("region") != "CN" or instrument.get("type") != query.instrument_type.lower()):
+            raise ExactDailyError("invalid_response", "免费标的元数据与请求的沪深证券身份不一致")
         frame = read_frame(context.adapter, query, source=upstream_source, validate_raw=validate_compact)
         frame.attrs["transport_source"] = UPSTREAM
         frame.attrs["tickflow_free_history_identity"] = {

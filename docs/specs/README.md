@@ -8,6 +8,10 @@ Spec 按自身适用性独立判断归档：不再作为当前需求合同、且
 
 ## 查阅入口
 
+- [行情读取兼容与来源校验](2026-11-27-upstream-market-reader-followups.md)
+
+- [Tushare 回包校验与错误分类](2026-11-27-tushare-endpoint-resilience.md)
+
 - [新闻准入工具的来源边界与显式选源](2026-11-14-news-admission-cleanup.md)
 
 - [本地收费规则按需刷新与覆盖推进](2026-11-12-local-rule-demand-refresh.md)

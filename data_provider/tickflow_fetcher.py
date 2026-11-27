@@ -39,6 +39,7 @@ from .base import (
     normalize_stock_code,
 )
 from .realtime_types import RealtimeSource, UnifiedRealtimeQuote, safe_int
+from .tickflow_account_access import checked_quote_batch_size, valid_quotes_for_symbols
 
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,6 @@ _CN_MAIN_INDEX_QUOTES = (
     ("000300.SH", "000300", "\u6caa\u6df1300"),
 )
 _CN_UNIVERSE_ID = "CN_Equity_A"
-_MAX_SYMBOLS_PER_QUOTE_REQUEST = 5
 _CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS = 900
 _SECTOR_RANKINGS_CACHE_TTL_SECONDS = 300
 _MAX_DAILY_PREFETCH_LOOKBACK_DAYS = 730
@@ -734,37 +734,35 @@ class TickFlowFetcher(BaseFetcher):
         if not symbols:
             return 0
 
-        effective_batch_size = max(1, int(batch_size or self.batch_size))
+        effective_batch_size = min(
+            max(1, int(batch_size or self.batch_size)),
+            checked_quote_batch_size(self.api_key, getattr(client, "base_url", None)),
+        )
+        if effective_batch_size < 2:
+            return 0
+        from tickflow._exceptions import BadRequestError, RateLimitError
+
         cached_count = 0
         for offset in range(0, len(symbols), effective_batch_size):
             batch_symbols = symbols[offset : offset + effective_batch_size]
             try:
                 quotes = client.quotes.get(symbols=batch_symbols)
+            except (BadRequestError, RateLimitError) as exc:
+                logger.warning("[TickFlowFetcher] 报价预取提前结束: %s", exc.code)
+                break
             except Exception as exc:
                 logger.warning("[TickFlowFetcher] batch realtime quote failed: %s", exc)
                 continue
-            cached_count += self._store_quotes(quotes)
+            cached_count += self._store_quotes(quotes, batch_symbols)
         return cached_count
 
-    def _store_quotes(self, quotes: Any) -> int:
-        if not quotes:
-            return 0
-        if isinstance(quotes, dict):
-            quotes_iter = [quotes]
-        else:
-            quotes_iter = list(quotes)
-        stored = 0
+    def _store_quotes(self, quotes: Any, symbols: Iterable[str]) -> int:
+        valid = valid_quotes_for_symbols(quotes, symbols)
         now = monotonic()
         with self._quote_cache_lock:
-            for quote in quotes_iter:
-                if not isinstance(quote, dict):
-                    continue
-                symbol = str(quote.get("symbol") or "").upper()
-                if not symbol:
-                    continue
-                self._quote_cache[symbol] = (now, quote)
-                stored += 1
-        return stored
+            for symbol, quote in valid.items():
+                self._quote_cache[symbol] = (now, dict(quote))
+        return len(valid)
 
     def _get_cached_quote(self, symbol: str, ttl_seconds: Optional[int] = None) -> Optional[Dict[str, Any]]:
         ttl = 600 if ttl_seconds is None else max(0, int(ttl_seconds))
@@ -795,7 +793,7 @@ class TickFlowFetcher(BaseFetcher):
             except Exception as exc:
                 logger.warning("[TickFlowFetcher] realtime quote failed for %s: %s", symbol, exc)
                 return None
-            self._store_quotes(quotes)
+            self._store_quotes(quotes, [symbol])
             quote = self._get_cached_quote(symbol, quote_ttl)
 
         if not quote:
@@ -884,7 +882,7 @@ class TickFlowFetcher(BaseFetcher):
 
         try:
             quotes = client.quotes.get(symbols=[symbol])
-            self._store_quotes(quotes)
+            self._store_quotes(quotes, [symbol])
             cached = self._get_cached_quote(symbol)
             name = self._extract_name(cached or {})
             if name:
@@ -991,8 +989,9 @@ class TickFlowFetcher(BaseFetcher):
 
         symbols = [symbol for symbol, _, _ in _CN_MAIN_INDEX_QUOTES]
         quotes: List[Dict[str, Any]] = []
-        for offset in range(0, len(symbols), _MAX_SYMBOLS_PER_QUOTE_REQUEST):
-            batch_symbols = symbols[offset : offset + _MAX_SYMBOLS_PER_QUOTE_REQUEST]
+        batch_size = min(self.batch_size, checked_quote_batch_size(self.api_key, getattr(client, "base_url", None)))
+        for offset in range(0, len(symbols), batch_size):
+            batch_symbols = symbols[offset : offset + batch_size]
             batch_quotes = client.quotes.get(symbols=batch_symbols)
             if batch_quotes:
                 requested = {symbol.upper() for symbol in batch_symbols}

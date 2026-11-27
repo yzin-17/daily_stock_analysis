@@ -133,7 +133,8 @@ class TestGetHkMainIndices(unittest.TestCase):
         """部分指数 history 为空时仍返回能取到数据的指数"""
         call_count = [0]
 
-        def history_side_effect(period):
+        def history_side_effect(period, auto_adjust):
+            self.assertFalse(auto_adjust)
             call_count[0] += 1
             if call_count[0] == 1:
                 return _make_mock_hist(close=20000.0, prev_close=19800.0)

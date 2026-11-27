@@ -42,13 +42,15 @@ def adapter(payload):
     return value, calls, closed
 
 
-def test_unified_target_retains_three_anonymous_daily_bindings():
+def test_unified_target_has_three_stock_and_one_etf_anonymous_daily_bindings():
     from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
     assert SOURCE.manifest()["requiresCredential"] is False
     assert SOURCE.manifest()["displayName"] == "TickFlow"
-    assert len(SOURCE.bindings) == 14
+    assert len(SOURCE.bindings) == 16
     daily_bindings = [binding for binding in SOURCE.bindings if binding.key.capability == "DAILY_BAR"]
-    assert len(daily_bindings) == 3
+    assert {(binding.key.asset_type, binding.key.adjustment) for binding in daily_bindings} == {
+        ("STOCK", "none"), ("STOCK", "qfq"), ("STOCK", "hfq"), ("ETF", "none"),
+    }
     for binding in daily_bindings:
         assert CAPABILITY_SOURCES.resolve(binding.key.route_key(), {
             "providerId": "tickflow", "upstreamSource": "tickflow",

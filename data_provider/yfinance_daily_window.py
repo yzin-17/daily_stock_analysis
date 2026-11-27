@@ -15,6 +15,15 @@ PRICES = ('Open', 'High', 'Low', 'Close')
 NATIVE_PRICES = (*PRICES, 'Adj Close')
 
 
+def exclusive_end_date(end):
+    return (date.fromisoformat(end) + timedelta(days=1)).isoformat()
+
+
+def select_daily_dates(raw, start, end):
+    days = raw.index.strftime('%Y-%m-%d')
+    return raw[(days >= start) & (days <= end)].copy()
+
+
 def _frame(raw, ticker, start, end):
     if not isinstance(raw, pd.DataFrame) or raw.empty:
         raise ExactDailyError('not_covered', 'Yahoo 未返回请求日线')
@@ -24,8 +33,7 @@ def _frame(raw, ticker, start, end):
         raw = raw.xs(ticker, axis=1, level=-1)
     if not raw.columns.is_unique or not set(NATIVE_PRICES).issubset(raw.columns) or not isinstance(raw.index, pd.DatetimeIndex):
         raise ExactDailyError('invalid_response', 'Yahoo 日线价格列或日期无效')
-    days = raw.index.strftime('%Y-%m-%d')
-    frame = raw[(days >= start) & (days <= end)].copy()
+    frame = select_daily_dates(raw, start, end)
     days = frame.index.strftime('%Y-%m-%d')
     if frame.empty:
         raise ExactDailyError('not_covered', 'Yahoo 未覆盖请求窗口')
@@ -57,7 +65,7 @@ def read_daily_window(download, *, ticker, start, end, timeout_seconds=4.5, cloc
     def fetch(first, last, timeout):
         if timeout <= 0:
             raise ExactDailyError('timeout', 'Yahoo 日线读取预算耗尽')
-        raw = download(tickers=ticker, start=first, end=(date.fromisoformat(last) + timedelta(days=1)).isoformat(),
+        raw = download(tickers=ticker, start=first, end=exclusive_end_date(last),
                        auto_adjust=False, progress=False, threads=False, timeout=timeout, multi_level_index=False)
         if clock() - began >= budget:
             raise ExactDailyError('timeout', 'Yahoo 日线读取超过总预算')

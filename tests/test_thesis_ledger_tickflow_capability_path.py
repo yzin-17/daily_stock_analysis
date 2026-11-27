@@ -20,18 +20,88 @@ def test_tickflow_has_one_registration_and_original_revisions():
     from src.services.thesis_ledger_market_v3_revisions import market_v3_current_route_revisions
     from src.services.thesis_ledger_control import PROVIDER_MANIFESTS
     registered = [(key, target, gated) for key, target, gated in exact_route_inventory()
-                  if target['providerId'] == 'tickflow' and key['capability'] == 'DAILY_BAR']
+                  if target['providerId'] == 'tickflow' and key['capability'] == 'DAILY_BAR' and key['assetType'] == 'STOCK']
     assert len(registered) == 3 and all(not gated for _, _, gated in registered)
     assert not any(provider == 'tickflow' for _, _, provider, _ in NATIVE_DAILY_ROUTES)
     assert SOURCE.credentials == (('api_key', ('apiKey',)),)
     assert credential_schema('tickflow')['methods'][0]['method'] == 'api_key'
-    for binding in (b for b in SOURCE.bindings if b.key.capability == 'DAILY_BAR'):
+    for binding in (b for b in SOURCE.bindings if b.key.capability == 'DAILY_BAR' and b.key.asset_type == 'STOCK'):
         key, target = binding.key.route_key(), {'providerId': 'tickflow', 'upstreamSource': 'tickflow'}
         assert CAPABILITY_SOURCES.resolve(key, target) is binding
         revisions = market_v3_current_route_revisions(key, target, PROVIDER_MANIFESTS['tickflow'], credential_version=1)
         assert revisions['adapterRevision'] == f"dsa-v3-cn-stock-tickflow-{key['adjustment']}-exact-daily-v2"
         assert revisions['sourceRevision'] == PROTOCOL
         assert binding.maximum_rows == 10000 and binding.protocol == PROTOCOL
+
+
+def test_etf_daily_has_only_unadjusted_binding_and_checks_metadata_before_bars():
+    from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+    from src.services.thesis_ledger_capability_registry import ExactKey
+    from data_provider.thesis_ledger_sources.tickflow_free_history import daily as read_free_daily
+    from data_provider.tickflow_fetcher import TickFlowFetcher
+
+    target = {"providerId": "tickflow", "upstreamSource": "tickflow"}
+    assert CAPABILITY_SOURCES.resolve(ExactKey("CN", "ETF", "DAILY_BAR", "none").route_key(), target)
+    assert CAPABILITY_SOURCES.resolve(ExactKey("CN", "ETF", "DAILY_BAR", "qfq").route_key(), target) is None
+    assert CAPABILITY_SOURCES.resolve(ExactKey("CN", "ETF", "DAILY_BAR", "hfq").route_key(), target) is None
+    events = []
+    instrument = {"symbol": "510300.SH", "exchange": "SH", "region": "CN", "type": "stock"}
+
+    def get_instrument(symbol):
+        events.append(("instrument", symbol))
+        return instrument
+
+    def get_bars(symbol, **options):
+        events.append(("bars", symbol))
+        assert options["adjust"] == "none"
+        return {"timestamp": [TickFlowFetcher._date_to_ms("2026-11-25")],
+                "open": [4.0], "high": [4.2], "low": [3.8], "close": [4.1], "volume": [120]}
+
+    client = SimpleNamespace(instruments=SimpleNamespace(get=get_instrument), klines=SimpleNamespace(get=get_bars))
+    adapter = SimpleNamespace(_get_client=lambda: client, close=lambda: events.append("close"),
+                              _daily_kline_count=TickFlowFetcher._daily_kline_count, _date_to_ms=TickFlowFetcher._date_to_ms)
+    query = DailyQuery(symbol="510300.SH", instrument_type="ETF", adjustment="none",
+                       start="2026-11-25", end="2026-11-25", request_id="etf-history")
+    with pytest.raises(CapabilityContractError) as error:
+        read_free_daily(query, ReadContext(adapter))
+    assert error.value.code == "invalid_response"
+    assert events == [("instrument", "510300.SH"), "close"]
+    instrument["type"] = "etf"
+    result = read_free_daily(query, ReadContext(adapter)).frame
+    assert events[-3:] == [("instrument", "510300.SH"), ("bars", "510300.SH"), "close"]
+    assert result[["date", "volume"]].to_dict("records") == [{"date": "2026-11-25", "volume": 120}]
+    assert result.attrs["tickflow_free_history_identity"]["historicalIdentity"] == "notVerified"
+
+
+def test_exact_etf_quote_uses_one_symbol_and_preserves_native_volume():
+    from src.services.thesis_ledger_capability_contracts import QuoteQuery
+    from src.services.thesis_ledger_capability_registry import ExactKey
+    from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
+    from data_provider.tickflow_fetcher import TickFlowFetcher
+
+    adapter = TickFlowFetcher(api_key="fixture")
+    row = {"symbol": "510300.SH", "last_price": 4.1, "open": 4.0, "high": 4.2, "low": 3.9,
+           "prev_close": 4.0, "volume": 120, "amount": 49000.0, "timestamp": 1795757451000}
+    calls = []
+
+    def get(*, symbols):
+        calls.append(symbols)
+        return [row]
+
+    adapter._get_client = lambda: SimpleNamespace(quotes=SimpleNamespace(get=get))
+    route_key = ExactKey("CN", "ETF", "REALTIME_QUOTE").route_key()
+    target = {"providerId": "tickflow", "upstreamSource": "tickflow"}
+    result = CAPABILITY_SOURCES.quote(QuoteQuery(symbol="510300.SH", instrument_type="ETF"), route_key,
+                                      target, ReadContext(adapter))
+    assert calls == [["510300.SH"]]
+    assert result.upstream_source == "tickflow" and result.provider_timestamp
+    assert result.volume == 120 and result.amount == 49000.0
+    assert result.units.volume == "unknown"
+    row["symbol"] = "510500.SH"
+    with pytest.raises(CapabilityContractError) as error:
+        CAPABILITY_SOURCES.quote(QuoteQuery(symbol="510300.SH", instrument_type="ETF"), route_key,
+                                 target, ReadContext(adapter))
+    assert error.value.code == "invalid_response"
 
 
 @pytest.mark.parametrize('probe,timeout,key_kind', [(False, 4.5, 'daily'), (True, 5, 'daily'), (False, 4.5, 'quote'), (True, 5, 'quote')])

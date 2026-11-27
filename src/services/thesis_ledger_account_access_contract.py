@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Callable, Literal, Mapping
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from src.services.provider_credentials_runtime import ProviderCredentialSnapshot
 
 
@@ -12,6 +12,8 @@ class AccountAccessResult(BaseModel):
     state: Literal["allowed", "permission_missing", "credential_missing", "credential_invalid", "unknown", "not_included"]
     attempted: bool
     errorCode: str | None = None
+    verifiedQuoteBatchSize: int | None = Field(default=None, ge=2)
+    rejectedQuoteBatchSize: int | None = Field(default=None, ge=2)
 
     @model_validator(mode="after")
     def actual_check(self):
@@ -19,6 +21,10 @@ class AccountAccessResult(BaseModel):
             raise ValueError("账户访问结论必须来自实际接口请求")
         if self.state == "allowed" and self.errorCode is not None:
             raise ValueError("可访问状态不能包含错误")
+        if self.verifiedQuoteBatchSize is not None and self.state != "allowed":
+            raise ValueError("报价批大小必须来自成功的报价检查")
+        if self.rejectedQuoteBatchSize is not None and self.rejectedQuoteBatchSize <= (self.verifiedQuoteBatchSize or 1):
+            raise ValueError("未通过的报价批大小必须大于已验证大小")
         if self.state == "not_included" and (self.attempted or self.errorCode not in {
                 "account_level_insufficient", "independent_permission_not_enabled"}):
             raise ValueError("等级未包含的功能必须跳过请求并记录原因")
@@ -32,6 +38,7 @@ class AccountAccessProbeContext:
     snapshot: ProviderCredentialSnapshot
     adapter: object
     timeout_seconds: float
+    previous_access: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True)

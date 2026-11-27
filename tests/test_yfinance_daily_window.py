@@ -7,6 +7,7 @@ import pytest
 
 from data_provider.exact_daily_contract import ExactDailyError
 from data_provider.yfinance_daily_window import read_daily_window, verify_daily_transport
+from data_provider.yfinance_fetcher import YfinanceFetcher
 from yfinance.utils import auto_adjust
 
 
@@ -35,6 +36,15 @@ def test_complete_prices_do_not_trigger_second_request_or_change_values():
     pd.testing.assert_frame_equal(result, auto_adjust(original))
     assert len(calls) == verify_daily_transport(result, '2026-11-06', '2026-11-10', 'qfq') == 1
     assert result.attrs['yahooDailyRetrieval']['repairedDates'] == []
+
+
+@pytest.mark.parametrize("start,expected", [("2026-11-09", [12.]), ("2026-11-06", [11., 12.])])
+def test_compat_daily_requests_exclusive_end_and_clamps_window(monkeypatch, start, expected):
+    download, calls = fetcher(frame().tz_localize("America/New_York"))
+    monkeypatch.setattr("yfinance.download", download)
+    result = YfinanceFetcher()._fetch_raw_data("AAPL", start, "2026-11-09")
+    assert result["Close"].tolist() == expected
+    assert calls[0]["end"] == "2026-11-10" and calls[0]["auto_adjust"] is True
 
 
 def test_tail_repair_uses_same_ticker_basis_and_overlap_without_replacing_metrics():

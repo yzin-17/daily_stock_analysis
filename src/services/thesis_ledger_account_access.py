@@ -11,7 +11,7 @@ from uuid import uuid4
 from weakref import WeakKeyDictionary
 
 from src.services.thesis_ledger_account_access_contract import AccountAccessProbeContext, AccountAccessResult
-from src.services.thesis_ledger_account_access_progress import check_slot, previous_report, cooling_down, probe_routes, check_response, utc_now
+from src.services.thesis_ledger_account_access_progress import check_slot, previous_report, cooling_down, probe_routes, check_response, public_access, utc_now
 from src.services.thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from src.services.thesis_ledger_control import ControlContractError
 from src.services.thesis_ledger_price_route_access import basic_price_credential_ready
@@ -67,13 +67,13 @@ def account_access_for(runtime, key, target):
     if stored:
         for route in stored["routes"]:
             if route["key"] == key and route["target"] == target:
-                return deepcopy(route["access"])
+                return public_access(route["access"])
     with _LOCK:
         cached = _cache(runtime)["reports"].get(target["providerId"])
         if cached and cached[0] == identity and runtime.clock() < cached[1]:
             for route in cached[2]["routes"]:
                 if route["key"] == key and route["target"] == target:
-                    return {**deepcopy(route["access"]), "checkedAt": cached[2]["checkedAt"],
+                    return {**public_access(route["access"]), "checkedAt": cached[2]["checkedAt"],
                             "validUntil": cached[2]["validUntil"]}
         if cached and runtime.clock() >= cached[1]:
             _cache(runtime)["reports"][target["providerId"]] = (cached[0], cached[1], None)
@@ -81,7 +81,7 @@ def account_access_for(runtime, key, target):
     return {"state": "unknown", "attempted": False, "errorCode": code}
 
 
-def _check_one(runtime, source, entry, snapshot, adapter, remaining, *, fixture):
+def _check_one(runtime, source, entry, snapshot, adapter, remaining, previous_access, *, fixture):
     if credential_required(source, entry["key"], entry["target"]) and not basic_price_credential_ready(snapshot):
         return {"state": "credential_missing", "attempted": False, "errorCode": "credential_missing"}
     if fixture:
@@ -93,7 +93,7 @@ def _check_one(runtime, source, entry, snapshot, adapter, remaining, *, fixture)
     from src.services.thesis_ledger_probe_execution import run_probe
     try:
         context = AccountAccessProbeContext(MappingProxyType(entry["key"]), MappingProxyType(entry["target"]),
-                                            snapshot, adapter, min(3, remaining))
+                                            snapshot, adapter, min(3, remaining), previous_access)
         value = run_probe(lambda: source.account_access_probe(context), timeout_seconds=context.timeout_seconds)
         return AccountAccessResult.model_validate(value).model_dump(exclude_none=True)
     except Exception as error:
@@ -146,7 +146,8 @@ def _check_account_access(runtime, provider, value, catalog, *, fixture=False):
         adapter = runtime._adapter(source.provider_id, snapshot=snapshot, cache=False, probe=True,
                                    market_v3_route_key=entries[0]["key"])
     routes = probe_routes(runtime, source, entries, level, previous,
-                          lambda entry, remaining: _check_one(runtime, source, entry, snapshot, adapter, remaining, fixture=fixture),
+                          lambda entry, remaining, prior: _check_one(
+                              runtime, source, entry, snapshot, adapter, remaining, prior, fixture=fixture),
                           check_current, deadline=deadline, ttl=TTL_SECONDS, config_version=baseline.config_version)
     checked_at = utc_now()
     valid_until = (checked_at + timedelta(seconds=TTL_SECONDS)).isoformat()

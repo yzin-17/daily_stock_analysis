@@ -29,6 +29,20 @@ def sdk_for(code="HK.00700", asset="STOCK", **changes):
     return sdk, context
 
 
+def test_next_opend_read_can_recover_after_worker_timeout(monkeypatch):
+    run = Mock(side_effect=[
+        subprocess.TimeoutExpired(["futu fixture"], 4.5),
+        SimpleNamespace(returncode=0, stdout=RESULT_PREFIX + json.dumps({"price": 12})),
+    ])
+    monkeypatch.setattr("data_provider.futu_market.subprocess.run", run)
+    adapter = FutuMarketAdapter(host="localhost", port=11111)
+    with pytest.raises(FutuMarketError) as failure:
+        adapter.get_realtime_quote("00700.HK")
+    assert failure.value.code == "timeout"
+    assert adapter.get_realtime_quote("00700.HK") == {"price": 12}
+    assert [call.kwargs["timeout"] for call in run.call_args_list] == [4.5, 4.5]
+
+
 @pytest.mark.parametrize("symbol,code,zone", [("00700.HK", "HK.00700", "Asia/Hong_Kong"),
     ("HK00700", "HK.00700", "Asia/Hong_Kong"), ("HK.00700", "HK.00700", "Asia/Hong_Kong"),
     ("AAPL.US", "US.AAPL", "America/New_York"), ("US.AAPL", "US.AAPL", "America/New_York"),

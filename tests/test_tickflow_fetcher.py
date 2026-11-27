@@ -327,11 +327,27 @@ class TestTickFlowFetcher(unittest.TestCase):
         fetcher = TickFlowFetcher(api_key="sk-test")
         fetcher._client = _FakeClient(symbols_data=[_quote("600519.SH")])
 
-        self.assertEqual(fetcher.prefetch_realtime_quotes(["600519"]), 1)
+        with patch("data_provider.tickflow_fetcher.checked_quote_batch_size", return_value=2):
+            self.assertEqual(fetcher.prefetch_realtime_quotes(["600519"]), 1)
         quote = fetcher.get_realtime_quote("600519")
 
         self.assertIsNotNone(quote)
         self.assertEqual(len(fetcher._client.quotes.calls), 1)
+
+    def test_realtime_prefetch_splits_and_only_caches_requested_valid_quotes(self):
+        fetcher = TickFlowFetcher(api_key="fixture")
+        fetcher._client = _FakeClient(symbols_data=[
+            _quote("600519.SH"), _quote("000001.SZ", last_price=0),
+            _quote("510300.SH"), _quote("510300.SH"), _quote("600000.SH"),
+        ])
+        with patch("data_provider.tickflow_fetcher.checked_quote_batch_size", return_value=2):
+            count = fetcher.prefetch_realtime_quotes(["600519.SH", "000001.SZ", "510300.SH"])
+        self.assertEqual(count, 1)
+        self.assertEqual([call["symbols"] for call in fetcher._client.quotes.calls],
+                         [["600519.SH", "000001.SZ"], ["510300.SH"]])
+        self.assertIsNone(fetcher._get_cached_quote("600000.SH"))
+        self.assertIsNone(fetcher._get_cached_quote("000001.SZ"))
+        self.assertIsNone(fetcher._get_cached_quote("510300.SH"))
 
     def test_stock_list_uses_universe_and_keeps_missing_optional_fields_blank(self):
         fetcher = TickFlowFetcher(api_key="sk-test")

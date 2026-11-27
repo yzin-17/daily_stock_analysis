@@ -75,14 +75,16 @@ def route_id(route):
 
 def probe_routes(runtime, source, entries, level, previous, probe, check_current, *, deadline, ttl, config_version):
     partial = previous and any(r["access"]["state"] == "unknown" for r in previous["routes"])
-    retained = {route_id(r): r["access"] for r in previous["routes"]
-                if r["access"]["state"] != "unknown"} if partial else {}
+    previous_routes = {route_id(r): r["access"] for r in previous["routes"]} if previous else {}
+    retained = {key: access for key, access in previous_routes.items()
+                if access["state"] != "unknown"} if partial else {}
     groups = PermissionGroups(source, previous, lambda report: cooling_down(report, source.account_access_cooldown_seconds))
     routes, requests, limited = [], 0, False
     for entry in entries:
         check_current()
+        identity = route_id(entry)
         excluded = source.account_access_level.excluded(entry["key"], level) if source.account_access_level else None
-        access = deepcopy(retained.get(route_id(entry)))
+        access = deepcopy(retained.get(identity))
         if access is None and not excluded:
             access = groups.get(entry)
         if access is None:
@@ -92,15 +94,22 @@ def probe_routes(runtime, source, entries, level, previous, probe, check_current
                 access = {"state": "unknown", "attempted": False, "errorCode": "rate_limited"}
             else:
                 remaining = deadline - runtime.clock() if requests < source.account_access_max_requests else 0
-                access = probe(entry, remaining)
+                access = probe(entry, remaining, previous_routes.get(identity))
                 requests += int(access.get("attempted", False))
                 if groups.stops_source(access):
                     limited = True
                 elif access.get("errorCode") not in {"rate_limited", "rate_limited_global"} and runtime.clock() > deadline:
                     access = {"state": "unknown", "attempted": access["attempted"], "errorCode": "request_budget_exceeded"}
-            checked_at = utc_now()
-            access.update(checkedAt=checked_at.isoformat(), validUntil=(checked_at + timedelta(seconds=ttl)).isoformat(),
-                          configVersion=config_version)
+            prior = previous_routes.get(identity)
+            if access.get("errorCode") == "quote_batch_unverified" and prior and prior["state"] == "allowed":
+                rejected = access["rejectedQuoteBatchSize"]
+                access = {**prior, "rejectedQuoteBatchSize": rejected}
+                if access.get("verifiedQuoteBatchSize", 1) >= rejected:
+                    access.pop("verifiedQuoteBatchSize")
+            else:
+                checked_at = utc_now()
+                access.update(checkedAt=checked_at.isoformat(), validUntil=(checked_at + timedelta(seconds=ttl)).isoformat(),
+                              configVersion=config_version)
             if not excluded and not limited or access.get("attempted"):
                 groups.remember(entry, access)
         check_current()
@@ -108,11 +117,17 @@ def probe_routes(runtime, source, entries, level, previous, probe, check_current
     return routes
 
 
+def public_access(access):
+    return {key: item for key, item in access.items()
+            if key not in {"verifiedQuoteBatchSize", "rejectedQuoteBatchSize"}}
+
+
 def check_response(source, provider, value, report, ready):
     included = [r for r in report["routes"] if r["access"]["state"] != "not_included"]
     status = "healthy" if included and all(r["access"]["state"] == "allowed" for r in included) else "degraded"
     if not ready and provider.get("requiresCredential", True):
         status = "unconfigured"
+    public_report = {**report, "routes": [{**route, "access": public_access(route["access"])} for route in report["routes"]]}
     return {"contractVersion": 1, "consumer": "thesis-ledger", "providerId": source.provider_id,
             "requestId": value["requestId"], "purpose": "account_access", "status": status,
-            "credentialConfigured": ready, "capabilityResults": {}, "accountAccess": report}
+            "credentialConfigured": ready, "capabilityResults": {}, "accountAccess": public_report}

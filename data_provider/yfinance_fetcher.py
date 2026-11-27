@@ -34,6 +34,7 @@ from tenacity import (
 from .base import BaseFetcher, DataFetchError, STANDARD_COLUMNS, is_bse_code
 from .realtime_types import UnifiedRealtimeQuote, RealtimeSource
 from .us_index_mapping import get_us_index_yf_symbol, is_us_stock_code
+from .yfinance_daily_window import exclusive_end_date, select_daily_dates
 from .yfinance_fundamental_adapter import _safe_float
 from src.services.market_symbol_utils import get_suffix_market, is_suffix_market_symbol
 
@@ -210,18 +211,22 @@ class YfinanceFetcher(BaseFetcher):
             df = yf.download(
                 tickers=yf_code,
                 start=start_date,
-                end=end_date,
+                end=exclusive_end_date(end_date),
                 progress=False,  # 禁止进度条
                 auto_adjust=True,  # 自动调整价格（复权）
                 multi_level_index=True
             )
 
             # 筛选出 yf_code 的列, 避免多只股票数据混淆
-            if isinstance(df.columns, pd.MultiIndex) and len(df.columns) > 1:
+            if isinstance(df.columns, pd.MultiIndex) and not df.empty:
                 ticker_level = df.columns.get_level_values(1)
                 mask = ticker_level == yf_code
-                if mask.any():
-                    df = df.loc[:, mask].copy()
+                df = df.loc[:, mask].copy()
+
+            if not df.empty:
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    raise DataFetchError("Yahoo Finance 日线日期无效")
+                df = select_daily_dates(df, start_date, end_date)
 
             if df.empty:
                 raise DataFetchError(f"Yahoo Finance 未查询到 {stock_code} 的数据")
@@ -320,19 +325,20 @@ class YfinanceFetcher(BaseFetcher):
         """
         ticker = yf.Ticker(yf_code)
         # 取近两日数据以计算涨跌幅
-        hist = ticker.history(period='2d')
+        hist = ticker.history(period='2d', auto_adjust=False)
         if hist.empty:
             return None
         today_row = hist.iloc[-1]
-        prev_row = hist.iloc[-2] if len(hist) > 1 else today_row
         price = float(today_row['Close'])
-        prev_close = float(prev_row['Close'])
-        change = price - prev_close
-        change_pct = (change / prev_close) * 100 if prev_close else 0
+        prev_close = _safe_float(hist.iloc[-2]['Close']) if len(hist) > 1 else None
+        if prev_close is not None and prev_close <= 0:
+            prev_close = None
+        change = price - prev_close if prev_close else None
+        change_pct = (change / prev_close) * 100 if prev_close else None
         high = float(today_row['High'])
         low = float(today_row['Low'])
         # 振幅 = (最高 - 最低) / 昨收 * 100
-        amplitude = ((high - low) / prev_close * 100) if prev_close else 0
+        amplitude = ((high - low) / prev_close * 100) if prev_close else None
         return {
             'code': return_code,
             'name': name,
@@ -720,14 +726,13 @@ class YfinanceFetcher(BaseFetcher):
                 volume = getattr(info, 'lastVolume', None) or getattr(info, 'last_volume', None)
             except Exception:
                 logger.debug("[Yfinance] fast_info 失败，尝试 history 方法")
-                hist = ticker.history(period='2d')
+                hist = ticker.history(period='2d', auto_adjust=False)
                 if hist.empty:
                     logger.warning(f"[Yfinance] 无法获取 {yf_symbol} 的数据")
                     return None
                 today = hist.iloc[-1]
-                prev = hist.iloc[-2] if len(hist) > 1 else today
                 price = float(today['Close'])
-                prev_close = float(prev['Close'])
+                prev_close = _safe_float(hist.iloc[-2]['Close']) if len(hist) > 1 else None
                 open_price = float(today['Open'])
                 high = float(today['High'])
                 low = float(today['Low'])
@@ -841,7 +846,7 @@ class YfinanceFetcher(BaseFetcher):
             except Exception:
                 # 回退到 history 方法获取最新数据
                 logger.debug("[Yfinance] fast_info 失败，尝试 history 方法")
-                hist = ticker.history(period='2d')
+                hist = ticker.history(period='2d', auto_adjust=False)
                 if hist.empty:
                     if is_us_symbol:
                         logger.warning(f"[Yfinance] 无法获取 {symbol} 的数据，尝试 Stooq 兜底")
@@ -850,10 +855,9 @@ class YfinanceFetcher(BaseFetcher):
                     return None
 
                 today = hist.iloc[-1]
-                prev = hist.iloc[-2] if len(hist) > 1 else today
 
                 price = float(today['Close'])
-                prev_close = float(prev['Close'])
+                prev_close = _safe_float(hist.iloc[-2]['Close']) if len(hist) > 1 else None
                 open_price = float(today['Open'])
                 high = float(today['High'])
                 low = float(today['Low'])

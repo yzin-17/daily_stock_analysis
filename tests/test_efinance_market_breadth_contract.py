@@ -2,6 +2,7 @@ import sys
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from data_provider import efinance_fetcher as module
 from data_provider.efinance_fetcher import EfinanceFetcher
@@ -91,3 +92,30 @@ def test_market_breadth_missing_identity_column_fails_closed(monkeypatch):
     )
 
     assert make_fetcher().get_market_stats() is None
+
+
+@pytest.mark.parametrize("invalid", [None, pd.DataFrame(), pd.DataFrame({"最新价": [11.0]})])
+def test_market_breadth_recovers_on_the_next_read_after_invalid_frame(monkeypatch, invalid):
+    install_snapshot(monkeypatch, invalid)
+    valid = pd.DataFrame({
+        "股票代码": ["600000"], "股票名称": ["浦发银行"],
+        "最新价": [11.0], "昨收": [10.0], "成交额": [100_000_000.0],
+    })
+    responses = iter([invalid, valid])
+    monkeypatch.setattr(module, "_ef_call_with_timeout", lambda *_args, **_kwargs: next(responses))
+    reader = make_fetcher()
+    assert reader.get_market_stats() is None
+    assert module._realtime_cache["timestamp"] == 0
+    recovered = reader.get_market_stats()
+    assert recovered["up_count"] == 1
+    assert reader.get_market_stats()["observed_at"] == recovered["observed_at"]
+
+
+def test_etf_batch_does_not_publish_a_quote_for_an_invalid_target_price(monkeypatch):
+    frame = pd.DataFrame({"股票代码": ["510300", "510500"], "最新价": [float("inf"), 6.0]})
+    install_snapshot(monkeypatch, frame)
+    monkeypatch.setattr(module, "_etf_realtime_cache", {"data": None, "timestamp": 0, "ttl": 600})
+    reader = make_fetcher()
+
+    assert reader._get_etf_realtime_quote("510300") is None
+    assert reader._get_etf_realtime_quote("510500").price == 6.0
