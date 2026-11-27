@@ -1,6 +1,8 @@
 # 行情读取兼容与来源校验任务
 
-规格见[行情读取兼容与来源校验](../specs/2026-11-27-upstream-market-reader-followups.md)。
+规格见[行情读取兼容与来源校验](../../specs/2026-11-27-upstream-market-reader-followups.md)。
+
+2026-11-27 结案归档。AC1–AC7 的实现、目标部署、实源验收、远端门禁及证据边界已完成一致性核对。TickPlus 调查按用户确认收口，准入结论为不接入。
 
 - [x] Yahoo 兼容日线和报价回归（AC1）。
 - [x] efinance 批量缓存与单标快照回归（AC2）。
@@ -88,6 +90,21 @@
 - 18:08 在新容器使用当前凭证的临时草稿调用正式 Control 精确报价诊断。`target-tickflow-rebuild-etf-1dc67e78a0` 返回 HTTP 200、`ready/healthy`、`attempted=true`，样本 `510300.SH`，耗时 683 毫秒。保存的权限报告、策略版本 203 及目标 ETF 路由一致。首次诊断用完整有效投影比较，因比较包含每读重算的 `appliedAt` 未通过辅助断言，复验使用保存策略和目标路由比较。
 - `6eb43168` 的完整 CI 于 18:08:13 完成。输入检测、治理、3 个后端离线分片、`backend-gate`、Docker 构建及镜像冒烟检查全部通过。[完整远端门禁](https://github.com/yzin-17/daily_stock_analysis/actions/runs/45978001690)
 
-## 待独立验收
+## TickPlus 准入结论
 
-- TickPlus 官方文档明确区分实时行情 `/plus/basic/fullquotes` 与指标 `/plus/basic/fullfactor`，基础地址使用 HTTP，凭证通过 URL 参数传递。2026-11-27 对公开 HTTPS 行情地址进行无凭证探测，直连和现有代理均在 TLS 握手阶段超时，代理只返回 CONNECT 200。保持 TickPlus 待准入，取得可验证的官方安全端点后再验收权限、股票及 ETF 回包合同。[TickPlus 官方接口文档](https://github.com/tickplusx/TickPlusSkill/blob/main/tickplus/references/apidoc.md)
+按用户确认，TickPlus 按无 HTTPS 行情端点处理。本批结束 TickPlus 调查，准入结论为不接入。凭证发送 0 次，账号权限及股票、ETF 回包未验收。
+
+- 首次调查参考的 TickPlus 旧版文档区分实时行情 `/plus/basic/fullquotes` 与指标 `/plus/basic/fullfactor`。基础地址使用 HTTP，凭证通过 URL 参数传递。2026-11-27 对公开 HTTPS 行情地址进行无凭证探测，直连和现有代理均在 TLS 握手阶段超时，代理只返回 CONNECT 200。[TickPlus 旧版接口文档](https://raw.githubusercontent.com/tickplusx/TickPlusSkill/d1ae785/tickplus/references/apidoc.md)
+
+### TickPlus 官方 HTTPS 复查
+
+2026-11-27 18:46（中国标准时间）。官方站点 `/doc` 可通过 HTTP 读取，行情链接使用 `http://api.tickplus.org`。官方 SDK 在 `21ef774c` 的 `SERVER_URL` 也指向这一地址。公开资料未给出可核验的 HTTPS 行情地址。[官方文档站](http://www.tickplus.org/doc) · [官方 SDK 配置](https://github.com/tickplusx/TickPlusSkill/blob/21ef774c9c69eb10d72fa4f1f8be369457971a16/tickplus/scripts/Config.py)
+
+- 无凭证请求 `/plus/basic/fullquotes` 的 `stock/600519` 样本。HTTP 返回 200，JSON 业务码 `-1`，回包提示 token 校验，未跳转到 HTTPS。相同 HTTPS 请求在关闭显式代理和使用现有代理时均未完成 TLS 握手，代理的 CONNECT 200 后未收到行情 HTTP 响应。
+- Google 与 Cloudflare 公共 DNS 均将 `api.tickplus.org` 和 `www.tickplus.org` 解析到 `38.92.15.192`。保留主机名和 SNI，关闭显式代理并固定到该地址，两个主机的 443 握手仍超时，API 的 80 端口继续返回同一无凭证鉴权回包。DNS HTTPS 记录与公开证书查询均未提供可进一步验证的服务地址。
+
+2026-11-27 18:57（中国标准时间）补查官方 SDK 历史、网站前端、教程及公开答复。
+
+- 官方仓库公开主分支共 24 个提交，其中 22 个包含 `Config.py` 的 `SERVER_URL`，均指向 HTTP 行情地址。公开 Issue 为收费咨询，未见维护者回复。Release 页面无发布记录。[官方仓库](https://github.com/tickplusx/TickPlusSkill) · [公开 Issue](https://github.com/tickplusx/TickPlusSkill/issues/1) · [发布记录](https://github.com/tickplusx/TickPlusSkill/releases)
+- 官网前端脚本 `main.702b9a6c4509c6bc.js` 的 `apiServerUrl` 是 `http://api.tickplus.org`，`serverUrl` 为供登录、账号及订单功能使用的 `http://server.tickplus.org`。后一个主机的 HTTPS 在现有代理下及关闭显式代理并固定公开 IPv4 后均握手超时，未得到 HTTPS 回包。[官网教程](http://www.tickplus.org/tutorial)
+- 指标路径在 2026-11-14 的 SDK 变更中由 `/plus/basic/fullfactor` 改为 `/plus/basic/fullmetric`。当前 `21ef774c` 的 SDK、接口文档和官网教程均使用 `/plus/basic/fullmetric`。本次确认的是公开合同版本，线上指标权限与回包尚未用凭证验证。[当前接口文档](https://raw.githubusercontent.com/tickplusx/TickPlusSkill/21ef774c9c69eb10d72fa4f1f8be369457971a16/tickplus/references/apidoc.md)

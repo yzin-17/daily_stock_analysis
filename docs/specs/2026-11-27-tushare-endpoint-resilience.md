@@ -1,6 +1,6 @@
 # Tushare 回包校验与错误分类
 
-实施见[任务](../tasks/2026-11-27-tushare-endpoint-resilience.md)。上游回包校验参考 `37ce87d3`，以 DSA 具名 V1 的现有来源合同为准。接口响应及筹码身份字段见 [Tushare HTTP 文档](https://tushare.pro/document/2?doc_id=40)和[每日筹码分布文档](https://tushare.pro/document/2?doc_id=294)。
+实施与验收见[归档任务](../archive/tasks/2026-11-27-tushare-endpoint-resilience.md)。上游回包校验参考 `37ce87d3`，以 DSA 具名 V1 的现有来源合同为准。接口响应及筹码身份字段见 [Tushare HTTP 文档](https://tushare.pro/document/2?doc_id=40)和[每日筹码分布文档](https://tushare.pro/document/2?doc_id=294)。
 
 - AC1 错误分类：根据本次上游响应区分接口权限或积分不足、限频、认证失败、网关故障与响应无效。具名 V1 读取按生效策略请求来源，以本次请求结果判断可用性。
 - 明确权限拒绝覆盖 `40203` 回包中的「没有接口(接口名)访问权限」格式，仅有码且原因未知的回包保持上游失败分类。

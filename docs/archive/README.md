@@ -4,6 +4,8 @@
 
 ## 已完成任务
 
+- 2026-11-27 行情来源兼容与 Tushare 错误分类已完成目标验收及远端门禁。TickPlus 调查结案，准入结论为不接入。[行情读取与来源校验任务](tasks/2026-11-27-upstream-market-reader-followups.md) · [Tushare 回包校验任务](tasks/2026-11-27-tushare-endpoint-resilience.md)
+
 - [2026-11-14 新闻准入工具残留清理](tasks/2026-11-14-news-admission-cleanup.md)：通用入口、显式选源与消费者已收敛，验证结果见任务链接。
 
 - [精确K线缓存控制上下文](tasks/2026-11-12-bar-cache-context.md)、[前置门禁合同收敛](tasks/2026-11-12-cache-prerequisite-gate-reconciliation.md)及[腾讯日线响应窗口修复](tasks/2026-11-11-tencent-daily-response-window.md)：完整门禁、正式生产者与目标消费分别验收；共享证据继续保留稳定位置。

@@ -1,6 +1,6 @@
 # 行情读取兼容与来源校验
 
-实施见[任务](../tasks/2026-11-27-upstream-market-reader-followups.md)。
+实施与验收见[归档任务](../archive/tasks/2026-11-27-upstream-market-reader-followups.md)。
 
 - AC1 Yahoo 兼容日线按交易日闭区间读取，报价历史回退使用未复权价格，缺少前一根日线时昨收保持未知。具名 V1 沿用精确窗口和来源时间。
 - AC2 efinance 股票和 ETF 批量缓存只接收非空有效行情，市场宽度对其专属字段继续校验。坏响应后下一次请求可以恢复，精确报价使用单标快照。
