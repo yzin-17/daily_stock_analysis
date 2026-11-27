@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] 已准入的 HiThink 股票与 ETF 快照支持后台采集，同一凭据的报价请求共享本地动态额度并按上游限流提示退避。
+- [新功能] 富途港美股票与 ETF 后台报价按现有 OpenD 行情权限准入，并按端点共享快照请求额度。
 - [修复] Yahoo 兼容日线纳入结束日，报价历史回退采用未复权价格并保留未知昨收。
 - [修复] efinance 批量行情和市场宽度仅用有效响应刷新缓存。
 - [改进] TickFlow 按当前凭证已验证的容量拆分报价请求，按标的身份和有效现价写入预取缓存。

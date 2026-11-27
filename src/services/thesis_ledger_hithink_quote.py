@@ -9,6 +9,9 @@ from typing import Any, Callable, Mapping
 
 import requests
 
+from .thesis_ledger_hithink_quote_budget import (
+    HiThinkQuoteBudget, HiThinkQuoteBudgetUnavailable, hithink_quote_budget,
+)
 from .thesis_ledger_quote_values import optional_quote_number
 
 
@@ -29,7 +32,6 @@ _ERRORS: dict[int, tuple[str, str, bool]] = {
     3001: ("symbol_not_found", "HiThink 未识别该标的代码", False),
     3002: ("data_not_ready", "HiThink 快照数据尚未准备", True),
     3004: ("unsupported_capability", "HiThink 不支持该标的快照能力", False),
-    4001: ("rate_limited", "HiThink 快照请求触发限流", True),
     5001: ("upstream_failure", "HiThink 快照服务暂时不可用", True),
     5002: ("upstream_failure", "HiThink 快照上游暂时不可用", True),
     5003: ("upstream_failure", "HiThink 快照服务暂时不可用", True),
@@ -95,6 +97,7 @@ class HiThinkSnapshotAdapter:
         timeout_seconds: float = 4.5,
         http_get: HttpGet = requests.get,
         clock: Clock = lambda: datetime.now(timezone.utc),
+        budget: HiThinkQuoteBudget | None = None,
     ) -> None:
         if not isinstance(api_key, str) or not api_key.strip():
             raise HiThinkQuoteError("not_configured", "HiThink API 凭据未配置")
@@ -102,7 +105,7 @@ class HiThinkSnapshotAdapter:
         self._timeout_seconds = float(timeout_seconds)
         self._http_get = http_get
         self._clock = clock
-
+        self._budget = budget if budget is not None else hithink_quote_budget(api_key)
 
     def fetch_quote(self, symbol: str, instrument_type: str) -> dict[str, Any]:
         normalized_type = str(instrument_type or "").strip().upper()
@@ -122,54 +125,10 @@ class HiThinkSnapshotAdapter:
             raise HiThinkQuoteError("unsupported_capability", "HiThink 快照只接入 STOCK/ETF")
 
         try:
-            response = self._http_get(
-                url,
-                params=params,
-                headers={"X-api-key": self._api_key, "Accept": "application/json"},
-                timeout=self._timeout_seconds,
-                allow_redirects=False,
-            )
-        except requests.RequestException:
-            raise HiThinkQuoteError("network_failure", "HiThink 快照请求网络失败", retryable=True) from None
-        except Exception:
-            raise HiThinkQuoteError("network_failure", "HiThink 快照请求网络失败", retryable=True) from None
-
-        status = getattr(response, "status_code", None)
-        if isinstance(status, bool) or not isinstance(status, int):
-            raise HiThinkQuoteError("invalid_response", "HiThink HTTP 响应状态无效")
-        try:
-            payload = response.json()
-        except Exception:
-            if status in {401, 403}:
-                raise HiThinkQuoteError(
-                    "authentication_failed" if status == 401 else "permission_denied",
-                    "HiThink 快照请求未获授权",
-                ) from None
-            if status == 429:
-                raise HiThinkQuoteError("rate_limited", "HiThink 快照请求触发限流", retryable=True) from None
-            if status >= 500:
-                raise HiThinkQuoteError("upstream_failure", "HiThink 快照服务暂时不可用", retryable=True) from None
-            raise HiThinkQuoteError("invalid_response", "HiThink 快照响应不是有效 JSON") from None
-
-        if status >= 400:
-            if status == 401:
-                raise HiThinkQuoteError("authentication_failed", "HiThink 快照请求未获授权")
-            if status == 403:
-                raise HiThinkQuoteError("permission_denied", "HiThink 快照请求未获授权")
-            if status == 429:
-                raise HiThinkQuoteError("rate_limited", "HiThink 快照请求触发限流", retryable=True)
-            raise HiThinkQuoteError("upstream_failure", "HiThink 快照请求未成功", retryable=status >= 500)
-        if not isinstance(payload, Mapping):
-            raise HiThinkQuoteError("invalid_response", "HiThink 快照响应格式无效")
-        code = _business_code(payload)
-        if code is None:
-            raise HiThinkQuoteError("invalid_response", "HiThink 快照业务状态无效")
-        if code != 0:
-            error = _ERRORS.get(code)
-            if error is None:
-                raise HiThinkQuoteError("provider_error", "HiThink 快照返回未知业务状态")
-            raise HiThinkQuoteError(error[0], error[1], retryable=error[2])
-
+            with self._budget.request(self._timeout_seconds) as timeout:
+                payload = self._request_payload(url, params, timeout)
+        except HiThinkQuoteBudgetUnavailable:
+            raise HiThinkQuoteError("rate_limited", "HiThink 快照共享请求预算暂不可用") from None
         data = payload.get("data")
         if not isinstance(data, Mapping):
             raise HiThinkQuoteError("invalid_response", "HiThink 快照响应缺少 data")
@@ -216,6 +175,51 @@ class HiThinkSnapshotAdapter:
         if result["low"] > min(result["open_price"], result["high"], price):
             raise HiThinkQuoteError("invalid_response", "HiThink 快照 OHLC 非法")
         return result
+
+    def _request_payload(self, url: str, params: dict[str, str], timeout: float) -> Mapping[str, Any]:
+        try:
+            response = self._http_get(
+                url,
+                params=params,
+                headers={"X-api-key": self._api_key, "Accept": "application/json"},
+                timeout=timeout,
+                allow_redirects=False,
+            )
+        except Exception:
+            raise HiThinkQuoteError("network_failure", "HiThink 快照请求网络失败", retryable=True) from None
+
+        status = getattr(response, "status_code", None)
+        if isinstance(status, bool) or not isinstance(status, int):
+            raise HiThinkQuoteError("invalid_response", "HiThink HTTP 响应状态无效")
+        headers = getattr(response, "headers", None)
+        if status >= 400:
+            self._budget.observe(headers, limited=status == 429)
+            if status == 429:
+                raise HiThinkQuoteError("rate_limited", "HiThink 快照请求触发限流")
+            if status == 401:
+                raise HiThinkQuoteError("authentication_failed", "HiThink 快照请求未获授权")
+            if status == 403:
+                raise HiThinkQuoteError("permission_denied", "HiThink 快照请求未获授权")
+            raise HiThinkQuoteError("upstream_failure", "HiThink 快照请求未成功", retryable=status >= 500)
+        try:
+            payload = response.json()
+        except Exception:
+            self._budget.observe(headers)
+            raise HiThinkQuoteError("invalid_response", "HiThink 快照响应不是有效 JSON") from None
+        code = _business_code(payload) if isinstance(payload, Mapping) else None
+        self._budget.observe(headers, limited=code == 4001)
+        if code == 0:
+            return payload
+        if not isinstance(payload, Mapping):
+            raise HiThinkQuoteError("invalid_response", "HiThink 快照响应格式无效")
+        if code == 4001:
+            raise HiThinkQuoteError("rate_limited", "HiThink 快照请求触发限流")
+        if code is None:
+            raise HiThinkQuoteError("invalid_response", "HiThink 快照业务状态无效")
+        error = _ERRORS.get(code)
+        if error is None:
+            raise HiThinkQuoteError("provider_error", "HiThink 快照返回未知业务状态")
+        raise HiThinkQuoteError(error[0], error[1], retryable=error[2])
 
     def _observed_at(self) -> str:
         value = self._clock()

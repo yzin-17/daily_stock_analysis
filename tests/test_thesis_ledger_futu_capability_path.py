@@ -33,7 +33,11 @@ def query(symbol, asset, adjustment):
 def worker_transport(monkeypatch, sdk):
     from data_provider.futu_query_worker import main
     calls = []
+    real_run = subprocess.run
+
     def run(command, **kwargs):
+        if not isinstance(command, (list, tuple)) or list(command[1:3]) != ['-m', 'data_provider.futu_query_worker']:
+            return real_run(command, **kwargs)
         calls.append((command, kwargs))
         output = io.StringIO()
         monkeypatch.setattr(sys, 'stdin', io.StringIO(kwargs['input']))

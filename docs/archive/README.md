@@ -4,6 +4,8 @@
 
 ## 已完成任务
 
+- [2026-11-28 后台报价来源执行](tasks/2026-11-06-background-quote-source.md)。富途和 HiThink 快照已接入并完成本批验收，现行合同见[后台报价规格](../specs/2026-11-06-background-quote-source.md)。
+
 - 2026-11-27 行情来源兼容与 Tushare 错误分类已完成目标验收及远端门禁。TickPlus 调查结案，准入结论为不接入。[行情读取与来源校验任务](tasks/2026-11-27-upstream-market-reader-followups.md) · [Tushare 回包校验任务](tasks/2026-11-27-tushare-endpoint-resilience.md)
 
 - [2026-11-14 新闻准入工具残留清理](tasks/2026-11-14-news-admission-cleanup.md)：通用入口、显式选源与消费者已收敛，验证结果见任务链接。

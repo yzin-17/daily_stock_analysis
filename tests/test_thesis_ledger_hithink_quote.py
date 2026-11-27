@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+from email.utils import formatdate
+from hashlib import sha256
 
 import pytest
 
@@ -10,12 +12,14 @@ from src.services.thesis_ledger_hithink_quote import (
     HiThinkQuoteError,
     HiThinkSnapshotAdapter,
 )
+from src.services import thesis_ledger_hithink_quote_budget as budget_module
 
 
 class Response:
-    def __init__(self, payload, status_code=200):
+    def __init__(self, payload, status_code=200, headers=None):
         self._payload = payload
         self.status_code = status_code
+        self.headers = headers
 
     def json(self):
         return self._payload
@@ -42,6 +46,7 @@ def adapter(http_get):
         api_key="synthetic-key",
         http_get=http_get,
         clock=lambda: datetime(2026, 9, 28, 10, 0, tzinfo=timezone.utc),
+        budget=budget_module.HiThinkQuoteBudget(clock=lambda: 0),
     )
 
 
@@ -127,7 +132,7 @@ def test_stock_and_etf_symbol_contracts_do_not_bleed():
     [
         (200, {"code": 2001, "data": None}, "authentication_failed", False),
         (200, {"code": 2003, "data": None}, "permission_denied", False),
-        (200, {"code": 4001, "data": None}, "rate_limited", True),
+        (200, {"code": 4001, "data": None}, "rate_limited", False),
         (503, {"code": 5001}, "upstream_failure", True),
     ],
 )
@@ -150,3 +155,70 @@ def test_nonfinite_or_invalid_ohlc_is_rejected():
         adapter(lambda *_args, **_kwargs: Response(
             {"code": 0, "data": {"timestamp": None, "item": [bad]}}
         )).fetch_quote("600519.SH", "STOCK")
+
+
+@pytest.mark.parametrize("limited", ["fractional-quota", "seconds", "http-date", "business"])
+def test_stock_and_etf_share_observed_quota_and_retry_hint(monkeypatch, limited):
+    now = [0.0]
+    wall = 1_800_000_000
+    budget = budget_module.HiThinkQuoteBudget(clock=lambda: now[0], wall_clock=lambda: wall + now[0])
+    key = "shared-test-key"
+    monkeypatch.setattr(budget_module, "_budgets", {sha256(key.encode()).digest(): budget})
+    calls = []
+
+    def quote(symbol):
+        return {"code": 0, "data": {"timestamp": None, "item": [item(symbol)]}}
+
+    def get(url, *, params, **_kwargs):
+        calls.append(url)
+        if url == HITHINK_ETF_SNAPSHOT_URL:
+            return Response(quote(params["thscode"]), headers={"X-RateLimit-Remaining": "14.81"})
+        if limited == "fractional-quota":
+            return Response(quote(params["thscodes"]), headers={
+                "X-RateLimit-Limit": "15", "x-ratelimit-remaining": "0.81",
+            })
+        if limited == "business":
+            return Response({"code": 4001}, headers={"Retry-After": "7"})
+        retry = "7" if limited == "seconds" else formatdate(wall + 7, usegmt=True)
+        return Response("<html>", 429, {"retry-after": retry})
+
+    stock = HiThinkSnapshotAdapter(api_key=key, http_get=get)
+    etf = HiThinkSnapshotAdapter(api_key=key, http_get=get)
+    other = HiThinkSnapshotAdapter(api_key="independent-test-key", http_get=get)
+    if limited == "fractional-quota":
+        assert stock.fetch_quote("600519.SH", "STOCK")["price"] == 10.5
+    else:
+        with pytest.raises(HiThinkQuoteError) as first:
+            stock.fetch_quote("600519.SH", "STOCK")
+        assert (first.value.code, first.value.retryable) == ("rate_limited", False)
+    resume_at = 1 if limited == "fractional-quota" else 7
+    for before in (0, resume_at - 0.1):
+        now[0] = before
+        with pytest.raises(HiThinkQuoteError) as blocked:
+            etf.fetch_quote("510300.SH", "ETF")
+        assert (blocked.value.code, blocked.value.retryable) == ("rate_limited", False)
+    assert calls == [HITHINK_STOCK_SNAPSHOT_URL]
+    assert other.fetch_quote("510300.SH", "ETF")["price"] == 10.5
+    now[0] = resume_at
+    assert etf.fetch_quote("510300.SH", "ETF")["price"] == 10.5
+    assert etf.fetch_quote("510300.SH", "ETF")["price"] == 10.5
+    assert calls == [HITHINK_STOCK_SNAPSHOT_URL] + [HITHINK_ETF_SNAPSHOT_URL] * 3
+
+
+def test_malformed_retry_hint_backs_off_each_unsuccessful_probe():
+    now = [0.0]
+    calls = []
+
+    def get(*_args, **_kwargs):
+        calls.append(now[0])
+        return Response({"code": 4001}, headers={"Retry-After": "unknown"})
+
+    snapshot = HiThinkSnapshotAdapter(
+        api_key="synthetic-key", http_get=get, budget=budget_module.HiThinkQuoteBudget(clock=lambda: now[0]),
+    )
+    for t in (0, 0.5, 1, 2, 3, 6, 7):
+        now[0] = t
+        with pytest.raises(HiThinkQuoteError) as raised:
+            snapshot.fetch_quote("600519.SH", "STOCK")
+        assert raised.value.code == "rate_limited"
+    assert calls == [0, 1, 3, 7]

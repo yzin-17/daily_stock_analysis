@@ -6,6 +6,7 @@ import sys
 from .futu_lot_size import validate_opend_endpoint
 from .security_lot_size import LotSizeError
 from .futu_market import RESULT_PREFIX, FutuMarketError, read_futu_quote
+from .futu_quote_rights import inspect_quote_rights
 from .futu_daily import read_futu_daily
 from .futu_minute import read_futu_minute
 from .futu_static_info import read_futu_static_info, find_futu_instrument
@@ -17,7 +18,10 @@ def _read(request):
     host, port = validate_opend_endpoint(request.get("host"), request.get("port"))
     import futu
     if request.get("operation") == "quote":
-        result = read_futu_quote(futu, host, port, request.get("symbol"), request.get("instrumentType"))
+        result = read_futu_quote(futu, host, port, request.get("symbol"), request.get("instrumentType"),
+                                 require_live=request.get("requireLive") is True)
+    elif request.get("operation") == "quote-rights":
+        result = inspect_quote_rights(futu, host, port)
     elif request.get("operation") == "instrument-search":
         result = {"items": find_futu_instrument(futu, host, port, request.get("symbol"))}
     elif request.get("operation") == "static-info":

@@ -26,10 +26,10 @@ def research_calendar_eligible(context):
 
 def manifest():
     from src.services.provider_manifest import build_provider_manifest
-    return build_provider_manifest("futu", "富途 OpenAPI", {
+    return {**build_provider_manifest("futu", "富途 OpenAPI", {
         "SECURITY_LOT_SIZE": ("STOCK",), "REALTIME_QUOTE": ("STOCK", "ETF"),
         "DAILY_BAR": ("STOCK", "ETF"), "MINUTE_BAR": ("STOCK", "ETF"), "SECURITY_STATIC_INFO": ("STOCK", "ETF"),
-    }, requires_credential=True, markets=("CN", "HK", "US"))
+    }, requires_credential=True, markets=("CN", "HK", "US")), "accountAccessSupported": True}
 
 
 def factory(context):
@@ -49,7 +49,8 @@ def daily(query, context):
 def quote(query, context):
     from data_provider.futu_market import FutuMarketError
     try:
-        value = context.adapter.get_realtime_quote(query.symbol, strict_source=True, instrument_type=query.instrument_type)
+        reader = context.adapter.get_background_quote if context.background_quote else context.adapter.get_realtime_quote
+        value = reader(query.symbol, strict_source=True, instrument_type=query.instrument_type)
     except FutuMarketError as error:
         raise CapabilityContractError(error.code, str(error)) from None
     from datetime import datetime
@@ -67,6 +68,27 @@ def quote(query, context):
         fetched_at=value.get("fetched_at"), provider_timestamp=value.get("provider_timestamp"),
         is_stale=value.get("is_stale", False), source=value.get("source"), units=value.get("units"),
         execution_facts=value.get("execution_facts"), execution_rules=rules)
+
+
+def quote_account_scope(key):
+    return key["capability"] == "REALTIME_QUOTE" and key["market"] in {"HK", "US"}
+
+
+def account_access_group(key):
+    return key["market"]
+
+
+def probe_account_access(context):
+    from data_provider.futu_market import FutuMarketError
+    try:
+        state = context.adapter.get_quote_rights().get(context.key["market"])
+    except FutuMarketError as error:
+        return {"state": "unknown", "attempted": True, "errorCode": error.code}
+    if state == "allowed":
+        return {"state": state, "attempted": True}
+    if state == "permission_missing":
+        return {"state": state, "attempted": True, "errorCode": "permission_denied"}
+    return {"state": "unknown", "attempted": True, "errorCode": "permission_not_checked"}
 
 
 def minute(query, context):
@@ -149,4 +171,6 @@ SOURCE = SourceDefinition("futu", manifest, factory, tuple(
     "futu-security-lot-size-v1", "futu-static-info-v1", lot_size, admission_required=False),),
     ("data_provider.futu_market", "FutuMarketAdapter"), credentials=(("opend", ("host", "port")),),
     dependency_modules=("futu",), factory_scope="provider", quote_source_aliases=(('futu', 'futu'),),
+    account_access_probe=probe_account_access, account_access_scope=quote_account_scope,
+    account_access_group=account_access_group, account_access_max_requests=2,
     upstream_groups=(('futu', 'futu'),))

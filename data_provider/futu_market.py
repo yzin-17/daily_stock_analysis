@@ -55,13 +55,19 @@ def _unique_row(status, rows, sdk, code):
     return row
 
 
-def read_futu_quote(sdk, host, port, symbol, instrument_type):
+def read_futu_quote(sdk, host, port, symbol, instrument_type, *, require_live=False):
     code, market, zone = futu_security(symbol)
     if instrument_type not in {"STOCK", "ETF"}:
         raise FutuMarketError("unsupported", "当前精确报价仅接入股票和 ETF")
     context = None
     try:
         context = sdk.OpenQuoteContext(host=host, port=port)
+        if require_live:
+            from .futu_quote_rights import quote_right_state, read_quote_rights
+            state = quote_right_state(read_quote_rights(context, sdk), market)
+            if state != "allowed":
+                code = "permission_denied" if state == "permission_missing" else "permission_unverified"
+                raise FutuMarketError(code, "富途未确认该市场的后台实时行情权限")
         static = _unique_row(*context.get_stock_basicinfo(
             getattr(sdk.Market, market), stock_type=getattr(sdk.SecurityType, instrument_type), code_list=[code],
         ), sdk, code)
@@ -118,6 +124,16 @@ class FutuMarketAdapter(FutuLotSizeAdapter):
             raise FutuMarketError("invalid_request", "富途报价只允许精确来源读取")
         return self._query({"operation": "quote", "symbol": symbol, "instrumentType": instrument_type})
 
+    def get_background_quote(self, symbol, *, strict_source=True, instrument_type="STOCK"):
+        futu_security(symbol)
+        if strict_source is not True:
+            raise FutuMarketError("invalid_request", "富途后台报价只允许精确来源读取")
+        return self._query({"operation": "quote", "symbol": symbol, "instrumentType": instrument_type,
+                            "requireLive": True})
+
+    def get_quote_rights(self):
+        return self._query({"operation": "quote-rights"})
+
     def get_exact_daily(self, request):
         import pandas as pd
         value = self._query({"operation": "daily", "symbol": request.symbol, "instrumentType": request.instrument_type,
@@ -142,6 +158,10 @@ class FutuMarketAdapter(FutuLotSizeAdapter):
                             "start": request.start, "end": request.end, "adjustment": "none", "timeframe": request.timeframe})
 
     def _query(self, request):
+        if request.get("operation") in {"quote", "trading-state"}:
+            from .futu_snapshot_budget import reserve_snapshot
+            if not reserve_snapshot(self.host, self.port):
+                raise FutuMarketError("rate_limited", "富途 OpenD 快照请求达到每 30 秒 60 次上限")
         try:
             completed = subprocess.run(
                 [sys.executable, "-m", "data_provider.futu_query_worker"],

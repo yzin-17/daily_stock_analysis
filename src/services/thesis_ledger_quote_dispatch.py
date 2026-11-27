@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 from .thesis_ledger_capability_sources import CAPABILITY_SOURCES
 from .thesis_ledger_capability_contracts import CapabilityContractError, QuoteQuery, QuoteValue, ReadContext
@@ -52,6 +53,8 @@ def quote_request_operation(runtime, request, instrument_type, error_type):
         key = current_data_route_key('REALTIME_QUOTE', instrument_type, request.symbol)
         if provider_id == 'futu' and key['market'] == 'US':
             context = current_rule_context(runtime, provider_id, adapter)
+        if (request.parameters or {}).get('backgroundQuote') is not None:
+            context = replace(context or ReadContext(adapter), background_quote=True)
         value = realtime_quote(adapter, provider_id, request.symbol, instrument_type, upstream_source, error_type, context)
         if context and context.publish_guard and not context.publish_guard():
             raise error_type('not_admitted', '规则读取期间来源控制已变化')

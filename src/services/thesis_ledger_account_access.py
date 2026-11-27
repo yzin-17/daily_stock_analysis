@@ -49,6 +49,8 @@ def account_access_for(runtime, key, target):
     source = CAPABILITY_SOURCES.source(target["providerId"])
     if source is None or source.account_access_probe is None:
         return None
+    if source.account_access_scope is not None and not source.account_access_scope(key):
+        return None
     read_snapshot = getattr(runtime.store, "provider_credential_snapshot", None)
     if not callable(read_snapshot):
         return {"state": "unknown", "attempted": False, "errorCode": "permission_not_checked"}
@@ -112,7 +114,8 @@ def _check_account_access(runtime, provider, value, catalog, *, fixture=False):
     source = CAPABILITY_SOURCES.source(provider["providerId"])
     if source is None or source.account_access_probe is None or "route" in value:
         raise ControlContractError("INVALID_PROVIDER_TEST", "该来源未声明账户检查或请求指定了业务读取目标")
-    entries = [e for e in catalog["entries"] if e["target"]["providerId"] == source.provider_id]
+    entries = [e for e in catalog["entries"] if e["target"]["providerId"] == source.provider_id
+               and (source.account_access_scope is None or source.account_access_scope(e["key"]))]
     if not entries or len(entries) > MAX_ROUTE_ENTRIES:
         raise ControlContractError("INVALID_PROVIDER_TEST", "账户检查库存超出有界请求数量")
     baseline, snapshot = _snapshot(runtime.store, provider, value)

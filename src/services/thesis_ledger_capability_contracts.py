@@ -238,6 +238,7 @@ class ReadContext:
     probe: bool = False
     database_path: str | None = None
     publish_guard: Callable[[], bool] | None = None
+    background_quote: bool = False
 
 
 @dataclass(frozen=True)

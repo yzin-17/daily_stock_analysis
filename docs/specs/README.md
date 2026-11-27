@@ -8,6 +8,8 @@ Spec 按自身适用性独立判断归档：不再作为当前需求合同、且
 
 ## 查阅入口
 
+- [按现有来源自动获取报价](2026-11-06-background-quote-source.md)
+
 - [行情读取兼容与来源校验](2026-11-27-upstream-market-reader-followups.md)
 
 - [Tushare 回包校验与错误分类](2026-11-27-tushare-endpoint-resilience.md)

@@ -233,18 +233,73 @@ def test_background_quote_rejects_control_changes_before_any_execution(store):
         constrain_background_quote(runtime, req, [('tencent', 'tencent', 0)])
 
 
-def test_background_quote_never_admits_paid_primary_or_changes_selected_route(store, monkeypatch):
+def test_futu_background_plan_requires_current_exact_account_evidence(store):
+    from src.services.thesis_ledger_account_access_store import save_record
     from src.services.thesis_ledger_background_quote import background_quote_plan
-    monkeypatch.setenv('HITHINK_API_KEY', 'synthetic-only-no-network')
-    target = next(target for key, target, _ in CAPABILITY_SOURCES.routes('REALTIME_QUOTE')
-                  if key == KEY and target['providerId'] == 'hithink')
-    apply(store, KEY, target)
+
+    credentials = {'method': 'opend', 'values': {'host': 'localhost', 'port': '11111'}}
+    store.save_provider_config('futu', {'requestId': 'futu-ready', 'enabled': True, 'credentials': credentials})
+    key = {**KEY, 'market': 'US', 'assetType': 'STOCK'}
+    target = {'providerId': 'futu', 'upstreamSource': 'futu'}
+    apply(store, key, target)
     runtime = ThesisLedgerProviderRuntime(store)
-    runtime.execute_request = Mock(side_effect=AssertionError('paid request must not execute'))
+    demand = background_request(symbol='AAPL.US', assetType='STOCK')
+    assert background_quote_plan(runtime, demand)['reason'] == 'background_permission_unverified'
+    snapshot = store.provider_credential_snapshot('futu')
+    access = {'state': 'allowed', 'attempted': True, 'checkedAt': '2026-11-27T11:17:00+00:00'}
+    save_record(store, snapshot, None, {'routes': [{'key': key, 'target': target, 'access': access}]})
+    plan = background_quote_plan(runtime, demand)
+    assert plan['acquisition'] == 'account-snapshot'
+    assert plan['target'] == {**target, 'routeIndex': 0} and plan['minIntervalSeconds'] == 15
+    new_endpoint = {**credentials, 'values': {'host': 'localhost', 'port': '11112'}}
+    store.save_provider_config('futu', {'requestId': 'rotate', 'credentials': new_endpoint})
+    assert background_quote_plan(runtime, demand)['reason'] == 'background_permission_unverified'
+
+
+def test_futu_account_check_limits_probes_to_two_quote_markets(store, monkeypatch):
+    from src.services.thesis_ledger_account_access import check_account_access
+
+    credentials = {'method': 'opend', 'values': {'host': 'localhost', 'port': '11111'}}
+    store.save_provider_config('futu', {'requestId': 'futu-ready', 'enabled': True, 'credentials': credentials})
+    runtime = ThesisLedgerProviderRuntime(store)
+    rights = Mock(return_value={'HK': 'permission_missing', 'US': 'allowed'})
+    monkeypatch.setattr(runtime, '_adapter', Mock(return_value=Mock(get_quote_rights=rights)))
+    provider = next(row for row in store.provider_registry() if row['providerId'] == 'futu')
+    report = check_account_access(runtime, provider, {'requestId': 'futu-account'},
+                                  runtime.market_route_catalog_v3())['accountAccess']
+    assert report['persisted'] is True and rights.call_count == 2
+    assert [(route['key']['market'], route['key']['capability'], route['access']['state'])
+            for route in report['routes']] == [
+                ('HK', 'REALTIME_QUOTE', 'permission_missing'), ('HK', 'REALTIME_QUOTE', 'permission_missing'),
+                ('US', 'REALTIME_QUOTE', 'allowed'), ('US', 'REALTIME_QUOTE', 'allowed'),
+            ]
+
+
+@pytest.mark.parametrize(('asset', 'symbol', 'source', 'interval'), [
+    ('STOCK', '600519.SH', 'a-share-prices-snapshot', 15),
+    ('ETF', '510300.SH', 'fund-market-snapshot', 600),
+])
+def test_hithink_background_uses_current_route_without_reading_provider(store, monkeypatch, asset, symbol, source, interval):
+    from src.services.thesis_ledger_background_quote import background_quote_plan, constrain_background_quote
+    from src.services.thesis_ledger_provider_runtime import ThesisLedgerDataRequest
+    monkeypatch.setenv('HITHINK_API_KEY', 'synthetic-only-no-network')
+    key = {**KEY, 'assetType': asset}
+    target = {'providerId': 'hithink', 'upstreamSource': source}
+    fallback = {'providerId': 'akshare', 'upstreamSource': 'eastmoney'}
+    store.apply_policy_v3({'contractVersion': 1, 'consumer': 'thesis-ledger', 'requestId': 'hi-background',
+                          'revision': 1, 'enabled': True, 'routes': [{'key': key, 'targets': [target, fallback]}]})
+    runtime = ThesisLedgerProviderRuntime(store)
+    runtime.execute_request = Mock(side_effect=AssertionError('后台计划不得查询上游'))
     before = deepcopy(store.effective_policy_v3())
-    plan = background_quote_plan(runtime, background_request())
-    assert plan['acquisition'] == 'blocked' and plan['reason'] == 'background_budget_unverified'
-    assert plan['target']['providerId'] == 'hithink'
+    plan = background_quote_plan(runtime, background_request(symbol=symbol, assetType=asset))
+    assert plan['acquisition'] == 'account-snapshot' and plan['reason'] is None
+    assert plan['target'] == {**target, 'routeIndex': 0}
+    assert plan['minIntervalSeconds'] == interval and plan['sourceUpdateIntervalSeconds'] is None
+    request = ThesisLedgerDataRequest('REALTIME_QUOTE', symbol=symbol, instrument_type=asset,
+        request_id='background-fixture', parameters={'backgroundQuote': {'generation': plan['generation']}})
+    assert constrain_background_quote(runtime, request, [
+        ('hithink', source, 0), ('akshare', 'eastmoney', 1),
+    ]) == [('hithink', source, 0)]
     assert store.effective_policy_v3()['routes'] == before['routes']
     assert store.effective_policy_v3()['revision'] == before['revision']
     runtime.execute_request.assert_not_called()

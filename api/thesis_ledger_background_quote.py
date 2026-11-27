@@ -1,4 +1,4 @@
-"""后台计划只读；执行只允许原顺序中的已选公开来源。"""
+"""后台计划只读，执行沿用当前已准入的首选来源。"""
 from fastapi import APIRouter, Body, Depends
 from pydantic import ValidationError
 from api.thesis_ledger_auth import require_contract_token, _error
@@ -27,7 +27,7 @@ def build_background_quote_router(get_runtime):
         generation = payload.get('generation')
         request = {key: value for key, value in payload.items() if key != 'generation'}
         before = plan(request)
-        if before['acquisition'] != 'public-snapshot' or generation != before['generation']:
+        if before['acquisition'] == 'blocked' or generation != before['generation']:
             _error('not_admitted', '后台来源或控制版本已变化', 503, request.get('requestId'))
         from api.thesis_ledger import _real_quote
         quote = _real_quote(request['symbol'], request_id=request['requestId'],

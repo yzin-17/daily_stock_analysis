@@ -1,5 +1,6 @@
-"""已选来源的后台报价计划；只放行公开腾讯ETF，不改变路由或预算。"""
+"""只读后台报价计划，资格与执行都绑定当前首选来源。"""
 import re
+from .thesis_ledger_account_access import account_access_for
 from .thesis_ledger_cache_context_v3 import CacheContextRequest, read_cache_context
 from .thesis_ledger_current_data_route import select_current_data_targets, CurrentDataRouteError
 
@@ -10,6 +11,7 @@ def background_quote_plan(runtime, payload):
         raise ValueError('后台报价计划参数无效')
     context = read_cache_context(runtime, request.model_dump(exclude_none=True))
     target, reason = None, context['reason']
+    acquisition, interval = 'blocked', None
     if context['ready']:
         policy = runtime.store.effective_policy_v3()
         targets = select_current_data_targets(policy, capability='REALTIME_QUOTE',
@@ -19,14 +21,30 @@ def background_quote_plan(runtime, payload):
         first = targets[0]
         target = {'providerId': first[0], 'upstreamSource': first[1], 'routeIndex': first[2]}
         key = context['routeKey']
-        if (key['market'] != 'CN' or key['assetType'] != 'ETF'
-                or not re.fullmatch(r'\d{6}\.(SH|SZ)', request.symbol)
-                or first[:2] != ('tencent', 'tencent')):
+        if (first[:2] == ('tencent', 'tencent') and key['market'] == 'CN' and key['assetType'] == 'ETF'
+                and re.fullmatch(r'\d{6}\.(SH|SZ)', request.symbol)):
+            acquisition, interval = 'public-snapshot', 600
+        elif key['market'] == 'CN' and (
+            (first[:2] == ('hithink', 'a-share-prices-snapshot') and key['assetType'] == 'STOCK'
+             and re.fullmatch(r'[0-9]{6}\.(SH|SZ|BJ)', request.symbol))
+            or (first[:2] == ('hithink', 'fund-market-snapshot') and key['assetType'] == 'ETF'
+                and re.fullmatch(r'[0-9]{6}\.(SH|SZ)', request.symbol))
+        ):
+            acquisition, interval = 'account-snapshot', 600 if key['assetType'] == 'ETF' else 15
+        elif (first[:2] == ('futu', 'futu') and key['market'] in {'HK', 'US'}
+              and key['assetType'] in {'STOCK', 'ETF'}):
+            access = account_access_for(runtime, key, {'providerId': first[0], 'upstreamSource': first[1]}) or {}
+            if access.get('state') == 'allowed' and access.get('persisted') is True:
+                acquisition = 'account-snapshot'
+                interval = 600 if key['assetType'] == 'ETF' else 15
+            else:
+                reason = ('background_permission_denied' if access.get('state') == 'permission_missing'
+                          else 'background_permission_unverified')
+        else:
             reason = 'background_budget_unverified'
-    allowed = context['ready'] and reason is None
     return {**payload, 'generation': context['generation'], 'policyRevision': context['policyRevision'],
-            'acquisition': 'public-snapshot' if allowed else 'blocked', 'reason': reason,
-            'target': target, 'minIntervalSeconds': 600 if allowed else None,
+            'acquisition': acquisition, 'reason': reason,
+            'target': target, 'minIntervalSeconds': interval,
             'sourceUpdateIntervalSeconds': None}
 
 
@@ -39,7 +57,7 @@ def constrain_background_quote(runtime, request, targets):
         raise ProviderCallError('invalid_request', '后台报价执行身份无效')
     plan = background_quote_plan(runtime, {'contractVersion': 1, 'consumer': 'thesis-ledger',
         'requestId': request.request_id, 'symbol': request.symbol, 'assetType': request.instrument_type})
-    if plan['acquisition'] != 'public-snapshot' or plan['generation'] != pin['generation']:
+    if plan['acquisition'] == 'blocked' or plan['generation'] != pin['generation']:
         raise ProviderCallError('not_admitted', '后台报价来源或控制版本已变化')
     target = plan['target']
     expected = (target['providerId'], target['upstreamSource'], target['routeIndex'])

@@ -34,7 +34,7 @@ def test_actual_source_factory_and_original_sdk_preserve_one_call_and_standard_r
     constructors = install_sdk(monkeypatch, get)
     result = ThesisLedgerProviderRuntime(store).execute_request(_request(asset, symbol))
     assert constructors == [{'api_key': 'synthetic-quote-key-v1', 'timeout_seconds': 4.5}]
-    assert len(calls) == 1 and calls[0][1]['timeout'] == 4.5
+    assert len(calls) == 1 and 0 < calls[0][1]['timeout'] <= 4.5
     assert calls[0][1]['params'] == {('thscodes' if asset == 'STOCK' else 'thscode'): symbol}
     assert calls[0][1]['headers']['X-api-key'] == 'synthetic-quote-key-v1'
     assert calls[0][1]['allow_redirects'] is False

@@ -43,6 +43,34 @@ def test_next_opend_read_can_recover_after_worker_timeout(monkeypatch):
     assert [call.kwargs["timeout"] for call in run.call_args_list] == [4.5, 4.5]
 
 
+def test_background_snapshot_rechecks_live_right_before_upstream_snapshot():
+    sdk, context = sdk_for()
+    sdk.UserInfoField = SimpleNamespace(QOTRIGHT="quote-right")
+    context.get_user_info.return_value = 0, {"hk_qot_right": "BMP"}
+    with pytest.raises(FutuMarketError) as failure:
+        read_futu_quote(sdk, "localhost", 11111, "00700.HK", "STOCK", require_live=True)
+    assert failure.value.code == "permission_denied"
+    context.get_market_snapshot.assert_not_called()
+    context.get_user_info.return_value = 0, {"hk_qot_right": "LV2"}
+    assert read_futu_quote(sdk, "localhost", 11111, "00700.HK", "STOCK", require_live=True)["price"] == 12
+    context.get_market_snapshot.assert_called_once()
+
+
+def test_snapshot_budget_shares_rolling_window_by_opend_endpoint(monkeypatch):
+    from data_provider import futu_snapshot_budget as budget
+    monkeypatch.setattr(budget, "_windows", {})
+    clock = Mock(return_value=120.)
+    monkeypatch.setattr(budget, "monotonic", clock)
+    for _ in range(60):
+        assert budget.reserve_snapshot("localhost", 11111)
+    assert not budget.reserve_snapshot("localhost", 11111)
+    assert budget.reserve_snapshot("localhost", 11112)
+    clock.return_value = 149.999
+    assert not budget.reserve_snapshot("localhost", 11111)
+    clock.return_value = 150.
+    assert budget.reserve_snapshot("localhost", 11111)
+
+
 @pytest.mark.parametrize("symbol,code,zone", [("00700.HK", "HK.00700", "Asia/Hong_Kong"),
     ("HK00700", "HK.00700", "Asia/Hong_Kong"), ("HK.00700", "HK.00700", "Asia/Hong_Kong"),
     ("AAPL.US", "US.AAPL", "America/New_York"), ("US.AAPL", "US.AAPL", "America/New_York"),

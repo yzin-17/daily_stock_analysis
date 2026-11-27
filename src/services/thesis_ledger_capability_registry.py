@@ -176,6 +176,7 @@ class SourceDefinition:
     quote_admission_reader: Callable[[QuoteAdmissionContext], Mapping | None] | None = None
     probe_policy: SourceProbePolicy | None = None
     account_access_probe: Callable[[AccountAccessProbeContext], Mapping] | None = None
+    account_access_scope: Callable[[Mapping], bool] | None = None
     account_access_group: Callable[[Mapping], str] | None = None
     account_access_cooldown_seconds: int = 60
     route_requires_credential: Callable[[Mapping, Mapping], bool] | None = None
