@@ -64,6 +64,30 @@
 - `87f96ff6` 将目录测试的合成凭证和启用状态显式保存到测试专用 SQLite，隔离进程级配置缓存。20 项目录和准入定向回归、52 项配置与目录组合回归均通过。
 - 完整 CI 于 2026-11-27 15:43:40（中国标准时间）在 `87f96ff6` 上通过。输入变更检测、治理、3 个离线分片、`backend-gate`、Docker 镜像构建及冒烟检查均通过。本轮验收范围为 CI 构建和测试，目标运行环境的部署证据仍对应上节提交。[完整门禁复验](https://github.com/yzin-17/daily_stock_analysis/actions/runs/45958992041)
 
+## 目标 TickFlow 权限报告
+
+2026-11-27 17:57 至 17:58（中国标准时间），通过目标 Server 的 `/api/market-data/providers/tickflow/test` 运行 5 轮「检查功能权限」，使用当前已保存的凭证和既有单轮 16 次上游请求上限。Server 各轮均返回 HTTP 201 并确认报告保存。已有报告缺少容量证据，首轮从运行时默认容量 1 起测。
+
+| 报价试样数 | 权限检查结果 | 读取端采用容量 |
+| ---: | --- | ---: |
+| 2 | 通过 | 2 |
+| 4 | 通过 | 4 |
+| 8 | 拒绝该批大小 | 4 |
+| 6 | 拒绝该批大小 | 4 |
+| 5 | 通过 | 5 |
+
+- 最后一轮请求 `target-tickflow-account-5b6c50ef-5` 于 17:58:12 保存 16 项报告。股票报价的 `verifiedQuoteBatchSize=5`、`rejectedQuoteBatchSize=6`，读取端通过正式容量读取函数取得 5。ETF 精确报价为 `allowed`，共 6 项允许、10 项分钟线权限不足。报告匹配凭证版本 1 与配置版本 4，实际业务策略仍为版本 203。
+
+## 目标镜像更新与运行验证
+
+- 2026-11-27 18:04（中国标准时间），在 `/Users/yzin/code/thesis-ledger-workspace/thesis-ledger-infra` 执行 `DSA_SOURCE_DIR=/Users/yzin/code/thesis-ledger-workspace/daily-stock-analysis ./scripts/update.sh dsa`，退出码 0。镜像包含 `e90a3d68` 的源码和依赖，新镜像 ID 为 `sha256:41aa3e3dd2cdec8038869a427a98454d0655ff59f152611949c57d50c902b5a1`，容器 `71f05951ed19` 为 `healthy`，`/health` 返回 HTTP 200。原数据卷和挂载继续使用。
+- 容器内验证 AKShare 1.18.94、yfinance 1.7.0 与新闻适配器版本门禁一致，`stock_news_em` 源码指纹匹配适配器校验值。Longbridge 为 `4.5.0+thesisledger.1`，可导入分钟时段枚举；TickFlow 为 0.1.26。这一轮新闻验收覆盖依赖和源码门禁。
+- 新容器正常加载 TickFlow 已保存的权限记录，读取端仍采用每批 5 个，ETF 报价为 `allowed`。真实 `CN/ETF` 策略仍为版本 203，报价目标依次为 HiThink、AkShare，不复权日线目标为富途、AkShare。
+- 18:05 通过同一 infra 目录的 `DSA_SOURCE_DIR=/Users/yzin/code/thesis-ledger-workspace/daily-stock-analysis ./scripts/sync-code.sh dsa` 部署 `6eb43168`。目标容器健康、HTTP 200，镜像 ID 和挂载保持原值。Tushare 源码 SHA-256 与宿主一致，修复位于容器可写层；若复用现有镜像重建容器，需要重新快更，下一次从当前 `yzin` 构建会将修复纳入镜像。
+- 18:05 在新容器重跑同一 TickFlow `510300.SH` 不复权日线指令，3 根覆盖 3 个交易日，单页完成，耗时 2716 毫秒，`productionControlUnchanged=true`，指纹 `a5eacb9345a92cb9631fa8497b32c7376424176bc66428e0c19dafac52f733d5`。指纹包含每次观测的 `availableAt`。
+- 18:08 在新容器使用当前凭证的临时草稿调用正式 Control 精确报价诊断。`target-tickflow-rebuild-etf-1dc67e78a0` 返回 HTTP 200、`ready/healthy`、`attempted=true`，样本 `510300.SH`，耗时 683 毫秒。保存的权限报告、策略版本 203 及目标 ETF 路由一致。首次诊断用完整有效投影比较，因比较包含每读重算的 `appliedAt` 未通过辅助断言，复验使用保存策略和目标路由比较。
+- `6eb43168` 的完整 CI 于 18:08:13 完成。输入检测、治理、3 个后端离线分片、`backend-gate`、Docker 构建及镜像冒烟检查全部通过。[完整远端门禁](https://github.com/yzin-17/daily_stock_analysis/actions/runs/45978001690)
+
 ## 待独立验收
 
-- TickPlus 的公开 HTTPS 行情地址在本地代理下未完成握手，公开 SDK 的行情 HTTPS 能力和接口命名仍需核实。保持独立来源待准入状态。
+- TickPlus 官方文档明确区分实时行情 `/plus/basic/fullquotes` 与指标 `/plus/basic/fullfactor`，基础地址使用 HTTP，凭证通过 URL 参数传递。2026-11-27 对公开 HTTPS 行情地址进行无凭证探测，直连和现有代理均在 TLS 握手阶段超时，代理只返回 CONNECT 200。保持 TickPlus 待准入，取得可验证的官方安全端点后再验收权限、股票及 ETF 回包合同。[TickPlus 官方接口文档](https://github.com/tickplusx/TickPlusSkill/blob/main/tickplus/references/apidoc.md)
