@@ -319,6 +319,7 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
     assert catalog["integrity"] == "complete"
     assert catalog["catalogRevision"] > 0
     assert catalog["catalogRevision"] == repeated.json()["catalogRevision"]
+    futu_account_routes = set()
     for entry in catalog["entries"]:
         fields = {"key", "target", "state", "verification"}
         assert entry["verification"] == {"state": "unverified"}
@@ -345,8 +346,14 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
             from src.services.thesis_ledger_account_access_contract import AccountAccessResult
             fields.add("accountAccess")
             access = AccountAccessResult.model_validate(entry["accountAccess"])
-            assert entry["target"]["providerId"] in {"tushare", "tickflow"}
+            provider_id = entry["target"]["providerId"]
+            assert provider_id in {"tushare", "tickflow", "futu"}
             assert access.attempted is False and access.state in {"unknown", "credential_missing"}
+            if provider_id == "futu":
+                key = entry["key"]
+                assert key["capability"] == "REALTIME_QUOTE"
+                assert entry["target"]["upstreamSource"] == "futu"
+                futu_account_routes.add((key["market"], key["assetType"]))
         if 'credentialRequired' in entry:
             fields.add('credentialRequired')
             assert isinstance(entry['credentialRequired'], bool)
@@ -355,6 +362,7 @@ def test_v3_route_catalog_is_exact_complete_and_independent_of_policy(monkeypatc
             assert entry['recommendation']['reason']
             assert set(entry['recommendation']) <= {'reason', 'upstreamGroup', 'priority', 'readEvidence'}
         assert set(entry) == fields
+    assert futu_account_routes == {("HK", "STOCK"), ("HK", "ETF"), ("US", "STOCK"), ("US", "ETF")}
     assert any("barQuery" in entry for entry in catalog["entries"])
     bars = [entry for entry in catalog["entries"] if entry["key"]["capability"] == "DAILY_BAR"]
     minutes = [entry for entry in catalog["entries"] if entry["key"]["capability"] == "MINUTE_BAR"]
